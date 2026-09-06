@@ -319,7 +319,10 @@ async function prepareChartApplyRequest(
 }
 
 describe('KernelProcess', () => {
-  it.each(['reader', 'interpreter', 'both'] as const)('retains eventual exit observation for the %s during teardown', async (role) => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32').each(['reader', 'interpreter', 'both'] as const)('retains eventual exit observation for the %s during teardown', async (role) => {
     const harness = await createHarness(`kernel-delayed-${role}`, { subprocess: DeferredExitSubprocess })
     const subprocess = harness.services.subprocess as DeferredExitSubprocess
     const kernel = await startKernel(harness, 'python')
@@ -339,7 +342,10 @@ describe('KernelProcess', () => {
     }
   })
 
-  it.each(['reader', 'interpreter'] as const)('awaits the %s before removing a failed startup FIFO', async (role) => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32').each(['reader', 'interpreter'] as const)('awaits the %s before removing a failed startup FIFO', async (role) => {
     const harness = await createHarness(`kernel-failed-delayed-${role}`, { subprocess: DeferredExitSubprocess })
     const subprocess = harness.services.subprocess as DeferredExitSubprocess
     subprocess.defer = role
@@ -355,7 +361,10 @@ describe('KernelProcess', () => {
     expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
   })
 
-  it('awaits the reader\'s eventual exit before removing the FIFO when it also lacks its stdout pipe', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('awaits the reader\'s eventual exit before removing the FIFO when it also lacks its stdout pipe', async () => {
     const harness = await createHarness('kernel-reader-missing-stdout-delayed', { subprocess: DeferredExitSubprocess })
     const subprocess = harness.services.subprocess as DeferredExitSubprocess
     subprocess.defer = 'reader'
@@ -374,7 +383,10 @@ describe('KernelProcess', () => {
     expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
   })
 
-  it('cleans up a forwarding process that lacks the requested stdout pipe', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('cleans up a forwarding process that lacks the requested stdout pipe', async () => {
     const harness = await createHarness('kernel-reader-missing-stdout')
     const spawn = LocalSubprocessRuntime.prototype.spawn.bind(harness.services.subprocess)
     let reader: SubprocessHandle | undefined
@@ -389,7 +401,10 @@ describe('KernelProcess', () => {
     expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
   })
 
-  it('faults the kernel on a forwarding-provider rejection and still observes exit when reader termination fails', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('faults the kernel on a forwarding-provider rejection and still observes exit when reader termination fails', async () => {
     const harness = await createHarness('kernel-reader-provider-error')
     const spawn = LocalSubprocessRuntime.prototype.spawn.bind(harness.services.subprocess)
     const failure = Promise.withResolvers<never>()
@@ -410,7 +425,10 @@ describe('KernelProcess', () => {
     expect(terminationAttempts).toBeGreaterThanOrEqual(1)
   })
 
-  it('removes the FIFO when the forwarding executable cannot be resolved', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('removes the FIFO when the forwarding executable cannot be resolved', async () => {
     const harness = await createHarness('kernel-reader-unavailable')
     const resolve = harness.services.subprocess.resolveExecutable.bind(harness.services.subprocess)
     vi.spyOn(harness.services.subprocess, 'resolveExecutable').mockImplementation((executable, options) => {
@@ -421,7 +439,10 @@ describe('KernelProcess', () => {
     expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(false)
   })
 
-  it('settles chart application when its operation was cancelled before the exchange', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('settles chart application when its operation was cancelled before the exchange', async () => {
     const harness = await createHarness('kernel-chart-already-cancelled')
     const kernel = await startKernel(harness, 'python')
     await expect(kernel.applyChart({ ...await prepareChartApplyRequest(harness.root, 'chart-cancelled'),
@@ -430,14 +451,20 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('completes the READY handshake', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('completes the READY handshake', async () => {
     const harness = await createHarness('kernel-handshake')
     const kernel = await startKernel(harness, 'python')
     expect(kernel).toBeInstanceOf(KernelProcess)
     await kernel.end('test-teardown')
   })
 
-  it('keeps host file I/O available while four persistent kernels are idle', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('keeps host file I/O available while four persistent kernels are idle', async () => {
     const harness = await createHarness('kernel-idle-threadpool')
     const request = await prepareRun(harness.root, 'run-with-four-kernels', { status: 'ok' })
     const kernels: KernelProcess[] = []
@@ -459,7 +486,10 @@ describe('KernelProcess', () => {
     }
   })
 
-  it('spawns a Python kernel without isolated mode and with a kernel-scoped PYTHONUSERBASE', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('spawns a Python kernel without isolated mode and with a kernel-scoped PYTHONUSERBASE', async () => {
     const harness = await createHarness('kernel-python-userbase', { subprocess: CapturingSubprocess })
     const kernel = await startKernel(harness, 'python', { index: 3 })
     const capturing = harness.services.subprocess as CapturingSubprocess
@@ -475,7 +505,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('spawns an R kernel with a kernel-scoped R_LIBS_USER and no PYTHONUSERBASE', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('spawns an R kernel with a kernel-scoped R_LIBS_USER and no PYTHONUSERBASE', async () => {
     const harness = await createHarness('kernel-r-libs-user', { subprocess: CapturingSubprocess })
     const kernel = await startKernel(harness, 'r', { index: 2 })
     const capturing = harness.services.subprocess as CapturingSubprocess
@@ -489,7 +522,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('rejects with KernelProtocolError when READY does not arrive within the deadline', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects with KernelProtocolError when READY does not arrive within the deadline', async () => {
     const harness = await createHarness('kernel-ready-timeout')
     await expect(startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, kernelStartTimeoutMs: 200 }))
       .rejects.toThrow(KernelProtocolError)
@@ -505,7 +541,10 @@ describe('KernelProcess', () => {
     expect(result).toBe('rejected')
   })
 
-  it('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('a run of READY-timeout failures (no-ready driver) leaks no libuv threadpool worker', async () => {
     const harness = await createHarness('kernel-start-failure-threadpool')
     // One more than the default libuv threadpool size: every prior fs.*
     // call in this suite has already returned its worker, so this many
@@ -531,7 +570,10 @@ describe('KernelProcess', () => {
     expect(raced).toBe('resolved')
   }, 30_000)
 
-  it('a confine failure before spawn releases the FIFO so a same-index retry does not hit mkfifo: File exists', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('a confine failure before spawn releases the FIFO so a same-index retry does not hit mkfifo: File exists', async () => {
     const harness = await createHarness('kernel-start-failure-retry')
     // A prefix inside the confinement policy's own writable root fails
     // `assertPrefixReadOnly` inside `confineInterpreterArgv`, before
@@ -554,7 +596,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('propagates a real mkfifo failure for the kernel response FIFO', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('propagates a real mkfifo failure for the kernel response FIFO', async () => {
     const harness = await createHarness('kernel-mkfifo-failure')
     const planned = planKernelScratch(harness.services.sessionScratch, 'python', 0)
     // createKernelScratch is idempotent for an already-existing directory
@@ -572,19 +617,28 @@ describe('KernelProcess', () => {
     }
   })
 
-  it('falls back to empty stderr text when mkfifo fails without a collected stderr stream', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('falls back to empty stderr text when mkfifo fails without a collected stderr stream', async () => {
     const harness = await createHarness('kernel-mkfifo-no-stderr', { subprocess: NoStderrMkfifoSubprocess })
     await expect(startKernel(harness, 'python')).rejects.toThrow(/mkfifo failed.*exitCode=1/)
   })
 
-  it('settles exited with a null exitCode/signal when the subprocess seam\'s own done promise rejects', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('settles exited with a null exitCode/signal when the subprocess seam\'s own done promise rejects', async () => {
     const harness = await createHarness('kernel-done-rejects', { subprocess: RejectedDoneSubprocess })
     const kernel = await startKernel(harness, 'python')
     await kernel.end('test-teardown')
     await expect(kernel.exited).resolves.toEqual({ exitCode: null, signal: null, cause: 'commanded' })
   })
 
-  it('propagates a non-ENOENT unlink failure when end() cannot remove the response FIFO', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('propagates a non-ENOENT unlink failure when end() cannot remove the response FIFO', async () => {
     const harness = await createHarness('kernel-unlink-failure')
     const kernel = await startKernel(harness, 'python')
     const planned = planKernelScratch(harness.services.sessionScratch, 'python', 0)
@@ -600,14 +654,20 @@ describe('KernelProcess', () => {
     }
   })
 
-  it('fails loud when the subprocess seam spawns without the requested stdin pipe', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('fails loud when the subprocess seam spawns without the requested stdin pipe', async () => {
     const harness = await createHarness('kernel-no-stdin', { subprocess: KernelStdinFaultSubprocess })
     const subprocess = harness.services.subprocess as KernelStdinFaultSubprocess
     subprocess.fault = 'missing'
     await expect(startKernel(harness, 'python')).rejects.toThrow(/stdin pipe/)
   }, 30_000)
 
-  it('rejects one execute synchronously when the stdin write itself throws, preserving a real Error and wrapping a non-Error alike', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects one execute synchronously when the stdin write itself throws, preserving a real Error and wrapping a non-Error alike', async () => {
     const harness = await createHarness('kernel-stdin-write-failure', { subprocess: KernelStdinFaultSubprocess })
     const subprocess = harness.services.subprocess as KernelStdinFaultSubprocess
     subprocess.fault = 'throws'
@@ -656,7 +716,10 @@ describe('KernelProcess', () => {
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
   })
 
-  it('accepts kernel spawn against a partial-reporting sandbox when the caller passes minimumEnforcement: partial', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('accepts kernel spawn against a partial-reporting sandbox when the caller passes minimumEnforcement: partial', async () => {
     const harness = await createHarness('kernel-enforcement-partial')
     const sandbox = await createDirectSandbox()
     sandbox.enforcement = 'partial'
@@ -672,13 +735,19 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('treats a malformed line before READY as a fatal handshake failure', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('treats a malformed line before READY as a fatal handshake failure', async () => {
     const harness = await createHarness('kernel-bad-ready')
     await expect(startKernel(harness, 'python', { driverPath: BAD_READY_DRIVER_PATH }))
       .rejects.toThrow(KernelProtocolError)
   })
 
-  it('classifies a response-FIFO stream error by whether it carries a real Error, both ways from the same kernel', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('classifies a response-FIFO stream error by whether it carries a real Error, both ways from the same kernel', async () => {
     const harness = await createHarness('kernel-fifo-stream-error')
     const kernel = await startKernel(harness, 'python')
     const stream = capturedReadStreams.at(-1)
@@ -692,7 +761,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
   })
 
-  it('ignores a response-FIFO stream error that arrives after the kernel already exited', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('ignores a response-FIFO stream error that arrives after the kernel already exited', async () => {
     const harness = await createHarness('kernel-fifo-error-after-exit')
     const kernel = await startKernel(harness, 'python')
     const stream = capturedReadStreams.at(-1)
@@ -702,7 +774,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  it('classifies a stdin stream error by whether it carries a real Error, both ways from the same kernel', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('classifies a stdin stream error by whether it carries a real Error, both ways from the same kernel', async () => {
     const harness = await createHarness('kernel-stdin-stream-error')
     const kernel = await startKernel(harness, 'python')
     const stdin = capturedStdinStreams.at(-1)
@@ -714,7 +789,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
   })
 
-  it('never lets an EPIPE-shaped stdin error racing performEnd\'s own EXIT write become an uncaught exception', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('never lets an EPIPE-shaped stdin error racing performEnd\'s own EXIT write become an uncaught exception', async () => {
     // Reproduces the designed dead-kernel path (KernelSet.teardown calling
     // end() on a kernel whose process is dying): performEnd's synchronous
     // EXIT write can be accepted by the stream and still fail
@@ -738,7 +816,10 @@ describe('KernelProcess', () => {
     }
   })
 
-  it('ignores a stdin stream error that arrives after the kernel already exited', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('ignores a stdin stream error that arrives after the kernel already exited', async () => {
     const harness = await createHarness('kernel-stdin-error-after-exit')
     const kernel = await startKernel(harness, 'python')
     const stdin = capturedStdinStreams.at(-1)
@@ -748,7 +829,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  it('routes two sequential executes to their matching DONE frames', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('routes two sequential executes to their matching DONE frames', async () => {
     const harness = await createHarness('kernel-two-runs')
     const kernel = await startKernel(harness, 'python')
     const first = await kernel.execute(await prepareRun(harness.root, 'run-1', { status: 'ok', detail: '' }))
@@ -758,7 +842,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('tolerates exactly one trailing \\r before the newline, the CRLF line ending R\'s socketConnection may emit on win32', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('tolerates exactly one trailing \\r before the newline, the CRLF line ending R\'s socketConnection may emit on win32', async () => {
     const harness = await createHarness('kernel-crlf-frame')
     const kernel = await startKernel(harness, 'python')
     // flags is the DONE frame's last field, so an unstripped \\r lands
@@ -770,7 +857,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('routes CHART_EXTRACT success and kernel-declared error responses', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('routes CHART_EXTRACT success and kernel-declared error responses', async () => {
     const harness = await createHarness('kernel-chart-frames')
     const kernel = await startKernel(harness, 'python')
     const success = await kernel.extractCharts(await prepareChartRequest(harness.root, 'run-chart-ok'))
@@ -784,7 +874,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('routes CHART_APPLY success and guards its shared pending, faulted, and exited states', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('routes CHART_APPLY success and guards its shared pending, faulted, and exited states', async () => {
     const harness = await createHarness('kernel-chart-apply-frames')
     const kernel = await startKernel(harness, 'python')
     await expect(kernel.applyChart(await prepareChartApplyRequest(harness.root, 'run-chart-apply-ok')))
@@ -821,7 +914,10 @@ describe('KernelProcess', () => {
     ))).rejects.toThrow(KernelExitedError)
   })
 
-  it('shares one pending slot between RUN and CHART_EXTRACT', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('shares one pending slot between RUN and CHART_EXTRACT', async () => {
     const harness = await createHarness('kernel-chart-pending')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-chart-pending', {
@@ -839,7 +935,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('faults a kernel whose chart extraction times out or replies out of order', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('faults a kernel whose chart extraction times out or replies out of order', async () => {
     const timeoutHarness = await createHarness('kernel-chart-timeout')
     const timeoutKernel = await startKernel(timeoutHarness, 'python')
     await expect(timeoutKernel.extractCharts(await prepareChartRequest(
@@ -870,7 +969,10 @@ describe('KernelProcess', () => {
     ))).rejects.toThrow(KernelExitedError)
   })
 
-  it('forwards the RUN frame\'s own reserved inputDir distinctly from cwd and artifactDir', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('forwards the RUN frame\'s own reserved inputDir distinctly from cwd and artifactDir', async () => {
     const harness = await createHarness('kernel-input-dir')
     const kernel = await startKernel(harness, 'python')
     const request = await prepareRun(harness.root, 'run-echo-request', { action: 'echo-request' })
@@ -880,7 +982,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('publishes the Session workspace without changing the run working directory', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('publishes the Session workspace without changing the run working directory', async () => {
     const harness = await createHarness('kernel-workspace-dir')
     const kernel = await startKernel(harness, 'python')
     const request = await prepareRun(harness.root, 'run-echo-workspace', { action: 'echo-workspace' })
@@ -890,7 +995,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('parses the capture-degraded flag and ignores unknown flag tokens', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('parses the capture-degraded flag and ignores unknown flag tokens', async () => {
     const harness = await createHarness('kernel-flags')
     const kernel = await startKernel(harness, 'python')
     const degraded = await kernel.execute(await prepareRun(harness.root, 'run-degraded', { status: 'ok', flags: 'capture-degraded' }))
@@ -902,7 +1010,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('throws when a second execute is issued while one is still pending', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('throws when a second execute is issued while one is still pending', async () => {
     const harness = await createHarness('kernel-concurrent-execute')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-pending', {
@@ -924,7 +1035,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('rejects a request field carrying a frame delimiter before writing anything', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a request field carrying a frame delimiter before writing anything', async () => {
     const harness = await createHarness('kernel-frame-delimiter')
     const kernel = await startKernel(harness, 'python')
     expect(() => {
@@ -940,7 +1054,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('treats an unparseable frame as fatal, ignores a second one already-faulted, and rejects a later execute with the same fault', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('treats an unparseable frame as fatal, ignores a second one already-faulted, and rejects a later execute with the same fault', async () => {
     const harness = await createHarness('kernel-garbage')
     const kernel = await startKernel(harness, 'python')
     // double-garbage sends TWO unparseable lines for one RUN: the first sets
@@ -953,7 +1070,10 @@ describe('KernelProcess', () => {
       .rejects.toThrow(KernelProtocolError)
   })
 
-  it('treats an unexpected FIFO EOF while the kernel is still alive as fatal', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('treats an unexpected FIFO EOF while the kernel is still alive as fatal', async () => {
     const harness = await createHarness('kernel-fifo-eof')
     const kernel = await startKernel(harness, 'python')
     await expect(kernel.execute(await prepareRun(harness.root, 'run-close-fifo', { action: 'close-fifo' })))
@@ -961,7 +1081,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
   }, 30_000)
 
-  it('fails an in-flight execute distinctly when the kernel exits uncommanded', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('fails an in-flight execute distinctly when the kernel exits uncommanded', async () => {
     const harness = await createHarness('kernel-crash')
     const kernel = await startKernel(harness, 'python')
     await expect(kernel.execute(await prepareRun(harness.root, 'run-crash', { action: 'crash' })))
@@ -969,7 +1092,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'crash', exitCode: 1 })
   })
 
-  it('interrupt() delivers SIGINT and the driver replies DONE interrupted', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('interrupt() delivers SIGINT and the driver replies DONE interrupted', async () => {
     const harness = await createHarness('kernel-interrupt-trapped')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-interrupt', {
@@ -981,7 +1107,10 @@ describe('KernelProcess', () => {
     await kernel.end('test-teardown')
   })
 
-  it('end() escalation still quiesces when the driver ignores interrupt()', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('end() escalation still quiesces when the driver ignores interrupt()', async () => {
     const harness = await createHarness('kernel-interrupt-ignored')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-ignore-interrupt', {
@@ -999,7 +1128,10 @@ describe('KernelProcess', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   }, 30_000)
 
-  it('EXIT teardown removes the FIFO, settles exited with cause commanded, and rejects a later execute as already exited', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('EXIT teardown removes the FIFO, settles exited with cause commanded, and rejects a later execute as already exited', async () => {
     const harness = await createHarness('kernel-exit-teardown')
     const kernel = await startKernel(harness, 'python')
     const planned = planKernelScratch(harness.services.sessionScratch, 'python', 0)
@@ -1012,14 +1144,20 @@ describe('KernelProcess', () => {
       .rejects.toThrow(KernelExitedError)
   })
 
-  it('end() is idempotent: a second call awaits the same teardown', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('end() is idempotent: a second call awaits the same teardown', async () => {
     const harness = await createHarness('kernel-end-idempotent')
     const kernel = await startKernel(harness, 'python')
     await Promise.all([kernel.end('first'), kernel.end('second')])
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  it('works identically for the R language selection', async () => {
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
+  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('works identically for the R language selection', async () => {
     const harness = await createHarness('kernel-r-language')
     const kernel = await startKernel(harness, 'r')
     const result = await kernel.execute(await prepareRun(harness.root, 'run-r', { status: 'ok', detail: '' }))
@@ -1064,7 +1202,20 @@ describe('kernelEnvironment', () => {
       expect(env.TEMP).toBe(kernelScratch.tmp)
       expect(env.TMP).toBe(kernelScratch.tmp)
       expect(env.TMPDIR).toBe(kernelScratch.tmp)
-      for (const [key, value] of Object.entries(ambient)) expect(env[key]).toBe(value)
+      // NUMBER_OF_PROCESSORS is excluded from the exact-value check: confirmed
+      // on real Windows (`node -e` probe against a live process) that
+      // `process.env.NUMBER_OF_PROCESSORS = '8'` does not take effect —
+      // Node/libuv resolve this one key from the OS's live processor count on
+      // every read rather than the process's own environment block, so this
+      // mock's override is unobservable there. Its presence in `env` still
+      // proves win32AmbientEnvironment carries the key through at all.
+      for (const [key, value] of Object.entries(ambient)) {
+        if (key === 'NUMBER_OF_PROCESSORS') {
+          expect(env).toHaveProperty(key)
+          continue
+        }
+        expect(env[key]).toBe(value)
+      }
     } finally {
       platform.mockRestore()
       for (const key of Object.keys(ambient)) Reflect.deleteProperty(process.env, key)

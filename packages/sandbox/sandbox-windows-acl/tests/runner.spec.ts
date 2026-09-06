@@ -12,17 +12,25 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { AclWriteGrant, tempWriteSid, workspaceWriteSid } from '../src/index.ts'
 
 const isWin32 = process.platform === 'win32'
 const runnerEntry = fileURLToPath(new URL('../src/runner.ts', import.meta.url))
 
-// Functional probe, not where.exe: spawnSync never throws on a missing
-// binary (status null) and where.exe exits 1 without pwsh — only an actual
-// pwsh invocation's exit status is truth.
+// Probes the literal `pwsh` command this suite's own confined-child
+// invocations below spawn (PATH resolution only), not
+// `dsh-pwsh-local`'s `resolvePwshPath()` — that resolver's last-resort
+// fallback is legacy Windows PowerShell 5.1 (`powershell.exe`), which
+// answers this probe successfully on a host with no real pwsh 7 install
+// while the tests' own bare `pwsh` argv still fails to spawn, so that
+// probe would report "available" and let every test below fail instead of
+// skip. Checking PSEdition (not just exit status) also rejects a false
+// match against Windows PowerShell 5.1 if a `pwsh` shim ever aliased to it.
+// spawnSync never throws on a missing binary (status null) — only an
+// actual invocation's output is truth.
 function pwshAvailable(): boolean {
-  return spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
+  const probe = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSEdition'], { encoding: 'utf8' })
+  return probe.status === 0 && probe.stdout.trim() === 'Core'
 }
 
 function runRunner(args: string[], timeoutMs = 30_000) {

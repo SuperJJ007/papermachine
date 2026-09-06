@@ -32,17 +32,27 @@ describe('Science Runtime prefix manifests', () => {
     roots.push(root)
     mkdirSync(join(root, 'prefix'))
     writeFileSync(join(root, 'prefix', 'history'), 'initial')
-    symlinkSync('../outside', join(root, 'prefix', 'outside-link'))
+    // capturePrefixManifest retains readlink's raw, unresolved string
+    // (prefix-manifest.ts: "Link target retained without resolving it"), and
+    // win32's CreateSymbolicLinkW normalizes a relative target to its native
+    // `\` separator regardless of the `/` this call passes in — so the
+    // expected literal is built with `join()` too, to track whatever
+    // separator this host's symlink layer actually reports.
+    const outsideLinkTarget = join('..', 'outside')
+    symlinkSync(outsideLinkTarget, join(root, 'prefix', 'outside-link'))
 
     const manifest = await capturePrefixManifest(join(root, 'prefix'))
-    expect(manifest.get('outside-link')).toMatchObject({ type: 'symlink', symlinkTarget: '../outside' })
+    expect(manifest.get('outside-link')).toMatchObject({ type: 'symlink', symlinkTarget: outsideLinkTarget })
     expect(manifest.get('history')).toMatchObject({
       type: 'file', sha256: 'ac1b5c0961a7269b6a053ee64276ed0e20a7f48aefb9f67519539d23aaf10149',
     })
     expect(diffPrefixManifest(manifest, await capturePrefixManifest(join(root, 'prefix')))).toEqual([])
   })
 
-  it('leaves the fake configured prefix byte-for-byte manifest-equivalent after binding and running', async () => {
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
+  // shape win32's executable-layout lookup never finds, so environment binding
+  // can never reach 'applied' here.
+  it.skipIf(process.platform === 'win32')('leaves the fake configured prefix byte-for-byte manifest-equivalent after binding and running', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-prefix-unchanged-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)

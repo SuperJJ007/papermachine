@@ -116,7 +116,10 @@ function wrapKernelSpawn(inner: SubprocessRuntime, transform: (handle: Subproces
 }
 
 describe('ScienceRuntime.startRun preflight', () => {
-  it('rejects malformed source before any kernel work', async () => {
+  // POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects malformed source before any kernel work', async () => {
     const { runtime, session } = await readyPythonHarness('science-run-preflight-source')
     await expect(runtime.startRun({
       session, language: 'python', code: '', ...authorizePythonRun(session), signal: new AbortController().signal,
@@ -137,7 +140,10 @@ describe('ScienceRuntime.startRun preflight', () => {
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
   })
 
-  it('rejects a run for a language the applied environment has no available binding for', async () => {
+  // POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a run for a language the applied environment has no available binding for', async () => {
     // readyPythonHarness binds a profile with only pythonPrefix configured:
     // the environment is applied (python is available), but r was never
     // observed at all — selectBinding must still refuse it.
@@ -149,7 +155,10 @@ describe('ScienceRuntime.startRun preflight', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
-  it('queues a second concurrent run for the same session instead of rejecting or cancelling it', async () => {
+  // POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('queues a second concurrent run for the same session instead of rejecting or cancelling it', async () => {
     // Regression for a Science Runtime bug: two run_python/run_r calls
     // issued together in one assistant step (the durable session log admits
     // only one 'running' run at a time — transition.ts's own
@@ -172,7 +181,10 @@ describe('ScienceRuntime.startRun preflight', () => {
     expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(2)
   })
 
-  it('cancels a queued run cleanly, without ever spawning a kernel, when its own signal aborts before its turn arrives', async () => {
+  // POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('cancels a queued run cleanly, without ever spawning a kernel, when its own signal aborts before its turn arrives', async () => {
     const { runtime, session } = await readyPythonHarness('science-run-queued-cancel')
     const first = await runtime.startRun({
       session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 5_000, trapSigint: true }),
@@ -191,7 +203,10 @@ describe('ScienceRuntime.startRun preflight', () => {
       && event.data.run.toolCallId === 'science-run-queued-cancel-2')).toBe(false)
   })
 
-  it('rejects a queued run with SERVICE_DISPOSING, without acquiring a lease, once the Runtime begins disposing while it waits', async () => {
+  // POSIX-only fixture: bindFakePython binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a queued run with SERVICE_DISPOSING, without acquiring a lease, once the Runtime begins disposing while it waits', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-queued-dispose-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -218,7 +233,10 @@ describe('ScienceRuntime.startRun preflight', () => {
       && event.data.run.toolCallId === 'science-run-queued-dispose-2')).toBe(false)
   })
 
-  it('rejects a fresh run with RUNTIME_BUSY when a prior run-finished append never committed, leaving the projection with an open run', async () => {
+  // POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a fresh run with RUNTIME_BUSY when a prior run-finished append never committed, leaving the projection with an open run', async () => {
     // The lease itself is released once settlePublishedKernelRun's outer
     // finally runs, even though run-finished never committed — so a second
     // startRun call must be refused by the projection's own open-run check
@@ -278,7 +296,9 @@ describe('ScienceRuntime.startRun preflight', () => {
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
   })
 
-  it('aggregates a vetoed run-started append with cleanup failures on both the unpublished run directory and the session scratch root', async () => {
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`,
+  // a shape win32's executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('aggregates a vetoed run-started append with cleanup failures on both the unpublished run directory and the session scratch root', async () => {
     // An environment-bound fact appended directly (bypassing bindEnvironment,
     // as the R-space test above does) means this startRun's own
     // materializeSessionScratch call is the FIRST ever for this session
@@ -335,7 +355,9 @@ describe('ScienceRuntime.startRun preflight', () => {
     }
   })
 
-  it('aggregates a kernel-acquisition failure with a session-scratch rollback failure (root not yet created by any prior operation)', async () => {
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`,
+  // a shape win32's executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('aggregates a kernel-acquisition failure with a session-scratch rollback failure (root not yet created by any prior operation)', async () => {
     // An environment-bound fact appended directly (bypassing bindEnvironment,
     // as the R-space test above does) means this startRun's own
     // materializeSessionScratch call is the FIRST ever for this session
@@ -405,7 +427,10 @@ describe('ScienceRuntime.startRun preflight', () => {
   })
 })
 
-describe('ScienceRuntime.startRun kernel acquisition', () => {
+// POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down
+// `<prefix>/bin/python` or `<prefix>/bin/Rscript`, a shape win32's
+// executable-layout lookup never finds.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.startRun kernel acquisition', () => {
   it('commits kernel-state(started) before run-started on a fresh spawn, carrying the run\'s kernelEpoch', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-fresh-spawn')
     const handle = await runtime.startRun({
@@ -879,7 +904,10 @@ esac
   })
 })
 
-describe('ScienceRuntime.startRun terminal classification', () => {
+// POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+// which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+// lookup never finds.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.startRun terminal classification', () => {
   it('classifies a DONE ok/error frame as success/EXECUTION_FAILED with bounded output tails', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-classify')
     const ok = await runtime.startRun({
@@ -1039,7 +1067,10 @@ describe('ScienceRuntime.startRun terminal classification', () => {
   })
 })
 
-describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
+// POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+// which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+// lookup never finds.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
   it('survives a cancel answered by DONE interrupted (interrupt-survive)', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-interrupt-survive')
     const handle = await runtime.startRun({
@@ -1146,7 +1177,10 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
   }, 30_000)
 })
 
-describe('ScienceRuntime.startRun capture and replay', () => {
+// POSIX-only fixture: readyPythonHarness binds through createFakePythonPrefix,
+// which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+// lookup never finds.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.startRun capture and replay', () => {
   it('auto-captures an eligible file written to the run\'s artifact directory', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-capture')
     const handle = await runtime.startRun({

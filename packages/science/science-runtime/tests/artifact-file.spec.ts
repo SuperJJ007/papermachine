@@ -13,9 +13,13 @@ import { readBoundedFile, walkArtifactFiles } from '../src/artifact-file.ts'
 
 const roots: string[] = []
 
+// The hard-cap test below leaves >10,000 files for this hook to remove;
+// vitest's separate default hookTimeout (not the per-test timeout) is what
+// governs this cleanup, and was observed to exceed 10s under concurrent
+// disk load on win32 even after the test body's own timeout was raised.
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-})
+}, 60_000)
 
 function tmp(prefix: string): string {
   const root = mkdtempSync(join(process.cwd(), prefix))
@@ -50,12 +54,16 @@ describe('walkArtifactFiles', () => {
     expect(await walkArtifactFiles(join(dir, 'does-not-exist'))).toEqual([])
   })
 
+  // 30s was tight enough to flake under concurrent load from the rest of
+  // this suite on win32 (14s isolated vs. a real observed >30s run
+  // alongside the other Science files' real interpreter/TCP tests);
+  // doubled, not the assertion, to give real disk contention margin.
   it('stops walking at the internal hard cap', async () => {
     const dir = tmp('.science-artifact-file-walk-hard-cap-')
     for (let index = 0; index < 10_001; index += 1) writeFileSync(join(dir, `f${String(index)}.png`), '')
     const found = await walkArtifactFiles(dir)
     expect(found.length).toBeLessThanOrEqual(10_000)
-  }, 30_000)
+  }, 60_000)
 })
 
 describe('readBoundedFile', () => {

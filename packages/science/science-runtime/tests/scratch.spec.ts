@@ -334,7 +334,9 @@ describe('Science Runtime private scratch', () => {
     expectPrivateDirectory(second.userLibrary)
   })
 
-  it('rejects escaping cleanup paths and invalid configured executables', async () => {
+  // requireExecutable's rejection below relies on a chmod-set executable bit
+  // (0o700), which Windows does not enforce the same way as POSIX permission bits.
+  it.skipIf(process.platform === 'win32')('rejects escaping cleanup paths and invalid configured executables', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-errors-'))
     roots.push(root)
     const session = await sessionWithId('science-scratch-errors')
@@ -373,7 +375,9 @@ describe('Science Runtime private scratch', () => {
     expect(existsSync(rollback.directory)).toBe(false)
   })
 
-  it('fails closed for non-private managed marker and directory entries', async () => {
+  // Relies on chmodSync-based permission-denial simulation (marker/directory
+  // mode bits), which Windows does not enforce the same way as POSIX permission bits.
+  it.skipIf(process.platform === 'win32')('fails closed for non-private managed marker and directory entries', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-private-'))
     roots.push(root)
     const dshHome = join(root, 'dsh-home')

@@ -179,7 +179,9 @@ async function loadSettingsRestartRuntime(
 }
 
 describe('Science Runtime real Loader composition', () => {
-  it('loads, binds, runs, and unloads the folded Runtime through Loader', async () => {
+  // bindEnvironment resolves the fake profile via createFakePythonPrefix,
+  // whose POSIX-shaped `bin/python` the product never looks for on win32.
+  it.skipIf(process.platform === 'win32')('loads, binds, runs, and unloads the folded Runtime through Loader', async () => {
     const loaded = await loadRuntime()
     const unloaded = [...loaded.loader.entries()]
       .filter(entry => entry.fiber === undefined && !entry.disabled)
@@ -243,7 +245,10 @@ describe('Science Runtime real Loader composition', () => {
     expect(loaded.scienceRuntime).toBeUndefined()
   })
 
-  it('executes one confined child through the real local sandbox and subprocess providers', async () => {
+  // POSIX-only fixture: `/usr/bin/env` is a hardcoded POSIX absolute path
+  // with no win32 equivalent, so confining and spawning it can never
+  // succeed there.
+  it.skipIf(process.platform === 'win32')('executes one confined child through the real local sandbox and subprocess providers', async () => {
     root = await mkdtemp(join(process.cwd(), '.science-runtime-local-provider-'))
     const runner = createFakeSandboxRunner(root)
     context = new Context()
@@ -287,7 +292,9 @@ describe('Science Runtime real Loader composition', () => {
     }
   })
 
-  it('leaves an intentionally empty Cordis profile map unusable until a settings-file write survives a real restart', async () => {
+  // bindEnvironment resolves the fake profile via createFakePythonPrefix,
+  // whose POSIX-shaped `bin/python` the product never looks for on win32.
+  it.skipIf(process.platform === 'win32')('leaves an intentionally empty Cordis profile map unusable until a settings-file write survives a real restart', async () => {
     root = await mkdtemp(join(process.cwd(), '.science-runtime-settings-restart-'))
     const prefix = createFakePythonPrefix(root)
     const runner = createFakeSandboxRunner(root)
@@ -333,7 +340,9 @@ describe('Science Runtime real Loader composition', () => {
   // in cordis.yml did not repair it. Declaring `settings` among this entry's
   // injections is what makes both timings agree.
   for (const slowImport of ['@deepseek-ai/dsh-settings-file', '@deepseek-ai/dsh-science-runtime/with-settings']) {
-    it(`reads the persisted profile whichever module lands first (slow: ${slowImport})`, async () => {
+    // bindEnvironment resolves the fake profile via createFakePythonPrefix,
+    // whose POSIX-shaped `bin/python` the product never looks for on win32.
+    it.skipIf(process.platform === 'win32')(`reads the persisted profile whichever module lands first (slow: ${slowImport})`, async () => {
       root = await mkdtemp(join(process.cwd(), '.science-runtime-settings-order-'))
       const prefix = createFakePythonPrefix(root)
       const runner = createFakeSandboxRunner(root)

@@ -175,7 +175,9 @@ function pluginContextTexts(events: readonly SessionEvent[]): string[] {
       : [])
 }
 
-describe('tool-science real Loader + agent-loop composition through cordis.yml', () => {
+// boot() binds the fake Python profile via createFakePythonPrefix, whose
+// POSIX-shaped `bin/python` the product never looks for on win32.
+describe.skipIf(process.platform === 'win32')('tool-science real Loader + agent-loop composition through cordis.yml', () => {
   it('binds, contextualizes, and runs through the real tool pipeline; resumes; and stays absent from a Standard session', async () => {
     const ctx = await boot()
     const adapter = new MockAdapter([

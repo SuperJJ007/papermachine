@@ -108,7 +108,10 @@ async function captureFiles(
 }
 
 describe('ScienceRuntime.annotateArtifact', () => {
-  it('curates the latest version in place, reusing its store content reference and provenance', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('curates the latest version in place, reusing its store content reference and provenance', async () => {
     const root = tmp('.science-annotate-latest-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -163,7 +166,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(artifacts?.at(0)?.title).toBe('Result summary')
   })
 
-  it('marks the version orphan when the artifact-saved append is vetoed after the store annotation already committed (W3)', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('marks the version orphan when the artifact-saved append is vetoed after the store annotation already committed (W3)', async () => {
     const root = tmp('.science-annotate-append-veto-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -189,7 +195,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(stored?.title).toBe('Curated Title')
   })
 
-  it('logs (and does not throw) when the orphan health-mark itself fails after a vetoed append', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('logs (and does not throw) when the orphan health-mark itself fails after a vetoed append', async () => {
     const root = tmp('.science-annotate-append-veto-health-fail-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -214,7 +223,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })
   })
 
-  it('clears a caption the request omits, rather than leaving a stale value (D8)', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('clears a caption the request omits, rather than leaving a stale value (D8)', async () => {
     const root = tmp('.science-annotate-clear-caption-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -237,7 +249,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(stored?.caption).toBeUndefined()
   })
 
-  it('rejects a toolCallId that already authorized a prior artifact annotation', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a toolCallId that already authorized a prior artifact annotation', async () => {
     const root = tmp('.science-annotate-tool-call-reused-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -254,7 +269,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED' })
   })
 
-  it('rejects a toolCallId reused after its own prior annotation was superseded, closing the pre-check\'s current-annotation-only gap', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a toolCallId reused after its own prior annotation was superseded, closing the pre-check\'s current-annotation-only gap', async () => {
     const root = tmp('.science-annotate-tool-call-reused-superseded-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -276,7 +294,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_ANNOTATE_TOOL_CALL_REUSED' })
   })
 
-  it('classifies an unrelated artifact-store annotation failure as infrastructure failure', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('classifies an unrelated artifact-store annotation failure as infrastructure failure', async () => {
     const root = tmp('.science-annotate-store-failure-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -292,7 +313,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE', cause: failure })
   })
 
-  it('rejects curation of a direct human-edit version', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects curation of a direct human-edit version', async () => {
     const root = tmp('.science-annotate-human-edit-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -333,7 +357,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_CURATABLE' })
   })
 
-  it('preserves addressable figure state while curating PNG metadata', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('preserves addressable figure state while curating PNG metadata', async () => {
     const root = tmp('.science-annotate-chart-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -364,7 +391,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(afterFigureState).toEqual(beforeFigureState)
   })
 
-  it('curates a non-image artifact identically', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('curates a non-image artifact identically', async () => {
     const root = tmp('.science-annotate-text-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -380,7 +410,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
       .resolves.toMatchObject({ mediaType: 'text/markdown' })
   })
 
-  it('curates an exact named version in place, leaving every other version untouched', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('curates an exact named version in place, leaving every other version untouched', async () => {
     const root = tmp('.science-annotate-exact-version-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -416,7 +449,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(artifacts?.at(1)).toMatchObject({ title: 'Current notes' })
   })
 
-  it('supports a curation chain: repeated annotate calls retitle the same version', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('supports a curation chain: repeated annotate calls retitle the same version', async () => {
     const root = tmp('.science-annotate-chain-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -454,7 +490,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' })
   })
 
-  it('directs an uncaptured retained PNG back through a producing run without capturing it during annotation', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('directs an uncaptured retained PNG back through a producing run without capturing it during annotation', async () => {
     const root = tmp('.science-annotate-uncaptured-raster-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -477,7 +516,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     await expect(harness.ctx.scienceArtifactStore.listArtifacts(project.projectId)).resolves.toEqual([])
   })
 
-  it('directs a retained PNG written outside SCIENCE_ARTIFACT_DIR back to that directory', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('directs a retained PNG written outside SCIENCE_ARTIFACT_DIR back to that directory', async () => {
     const root = tmp('.science-annotate-run-root-raster-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -498,7 +540,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(replayScience(session.events)?.artifacts).toEqual([])
   })
 
-  it('inspects a retained run within the annotateDiagnosticMaxRuns bound', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('inspects a retained run within the annotateDiagnosticMaxRuns bound', async () => {
     const root = tmp('.science-annotate-diagnostic-bound-within-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
@@ -518,7 +563,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     )
   })
 
-  it('does not inspect a run older than the annotateDiagnosticMaxRuns bound for a retained, uncaptured PNG', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('does not inspect a run older than the annotateDiagnosticMaxRuns bound for a retained, uncaptured PNG', async () => {
     const root = tmp('.science-annotate-diagnostic-bound-outside-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(
@@ -559,7 +607,10 @@ describe('ScienceRuntime.annotateArtifact', () => {
     })).rejects.toThrow('no artifact named "missing.png" exists in this session')
   })
 
-  it('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {
+  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
+  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
+  // lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects a version that does not exist for a logical_name that does, with the available versions in the diagnostic', async () => {
     const root = tmp('.science-annotate-missing-version-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })

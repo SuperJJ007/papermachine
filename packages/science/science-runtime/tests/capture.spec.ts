@@ -143,7 +143,10 @@ function pngWithMetadata(): Uint8Array {
 // contend for the OS scheduler and the default 5s timeout is not enough.
 vi.setConfig({ testTimeout: 30_000 })
 
-describe('Science auto-capture', () => {
+// POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
+// shape win32's executable-layout lookup never finds, so environment binding
+// can never reach 'applied' here.
+describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
   it('materializes verified artifact inputs byte-exactly and records the complete mapping', async () => {
     const root = tmp('.science-input-materialization-')
     const prefix = createFakePythonPrefix(root)

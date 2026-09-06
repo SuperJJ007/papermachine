@@ -228,7 +228,10 @@ class FailingPackagesProbeSubprocess extends ControlledSubprocess {
 }
 
 describe('ScienceRuntime.bindEnvironment', () => {
-  it('accepts a blank session recomposed from the default preset into Science', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('accepts a blank session recomposed from the default preset into Science', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-recomposed-session-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -250,7 +253,14 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).resolves.toMatchObject({ status: 'applied' })
   })
 
-  it.each(['error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'missing-output', 'version-both-streams', 'version-nul', 'version-stderr-only'] as const)('fails loudly when a probe provider is %s', async (mode) => {
+  /**
+   * Shared body for both split it.each calls below: only the modes requiring an actual probe
+   * outcome (a rejection, or the stderr-only 'applied' branch) depend on
+   * createFakePythonPrefix's POSIX-shaped fake interpreter ever being found.
+   */
+  type BrokenProbeMode = 'error-rejection' | 'non-error-rejection' | 'no-outcome' | 'unquiescent'
+    | 'missing-output' | 'version-both-streams' | 'version-nul' | 'version-stderr-only'
+  async function bindWithBrokenProbe(mode: BrokenProbeMode): Promise<void> {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-broken-probe-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -275,9 +285,26 @@ describe('ScienceRuntime.bindEnvironment', () => {
       await expect(binding).rejects.toMatchObject({ code: mode === 'unquiescent' ? 'QUIESCENCE_UNPROVEN' : 'INFRASTRUCTURE_FAILURE' })
       expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
     }
-  })
+  }
 
-  it('uses the Darwin locale allowlist for a host-local direct probe', async () => {
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's
+  // executable-layout lookup never finds, so these modes — which require the probe to actually
+  // reject or run to a real ('applied'/version-mismatch) outcome — can never reach it there.
+  it.skipIf(process.platform === 'win32').each([
+    'error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'version-stderr-only',
+  ] as const)('fails loudly when a probe provider is %s', bindWithBrokenProbe)
+
+  // These modes ('missing-output', 'version-both-streams', 'version-nul') all assert status:
+  // 'invalid', which a win32 run also reaches (via the missing-executable static check, before
+  // any probe spawns) for an unrelated reason, so they are platform-independent.
+  it.each(['missing-output', 'version-both-streams', 'version-nul'] as const)(
+    'fails loudly when a probe provider is %s', bindWithBrokenProbe,
+  )
+
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('uses the Darwin locale allowlist for a host-local direct probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-darwin-locale-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -297,7 +324,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it('records three empty-base, fully confined probes and commits one applied revision', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records three empty-base, fully confined probes and commits one applied revision', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science runtime-environment-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -362,7 +392,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(sandbox.policies.every(policy => policy.workspaceRoot.includes('/probes/'))).toBe(true)
   })
 
-  it('uses a standalone R version argv and preserves strict flags on the UTF-8 probe', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('uses a standalone R version argv and preserves strict flags on the UTF-8 probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-argv-'))
     roots.push(root)
     const prefix = createFakeRPrefix(root)
@@ -398,7 +431,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it('records a non-zero R version probe as an invalid environment observation', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records a non-zero R version probe as an invalid environment observation', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-version-failure-'))
     roots.push(root)
     const prefix = createFakeRPrefix(root)
@@ -461,7 +497,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(existsSync(join(dshHome, 'science'))).toBe(false)
   })
 
-  it('rejects remote execution or partial enforcement before publishing an environment revision', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('rejects remote execution or partial enforcement before publishing an environment revision', async () => {
     const remoteRoot = mkdtempSync(join(process.cwd(), '.science-runtime-remote-'))
     const partialRoot = mkdtempSync(join(process.cwd(), '.science-runtime-partial-'))
     roots.push(remoteRoot, partialRoot)
@@ -511,7 +550,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(existsSync(join(unavailableRoot, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(unavailableSession)))).toBe(false)
   })
 
-  it('confines every probe only after its private directory already exists on disk', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('confines every probe only after its private directory already exists on disk', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-confine-after-exists-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -530,7 +572,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).resolves.toMatchObject({ status: 'applied' })
   })
 
-  it('accepts a partial-reporting sandbox and records the accepted level once minimumEnforcement allows it', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('accepts a partial-reporting sandbox and records the accepted level once minimumEnforcement allows it', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-accept-partial-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -547,7 +592,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
   })
 
-  it('records an invalid revision for a missing prefix or invalid retained UTF-8 without spawning user source', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records an invalid revision for a missing prefix or invalid retained UTF-8 without spawning user source', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-invalid-'))
     roots.push(root)
     const invalidPrefix = createFakePythonPrefix(root, 'invalid')
@@ -590,7 +638,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(subprocess.specs).toHaveLength(beforeMissing)
   })
 
-  it('observes a shared Python/R prefix, while an R TMPDIR under a space-containing scratch path fails before a probe starts', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('observes a shared Python/R prefix, while an R TMPDIR under a space-containing scratch path fails before a probe starts', async () => {
     const sharedRoot = mkdtempSync(join(process.cwd(), '.science-runtime-shared-'))
     const spaceRoot = mkdtempSync(join(process.cwd(), '.science runtime-r-space-'))
     roots.push(sharedRoot, spaceRoot)
@@ -667,7 +718,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(spaced.subprocess.specs).toEqual([])
   })
 
-  it('keeps distinct configured Python and R prefixes distinct, and records an escaping executable as invalid without a probe', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('keeps distinct configured Python and R prefixes distinct, and records an escaping executable as invalid without a probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-distinct-'))
     const escapingRoot = mkdtempSync(join(process.cwd(), '.science-runtime-escaping-'))
     roots.push(root, escapingRoot)
@@ -705,7 +759,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(escaping.subprocess.specs).toHaveLength(before)
   })
 
-  it('holds the exact Session lease until a sibling probe quiesces after an earlier probe failure', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('holds the exact Session lease until a sibling probe quiesces after an earlier probe failure', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-probe-cleanup-'))
     roots.push(root)
     const pythonPrefix = createFakePythonPrefix(root)
@@ -745,7 +802,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     await expect(runtime.bindEnvironment(request)).resolves.toMatchObject({ status: 'applied' })
   })
 
-  it('rejects unknown profiles, rebinds after a run, and pre-aborted binds without publishing facts', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('rejects unknown profiles, rebinds after a run, and pre-aborted binds without publishing facts', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-bind-guards-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -778,7 +838,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
   })
 
-  it('requires a workspace cwd and retries project resolution after an open failure', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('requires a workspace cwd and retries project resolution after an open failure', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-project-resolution-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -812,7 +875,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(opens).toBe(2)
   })
 
-  it('records static invalid observations without probing malformed history or interpreter entries', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records static invalid observations without probing malformed history or interpreter entries', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-static-invalid-'))
     roots.push(root)
     const historyDirectory = createFakePythonPrefix(join(root, 'history-directory'))
@@ -864,7 +930,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(harness.subprocess.specs).toEqual([])
   })
 
-  it('preserves non-missing static filesystem failures while retaining only missing paths as invalid observations', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('preserves non-missing static filesystem failures while retaining only missing paths as invalid observations', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-static-fs-errors-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -895,7 +964,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it('aggregates probe and cleanup failures, and preserves static observation races without publishing a binding', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('aggregates probe and cleanup failures, and preserves static observation races without publishing a binding', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-observation-failures-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -939,7 +1011,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
   })
 
-  it('waits for both failed observations before reporting their aggregate failure', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('waits for both failed observations before reporting their aggregate failure', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-observe-aggregate-'))
     roots.push(root)
     const pythonPrefix = createFakePythonPrefix(root)
@@ -994,7 +1069,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).rejects.toMatchObject({ errors: [expect.any(Error), 'injected non-Error observation failure'] })
   })
 
-  it('records a bounded invalid observation when the prefix changes during both attempts', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records a bounded invalid observation when the prefix changes during both attempts', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-observe-drift-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1015,7 +1093,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })).resolves.toMatchObject({ status: 'invalid', python: { reason: 'environment changed during observation' } })
   })
 
-  it('rolls back newly owned Session scratch when a retry cannot obtain full confinement', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('rolls back newly owned Session scratch when a retry cannot obtain full confinement', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-retry-confinement-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1041,7 +1122,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
-  it('aggregates a failed retry with failure to roll back newly owned Session scratch', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('aggregates a failed retry with failure to roll back newly owned Session scratch', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-retry-rollback-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1067,7 +1151,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
-  it('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-rollback-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1133,7 +1220,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     }
   })
 
-  it.each([
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's
+  // executable-layout lookup never finds, so this always resolves invalid for a
+  // missing-executable reason rather than the malformed-inventory reason under test.
+  it.skipIf(process.platform === 'win32').each([
     ['JSON.parse throws', 'not valid json'],
     ['top-level value is not an array', '{}'],
     ['an entry is not an object', '[42]'],
@@ -1158,7 +1248,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
   })
 
-  it.each([
+  // POSIX-only fixture: createFakeRPrefix lays down `<prefix>/bin/Rscript`, a shape win32's
+  // executable-layout lookup never finds, so this always resolves invalid for a
+  // missing-executable reason rather than the malformed-inventory reason under test.
+  it.skipIf(process.platform === 'win32').each([
     ['no tab separator', 'base'],
     ['leading tab (empty name)', '\t4.5.0'],
     ['more than one tab', 'base\t4.5.0\textra'],
@@ -1179,7 +1272,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
   })
 
-  it('records an invalid observation when the package-inventory probe itself fails', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('records an invalid observation when the package-inventory probe itself fails', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-probe-failure-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1201,7 +1297,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
   })
 
-  it('truncates by exact UTF-8 byte length rather than by string character count', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('truncates by exact UTF-8 byte length rather than by string character count', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-multibyte-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1234,7 +1333,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(environment.python.packagesTruncated).toBe(true)
   })
 
-  it('sorts a package inventory with a repeated name by version', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('sorts a package inventory with a repeated name by version', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-sort-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1255,7 +1357,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
   })
 
-  it('truncates a package inventory exceeding the configured entry cap while digesting the complete sorted value', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('truncates a package inventory exceeding the configured entry cap while digesting the complete sorted value', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1290,7 +1395,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(environment.python.packagesSha256).toBe(completeDigest)
   })
 
-  it('retains a package inventory whose entries exactly fill the configured byte cap', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('retains a package inventory whose entries exactly fill the configured byte cap', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-exact-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1322,7 +1430,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(environment.python.packagesTruncated).toBe(false)
   })
 
-  it('truncates a package inventory whose single oversized entry exceeds the configured byte cap', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('truncates a package inventory whose single oversized entry exceeds the configured byte cap', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-bytes-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1358,7 +1469,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(environment.python.packagesSha256).toBe(completeDigest)
   })
 
-  it('keeps bindingFingerprint independent of the package inventory', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('keeps bindingFingerprint independent of the package inventory', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-fingerprint-stable-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1833,7 +1947,10 @@ describe('ScienceRuntime.installPackages', () => {
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
   })
 
-  it('rejects with INSTALLER_UNAVAILABLE when the configured micromamba path is absent', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('rejects with INSTALLER_UNAVAILABLE when the configured micromamba path is absent', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1851,7 +1968,10 @@ describe('ScienceRuntime.installPackages', () => {
     })).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
   })
 
-  it('rejects with RUNTIME_BUSY when the projection has an orphaned open run', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('rejects with RUNTIME_BUSY when the projection has an orphaned open run', async () => {
     const { runtime, session } = await boundHarness('install-orphan-run')
     const projection = replayScience(session.events)
     const binding = projection?.environment?.python
@@ -1886,7 +2006,10 @@ describe('ScienceRuntime.installPackages', () => {
     })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
   })
 
-  it('appends a fresh whole-value environment revision and returns it when a successful install actually changed the inventory', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('appends a fresh whole-value environment revision and returns it when a successful install actually changed the inventory', async () => {
     const { runtime, session, subprocess } = await boundHarness('install-success')
     const before = replayScience(session.events)?.environment
     // A real micromamba install writes the requested package into the
@@ -1909,7 +2032,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.stdout.text.length >= 0).toBe(true)
   })
 
-  it('appends no revision and reports environmentChanged: false when a successful install re-observes an identical inventory', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('appends no revision and reports environmentChanged: false when a successful install re-observes an identical inventory', async () => {
     const { runtime, session } = await boundHarness('install-redundant')
     const before = replayScience(session.events)?.environment
     // The fake installer succeeds (default queued-run behavior: exitCode 0)
@@ -1927,7 +2053,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(after?.revision).toBe(before?.revision)
   })
 
-  it('does not append a fresh revision when the install fails', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('does not append a fresh revision when the install fails', async () => {
     const { runtime, session, subprocess } = await boundHarness('install-failed')
     const before = replayScience(session.events)?.environment
     const run = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
@@ -1941,7 +2070,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(after?.revision).toBe(before?.revision)
   })
 
-  it('logs and swallows a scratch-cleanup failure without failing the install', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('logs and swallows a scratch-cleanup failure without failing the install', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -1965,7 +2097,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(warnings.some(message => message.includes('package-install scratch cleanup failed'))).toBe(true)
   })
 
-  it('re-observes an R-only profile, omitting python and including r in the fresh revision', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('re-observes an R-only profile, omitting python and including r in the fresh revision', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
     roots.push(root)
     const rPrefix = createFakeRPrefix(root)
@@ -1986,7 +2121,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.environment?.r?.capability).toBe('available')
   })
 
-  it('marks the fresh revision invalid when re-observation fails after a successful install', async () => {
+  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
+  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
+  // test depends on can never actually run there.
+  it.skipIf(process.platform === 'win32')('marks the fresh revision invalid when re-observation fails after a successful install', async () => {
     const { runtime, session, subprocess } = await boundHarness('install-reobserve-invalid')
     subprocess.utf8Probe = 'invalid'
     const result = await runtime.installPackages({
@@ -1997,7 +2135,10 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.environment?.failureReason).toBeDefined()
   })
 
-  describe('channel fallback', () => {
+  // POSIX-only fixture: every test below binds through boundHarness, which uses
+  // createFakePythonPrefix's `<prefix>/bin/python`, a shape win32's executable-layout lookup
+  // never finds, so the environment this install path requires never reaches 'applied'.
+  describe.skipIf(process.platform === 'win32')('channel fallback', () => {
     const TUNA = 'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge'
     const OFFICIAL = 'https://conda.anaconda.org/conda-forge'
 

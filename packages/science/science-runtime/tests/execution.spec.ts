@@ -113,7 +113,13 @@ describe('confineInterpreterArgv', () => {
 })
 
 describe('interpreterPathEnv', () => {
-  it('joins the prefix bin with the fixed POSIX suffix on darwin/linux', () => {
+  // Mocking process.platform only redirects interpreterPathEnv's own
+  // `if (process.platform === 'win32')` branch; the POSIX branch still calls
+  // node:path's real `join()`, which node fixes to the host's actual
+  // platform at module load and cannot be redirected by this mock — so on a
+  // real win32 host this always joins with `\`, never the POSIX `/` this
+  // assertion requires.
+  it.skipIf(process.platform === 'win32')('joins the prefix bin with the fixed POSIX suffix on darwin/linux', () => {
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     try {
       expect(interpreterPathEnv('/prefix')).toBe('/prefix/bin:/usr/bin:/bin')
@@ -199,7 +205,12 @@ describe('quiesce', () => {
     await expect(quiesce(handle)).resolves.toEqual({ quiescent: true, forced: true })
   }, 30_000)
 
-  it('returns eventual quiescence unproven when the tree survives both bounded grace windows', async () => {
+  // Windows delivers no real signals: child_process's 'SIGTERM'/'SIGKILL'
+  // both compile to an unconditional TerminateProcess regardless of any
+  // handler the child installed, so a process that "ignores SIGTERM" on
+  // POSIX cannot be modeled there — it always dies within the first grace
+  // window instead of surviving into the escalation path this test proves.
+  it.skipIf(process.platform === 'win32')('returns eventual quiescence unproven when the tree survives both bounded grace windows', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(LocalSubprocessRuntime)

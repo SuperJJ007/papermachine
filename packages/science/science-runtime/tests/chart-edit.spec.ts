@@ -152,7 +152,10 @@ async function appendHumanEdit(
   return artifact
 }
 
-describe('ScienceRuntime.applyChartEdit', () => {
+// POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
+// shape win32's executable-layout lookup never finds, so environment binding
+// can never reach 'applied' here.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.applyChartEdit', () => {
   it('edits the newest producing run and keeps that source through consecutive human edits', async () => {
     const { ctx, runtime, session } = await harness('chart-edit-newest-source')
     const first = chart(session)
@@ -523,7 +526,10 @@ describe('ScienceRuntime.applyChartEdit', () => {
   })
 })
 
-describe('ScienceRuntime.previewChartEdit', () => {
+// POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
+// shape win32's executable-layout lookup never finds, so environment binding
+// can never reach 'applied' here.
+describe.skipIf(process.platform === 'win32')('ScienceRuntime.previewChartEdit', () => {
   it('holds the lease through delayed replay quiescence and rejects cancellation during cleanup', async () => {
     const { runtime, session, root } = await harness('chart-preview-cleanup-cancel', { evictCharts: true })
     const parent = chart(session)

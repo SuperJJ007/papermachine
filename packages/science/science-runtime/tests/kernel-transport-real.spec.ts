@@ -10,13 +10,20 @@
  * suite runs on this machine's real darwin/linux host while still proving
  * the transport the product only ever selects automatically on win32.
  *
- * Self-skips per language with a clear reason when no usable bound
- * interpreter exists: reads `pythonPrefix`/`rPrefix` from
- * `~/.papermachine/environment-binding.json` (the desktop app's own
- * environment-binding record) and locates the executable the way the
- * product itself does ({@link executableCandidate}'s per-platform layout),
- * falling back to a bare `python3`/`Rscript` (`.exe`-suffixed on win32)
- * resolved off this machine's PATH.
+ * Self-skips per language with a clear reason when no usable interpreter
+ * exists, resolved in priority order: `DSH_SCIENCE_REAL_PREFIX` (one Conda
+ * prefix carrying both languages, matching how CI provisions a single
+ * `python`+`r-base` environment — set so this suite names that prefix
+ * directly instead of guessing off the runner's PATH or a desktop install;
+ * deliberately its own env var rather than `chart-kernels.real.spec.ts`'s
+ * `DSH_SCIENCE_RUNTIME_PYTHON_PREFIX`/`_R_PREFIX`, since that pair also
+ * gates real matplotlib/ggplot2 chart-driver runs this suite's bare
+ * `python=3.13 r-base=4.5` CI environment does not carry the packages for);
+ * else `pythonPrefix`/`rPrefix` from `~/.papermachine/environment-binding.json`
+ * (the desktop app's own environment-binding record); else a bare
+ * `python3`/`Rscript` (`.exe`-suffixed on win32) resolved off this machine's
+ * PATH. Every tier locates the executable the way the product itself does
+ * ({@link executableCandidate}'s per-platform layout).
  */
 
 import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -97,6 +104,11 @@ function resolveOnPath(
 function resolveRealInterpreter(
   language: ScienceLanguage,
 ): { readonly executable: string; readonly canonicalPrefix: string } | { readonly skip: string } {
+  const envPrefix = process.env.DSH_SCIENCE_REAL_PREFIX
+  if (envPrefix !== undefined) {
+    const envExecutable = executableCandidate(language, envPrefix)
+    if (existsSync(envExecutable)) return { executable: envExecutable, canonicalPrefix: envPrefix }
+  }
   const boundPrefix = language === 'python' ? binding.pythonPrefix : binding.rPrefix
   if (boundPrefix !== undefined) {
     const boundExecutable = executableCandidate(language, boundPrefix)
@@ -105,9 +117,9 @@ function resolveRealInterpreter(
   const resolved = resolveOnPath(language)
   if (resolved !== undefined) return resolved
   return {
-    skip: `no usable ${language} interpreter: neither environment-binding.json's `
-      + `${language === 'python' ? 'pythonPrefix' : 'rPrefix'} nor a PATH-resolved `
-      + `${language === 'python' ? 'python3' : 'Rscript'} exists on this machine`,
+    skip: `no usable ${language} interpreter: neither DSH_SCIENCE_REAL_PREFIX, `
+      + `environment-binding.json's ${language === 'python' ? 'pythonPrefix' : 'rPrefix'}, `
+      + `nor a PATH-resolved ${language === 'python' ? 'python3' : 'Rscript'} exists on this machine`,
   }
 }
 

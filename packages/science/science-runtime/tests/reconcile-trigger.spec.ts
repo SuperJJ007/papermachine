@@ -6,7 +6,7 @@
  */
 
 import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { VersionId } from '@deepseek-ai/dsh-science-artifact-store'
@@ -111,7 +111,7 @@ function artifactSavedEvent(seq: number, artifact: Record<string, unknown>): Ses
 describe('collectProjectArtifactEvents', () => {
   it('folds science/artifact-saved events per versionId (last write wins) across every matching session', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [
@@ -155,7 +155,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('drops a cached session\'s retained events once it no longer matches the workspace', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [artifactSavedEvent(1, { artifactId: 'a1', versionId: 'v1', version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), title: 'x', seenAt: 1 })],
@@ -193,7 +193,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('skips an unreadable session log (inspect rejects) and keeps reading the rest, with a warning', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({ meta: header('broken', cwd), events: [] })
     persistence.inspectFailureFor.add(SessionId('broken'))
     persistence.setDurable({
@@ -211,7 +211,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('skips a malformed science/artifact-saved event, with a warning, without failing the walk', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [
@@ -236,7 +236,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('skips a raw event value that is not an object', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [{ type: 'science/artifact-saved', seq: 1, time: 1, data: 'not-an-object' } as unknown as SessionEvent],
@@ -247,7 +247,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('skips an event value whose artifact field is missing or not an object', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [
@@ -261,7 +261,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('skips an otherwise well-formed event with neither seenAt nor a legacy createdAt', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [artifactSavedEvent(1, { artifactId: 'a1', versionId: 'v1', version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), title: 'x' })],
@@ -272,7 +272,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('defaults a missing title/caption to null rather than a non-string value', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [artifactSavedEvent(1, { artifactId: 'a1', versionId: 'v1', version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), seenAt: 1 })],
@@ -283,7 +283,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('ignores every non-science/artifact-saved event in a matching session log', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [
@@ -297,7 +297,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('falls back to a legacy createdAt when seenAt is absent', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('s1', cwd),
       events: [artifactSavedEvent(1, { artifactId: 'a1', versionId: 'v1', version: 1, logicalName: 'x.png', sha256: 'a'.repeat(64), title: 'x', createdAt: 555 })],
@@ -308,7 +308,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('continues beyond maxSessions on the next bounded call and returns the accumulated event set', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     for (let i = 0; i < 3; i += 1) {
       persistence.setDurable({
         meta: header(`s${String(i)}`, cwd),
@@ -333,7 +333,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('rotates an unreadable session behind the unvisited tail', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({ meta: header('broken', cwd), events: [] })
     persistence.inspectFailureFor.add(SessionId('broken'))
     persistence.setDurable({
@@ -369,7 +369,7 @@ describe('collectProjectArtifactEvents', () => {
 
   it('retains accumulated events and cursor when a later session listing fails', async () => {
     const persistence = new TestPersistence(new Context())
-    const cwd = '/workspace/project-a'
+    const cwd = resolve('/workspace/project-a')
     persistence.setDurable({
       meta: header('retained', cwd),
       events: [artifactSavedEvent(1, {

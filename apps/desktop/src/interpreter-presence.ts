@@ -1,4 +1,4 @@
-/** Whether a filesystem prefix has the POSIX layout Science Runtime accepts as a conda-family environment. */
+/** Whether a filesystem prefix has the platform-appropriate layout Science Runtime accepts as a conda-family environment. */
 
 import { lstat, stat } from 'node:fs/promises'
 import { join } from 'node:path'

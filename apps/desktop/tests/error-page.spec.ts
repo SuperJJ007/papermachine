@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessHomeSpaceError } from '../src/harness-home.ts'
 import {
+  CHOOSE_INSTALL_LOCATION_URL,
   errorPage,
   errorSurface,
   harnessHomeSpaceErrorPage,
@@ -71,6 +72,24 @@ describe('harnessHomeSpaceErrorPage', () => {
     expect(html).toContain('/a user/.papermachine')
     expect(html).not.toContain(RESTART_URL)
     expect(html).not.toContain('Host log')
+  })
+
+  it('offers "Choose another location" and "Quit" — this failure has no default location to fall back to', () => {
+    const html = decode(harnessHomeSpaceErrorPage(new HarnessHomeSpaceError('/a user/.papermachine')))
+
+    expect(html).toContain(`href="${CHOOSE_INSTALL_LOCATION_URL}"`)
+    expect(html).toContain(`href="${QUIT_URL}"`)
+    expect(html).not.toContain(USE_DEFAULT_INSTALL_LOCATION_URL)
+  })
+
+  it('appends a rejection reason when reloaded after a declined re-selection, without losing the original error', () => {
+    const html = decode(harnessHomeSpaceErrorPage(
+      new HarnessHomeSpaceError('/a user/.papermachine'),
+      'The chosen folder\'s path contains a space ("/also a user/PaperMachine").',
+    ))
+
+    expect(html).toContain('/a user/.papermachine')
+    expect(html).toContain('/also a user/PaperMachine')
   })
 })
 

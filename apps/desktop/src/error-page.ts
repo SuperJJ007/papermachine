@@ -11,7 +11,19 @@ export const RESTART_URL = 'dsh-desktop://restart'
  * install-location pointer and relaunching.
  */
 export const USE_DEFAULT_INSTALL_LOCATION_URL = 'dsh-desktop://use-default-install-location'
-/** In-app protocol {@link installLocationUnavailableErrorPage}'s "Quit" link navigates to; `main.ts` intercepts it. */
+/**
+ * In-app protocol {@link harnessHomeSpaceErrorPage}'s "Choose another
+ * location" link navigates to; `main.ts` intercepts it, running the same
+ * directory-picker/validate/pointer-write/relaunch flow as onboarding's
+ * `desktop:choose-install-location`, reloading this page with a rejection
+ * reason instead of relaunching when the chosen location is rejected.
+ */
+export const CHOOSE_INSTALL_LOCATION_URL = 'dsh-desktop://choose-install-location'
+/**
+ * In-app protocol {@link installLocationUnavailableErrorPage}'s and
+ * {@link harnessHomeSpaceErrorPage}'s "Quit" link navigates to; `main.ts`
+ * intercepts it.
+ */
 export const QUIT_URL = 'dsh-desktop://quit'
 
 /** One action link an error page offers: a label and the in-app protocol URL it navigates to. */
@@ -69,14 +81,26 @@ export function errorPage(logPath: string | undefined, exit?: HostExit, reason?:
  * configuration failure, not a Host crash, so the ordinary Restart Host
  * action — which would relaunch the Host against the same unusable path —
  * is omitted, and no Host log path is named (the Host never launched).
+ * Offers "Choose another location" (this failure's only fix, since the
+ * failing path is either the default home or a previously chosen one — see
+ * `install-location.ts`'s `BootInstallLocationFailure`) and "Quit".
  * @param error - the resolved space-containing path this launch could not use.
+ * @param rejectionReason - set when this page is reloaded after the user
+ *   picked another location that was itself rejected (also space-containing,
+ *   or otherwise unusable) — appended so the page explains why it is showing
+ *   again instead of relaunching.
  * @returns a `data:text/html` URL ready to load.
  */
-export function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError): string {
+export function harnessHomeSpaceErrorPage(error: HarnessHomeSpaceError, rejectionReason?: string): string {
+  const detail = `Your user home directory's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory, so PaperMachine cannot run science kernels from this location. Choose another install location instead.`
+    + (rejectionReason === undefined ? '' : ` ${rejectionReason}`)
   return errorSurface(
     'PaperMachine cannot start',
-    `Your user home directory's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory, so PaperMachine cannot run science kernels from this location.`,
-    [],
+    detail,
+    [
+      { label: 'Choose another location', href: CHOOSE_INSTALL_LOCATION_URL },
+      { label: 'Quit', href: QUIT_URL },
+    ],
   )
 }
 

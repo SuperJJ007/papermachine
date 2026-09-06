@@ -174,11 +174,15 @@ export function confirmsInstallLocation(response: number): boolean {
  * and the fix is to fall back to the default Harness home. `false` both
  * when no pointer is in effect (the default location itself failed, which
  * a pointer cannot rescue) and for {@link HarnessHomeSpaceError}, which
- * already has its own dedicated error page.
+ * {@link classifyBootInstallLocationFailure} classifies as `'space'` and
+ * routes to its own recovery page (`harnessHomeSpaceErrorPage`, offering
+ * "choose another location" rather than "use the default location" — the
+ * default location is exactly what just failed) before this function is
+ * ever consulted.
  * @param pointer - the install-location pointer this launch read, or
  *   `undefined` when none is in effect.
  * @param error - the error `resolveHarnessHome` threw for `pointer`.
- * @returns whether `error` should route to the install-location recovery page.
+ * @returns whether `error` should route to the install-location-unavailable recovery page.
  */
 export function isInstallLocationUnavailable(pointer: string | undefined, error: unknown): pointer is string {
   return pointer !== undefined && !(error instanceof HarnessHomeSpaceError)
@@ -192,26 +196,49 @@ export function isInstallLocationUnavailable(pointer: string | undefined, error:
 export const UNREADABLE_INSTALL_LOCATION_POINTER_TARGET = '(unknown — the install-location pointer file could not be read)'
 
 /**
+ * Which of `main.ts`'s two install-location recovery windows
+ * {@link classifyBootInstallLocationFailure} routes a boot failure to:
+ * `'space'` for a {@link HarnessHomeSpaceError} on any candidate — a
+ * pointer's target, or the default `<osHomeDir>/.papermachine` (a Windows
+ * account name containing a space is the common real case) — carrying the
+ * error itself so the recovery page can name the offending path; or
+ * `'unavailable-pointer'` for a pointer this launch cannot use at all,
+ * carrying the target to name ({@link UNREADABLE_INSTALL_LOCATION_POINTER_TARGET}
+ * when the pointer file itself could not be read).
+ */
+export type BootInstallLocationFailure =
+  | { readonly kind: 'space'; readonly error: HarnessHomeSpaceError }
+  | { readonly kind: 'unavailable-pointer'; readonly target: string }
+
+/**
  * Classify a failure in `main.ts`'s `boot()`'s very first Harness-home
- * resolution: the target its install-location recovery page should name,
- * or `undefined` when the failure should rethrow unchanged instead (no
- * pointer is in effect, or the failure is a {@link HarnessHomeSpaceError}
- * already routed to its own page). A pointer file that exists but cannot be
- * read or parsed — `pointerUnreadable` — is always recoverable: a pointer
- * is in effect (that is why reading it failed) and the fix, clearing it, is
- * the same one {@link isInstallLocationUnavailable}'s cases use.
+ * resolution into which recovery window, if any, it should open. A
+ * {@link HarnessHomeSpaceError} always classifies as `'space'`, regardless
+ * of whether a pointer is in effect: choosing a different install location
+ * is the fix either way, and the space-error recovery page's own
+ * "choose another location" action offers exactly that (unlike the
+ * install-location-unavailable page's "use the default location", which
+ * cannot help when the default location is what just failed). A pointer
+ * file that exists but cannot be read or parsed — `pointerUnreadable` — is
+ * otherwise always recoverable as `'unavailable-pointer'`: a pointer is in
+ * effect (that is why reading it failed) and the fix, clearing it, is the
+ * same one {@link isInstallLocationUnavailable}'s cases use. `undefined`
+ * only when no pointer is in effect and the failure is not a space error —
+ * the default location's own unrecoverable failure, which rethrows
+ * unchanged.
  * @param pointer - the install-location pointer this launch read, or
  *   `undefined` when reading it failed or no pointer file exists.
  * @param pointerUnreadable - whether `readInstallLocationPointer` itself
  *   threw, rather than `resolveHarnessHome`.
  * @param error - the error thrown by whichever of those two calls failed.
- * @returns the recovery page's target, or `undefined` to rethrow `error` unchanged.
+ * @returns which recovery window to open, or `undefined` to rethrow `error` unchanged.
  */
 export function classifyBootInstallLocationFailure(
   pointer: string | undefined,
   pointerUnreadable: boolean,
   error: unknown,
-): string | undefined {
-  if (pointerUnreadable) return UNREADABLE_INSTALL_LOCATION_POINTER_TARGET
-  return isInstallLocationUnavailable(pointer, error) ? pointer : undefined
+): BootInstallLocationFailure | undefined {
+  if (error instanceof HarnessHomeSpaceError) return { kind: 'space', error }
+  if (pointerUnreadable) return { kind: 'unavailable-pointer', target: UNREADABLE_INSTALL_LOCATION_POINTER_TARGET }
+  return isInstallLocationUnavailable(pointer, error) ? { kind: 'unavailable-pointer', target: pointer } : undefined
 }

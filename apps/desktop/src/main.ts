@@ -25,7 +25,7 @@ import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts
 import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
-import { errorPage, installLocationUnavailableErrorPage, launchErrorPage, QUIT_URL, RESTART_URL, USE_DEFAULT_INSTALL_LOCATION_URL } from './error-page.ts'
+import { CHOOSE_INSTALL_LOCATION_URL, errorPage, harnessHomeSpaceErrorPage, installLocationUnavailableErrorPage, launchErrorPage, QUIT_URL, RESTART_URL, USE_DEFAULT_INSTALL_LOCATION_URL } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
@@ -353,8 +353,8 @@ function hostCommand(dshHome: string, overlay: string, port: number, config: Des
  * Shared guard for the workspace window's `will-navigate` and `will-redirect`
  * events: both fire for a navigation the workspace document did not stay
  * within its own origin for, and both accept the restart and
- * install-location-recovery links {@link errorPage} and
- * {@link installLocationUnavailableErrorPage} render.
+ * install-location-recovery links {@link errorPage}, {@link installLocationUnavailableErrorPage},
+ * and {@link harnessHomeSpaceErrorPage} render.
  * @param event - the navigation event to cancel when the target is disallowed.
  * @param target - the destination URL.
  */
@@ -367,6 +367,11 @@ function guardWorkspaceNavigation(event: Electron.Event, target: string): void {
   if (target === USE_DEFAULT_INSTALL_LOCATION_URL) {
     event.preventDefault()
     void clearInstallLocationPointer(app.getPath('home')).then(relaunchApplication)
+    return
+  }
+  if (target === CHOOSE_INSTALL_LOCATION_URL) {
+    event.preventDefault()
+    void runChooseInstallLocationFromRecovery()
     return
   }
   if (target === QUIT_URL) {
@@ -559,14 +564,95 @@ async function restartHost(): Promise<void> {
 /**
  * Restart the application to apply a just-written or just-cleared
  * install-location pointer. `app.relaunch()` only schedules the relaunch;
- * `app.quit()` is what actually starts shutdown, which fires the
- * `before-quit` handler registered in `boot()` and so still runs
- * `coordinator.beforeQuit()` (aborting provisioning, stopping the Host, and
- * flushing telemetry) before the process exits and Electron restarts it.
+ * `app.quit()` is what actually starts shutdown. On the ordinary IPC path
+ * (onboarding's "Change…"/"Reset" controls), this fires the `before-quit`
+ * handler registered in `boot()` and so still runs `coordinator.beforeQuit()`
+ * (aborting provisioning, stopping the Host, and flushing telemetry) before
+ * the process exits and Electron restarts it. Called instead from a
+ * recovery window's own navigation guard (`guardWorkspaceNavigation`'s
+ * `USE_DEFAULT_INSTALL_LOCATION_URL`/`CHOOSE_INSTALL_LOCATION_URL`
+ * branches), `boot()` returned before registering that `before-quit`
+ * handler at all, so `app.quit()` here has nothing registered to run —
+ * harmless, since there is nothing running yet (no Host, no provisioning)
+ * to tear down.
  */
 function relaunchApplication(): void {
   app.relaunch()
   app.quit()
+}
+
+/** One provisioning-independent outcome of {@link runChooseInstallLocationFlow}. */
+type ChooseInstallLocationOutcome =
+  | { readonly status: 'cancelled' }
+  | { readonly status: 'rejected'; readonly reason: string }
+  | { readonly status: 'restarting' }
+
+/**
+ * Run the install-location picker end to end: open the directory picker,
+ * warn on a non-ASCII choice, confirm the resolved target, validate it
+ * (rejecting a space-containing choice with a reason naming the chosen
+ * folder rather than {@link HarnessHomeSpaceError}'s own home-directory
+ * wording), and on success persist the pointer and relaunch. Shared between
+ * onboarding's `desktop:choose-install-location` IPC handler and
+ * {@link guardWorkspaceNavigation}'s `CHOOSE_INSTALL_LOCATION_URL` branch
+ * (the harness-home-space recovery window's "Choose another location"
+ * action) — the two differ only in which window owns the dialogs and what
+ * they do with a `'rejected'` outcome the caller does not relaunch for.
+ * @param activeWindow - the window `dialog.showOpenDialog`/`showMessageBox` attach to.
+ * @param defaultPath - the picker's initial directory.
+ * @returns the outcome; `'restarting'` has already called {@link relaunchApplication}.
+ */
+async function runChooseInstallLocationFlow(activeWindow: BrowserWindow, defaultPath: string): Promise<ChooseInstallLocationOutcome> {
+  const osHome = app.getPath('home')
+  const result = await dialog.showOpenDialog(activeWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath,
+  })
+  const chosen = result.canceled ? undefined : result.filePaths[0]
+  if (chosen === undefined) return { status: 'cancelled' }
+  const target = resolveChosenInstallLocationPath(chosen, process.platform)
+  if (hasNonAsciiCharacters(target)) {
+    const warning = await dialog.showMessageBox(activeWindow, {
+      type: 'warning',
+      buttons: ['继续 · Continue', '选择其他位置 · Choose another location'],
+      defaultId: 1,
+      cancelId: 1,
+      message: '所选路径包含非 ASCII 字符 · The chosen path contains non-ASCII characters',
+      detail: '部分 conda 和 R 包可能无法在这样的路径下正常工作。 · Some conda and R packages may not work correctly under such a path.',
+    })
+    if (warning.response !== 0) return { status: 'cancelled' }
+  }
+  const confirmation = installLocationConfirmationDialog(target)
+  const confirmed = await dialog.showMessageBox(activeWindow, {
+    type: 'question',
+    buttons: [...confirmation.buttons],
+    defaultId: confirmation.defaultId,
+    cancelId: confirmation.cancelId,
+    message: confirmation.message,
+    detail: confirmation.detail,
+  })
+  if (!confirmsInstallLocation(confirmed.response)) return { status: 'cancelled' }
+  // Validating (and creating) the target directory only after every
+  // cancellable step above keeps a decline at any of them from leaving a
+  // newly created, empty directory behind — resolveHarnessHome's mkdir is
+  // the only filesystem side effect this function has before the pointer
+  // write below.
+  try {
+    await resolveHarnessHome(osHome, target)
+  } catch (error) {
+    // HarnessHomeSpaceError's own message names "your user home directory",
+    // accurate for the default-location failure it was written for but
+    // wrong here: the offending path is the folder just chosen, not the OS
+    // home directory, so this rewrites the reason around the right noun
+    // rather than relaying the shared message unchanged.
+    const reason = error instanceof HarnessHomeSpaceError
+      ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
+      : (error instanceof Error ? error.message : String(error))
+    return { status: 'rejected', reason }
+  }
+  await writeInstallLocationPointer(osHome, target)
+  relaunchApplication()
+  return { status: 'restarting' }
 }
 
 /**
@@ -637,6 +723,59 @@ async function showInstallLocationRecoveryWindow(osHome: string, target: string,
   created.show()
 }
 
+// Set only while a `showHarnessHomeSpaceRecoveryWindow` window is open,
+// naming the space-containing path that window's page is showing;
+// `guardWorkspaceNavigation`'s `CHOOSE_INSTALL_LOCATION_URL` branch reads it
+// to reload the same page with an added rejection reason when the user's
+// re-selection is itself unusable, rather than losing the original error.
+let harnessHomeSpaceRecoveryError: HarnessHomeSpaceError | undefined
+
+/**
+ * Opens the dedicated recovery window {@link harnessHomeSpaceErrorPage}
+ * renders, in place of the app's normal windows and IPC handlers, when
+ * {@link boot}'s own first Harness-home resolution fails because the
+ * resolved path — the default `<osHomeDir>/.papermachine`, or a previously
+ * chosen install location — contains an ASCII space. Unlike
+ * {@link showInstallLocationRecoveryWindow}, this window's only way forward
+ * is choosing a different location (`CHOOSE_INSTALL_LOCATION_URL`, handled
+ * in {@link guardWorkspaceNavigation}): there is no pointer to clear and
+ * fall back from when the failing path is already the default.
+ * @param error - the resolved space-containing path this launch could not use.
+ */
+async function showHarnessHomeSpaceRecoveryWindow(error: HarnessHomeSpaceError): Promise<void> {
+  harnessHomeSpaceRecoveryError = error
+  const created = createWindow('system')
+  window = created
+  created.once('closed', () => {
+    if (window === created) window = undefined
+    harnessHomeSpaceRecoveryError = undefined
+    app.quit()
+  })
+  await created.loadURL(harnessHomeSpaceErrorPage(error))
+  created.show()
+}
+
+/**
+ * `guardWorkspaceNavigation`'s `CHOOSE_INSTALL_LOCATION_URL` handler: run
+ * {@link runChooseInstallLocationFlow} against the open harness-home-space
+ * recovery window, using the OS home directory's own parent as the picker's
+ * starting point ({@link harnessHome} would only fail again — the same
+ * space error this recovery window exists for). A `'restarting'` outcome
+ * has already relaunched; a `'cancelled'` one leaves the current page
+ * showing as-is; only `'rejected'` needs this function to act, reloading
+ * the same page with the new reason so the original error is not lost.
+ * A no-op if the recovery window is not the active one (defensive: this
+ * branch cannot otherwise fire, since navigation only comes from the page
+ * this function itself governs).
+ */
+async function runChooseInstallLocationFromRecovery(): Promise<void> {
+  if (window === undefined || harnessHomeSpaceRecoveryError === undefined) return
+  const outcome = await runChooseInstallLocationFlow(window, dirname(app.getPath('home')))
+  if (outcome.status === 'rejected') {
+    await window.loadURL(harnessHomeSpaceErrorPage(harnessHomeSpaceRecoveryError, outcome.reason))
+  }
+}
+
 /**
  * Everything that depends on Electron's app-ready signal: telemetry setup
  * and the `app.launch` report, the application menu, IPC handlers, the
@@ -654,15 +793,16 @@ async function showInstallLocationRecoveryWindow(osHome: string, target: string,
  * `harnessHome()` call in this file: reading the install-location pointer
  * and resolving it happen directly here, not through `harnessHome()`, so a
  * failure in either step can route to {@link showInstallLocationRecoveryWindow}
- * instead of the general launch-error page. {@link classifyBootInstallLocationFailure}
- * decides which failures qualify — including a pointer file that cannot be
- * read or parsed at all, which has no valid target path to name but is
- * still recoverable the same way — and this function returns before
- * registering any IPC handler, menu, or quit listener when it does; there
- * is nothing running yet to tear down. Every other failure (no pointer in
- * effect, or a {@link HarnessHomeSpaceError} already routed to its own page
- * by `launchErrorPage`) rethrows unchanged, preserving this function's
- * pre-existing loud-failure behavior.
+ * or {@link showHarnessHomeSpaceRecoveryWindow} instead of the general
+ * launch-error page. {@link classifyBootInstallLocationFailure} decides
+ * which failures qualify for which window — including a pointer file that
+ * cannot be read or parsed at all, which has no valid target path to name
+ * but is still recoverable the same way as an unreachable one — and this
+ * function returns before registering any IPC handler, menu, or quit
+ * listener when it does; there is nothing running yet to tear down. Only a
+ * failure with no pointer in effect that is not a space error (the default
+ * location's own unrecoverable failure) rethrows unchanged, preserving this
+ * function's pre-existing loud-failure behavior.
  */
 async function boot(): Promise<void> {
   const osHome = app.getPath('home')
@@ -678,9 +818,13 @@ async function boot(): Promise<void> {
     }
     dshHome = await resolveHarnessHome(osHome, pointer)
   } catch (error) {
-    const target = classifyBootInstallLocationFailure(pointer, pointerUnreadable, error)
-    if (target === undefined) throw error
-    await showInstallLocationRecoveryWindow(osHome, target, error instanceof Error ? error.message : String(error))
+    const classification = classifyBootInstallLocationFailure(pointer, pointerUnreadable, error)
+    if (classification === undefined) throw error
+    if (classification.kind === 'space') {
+      await showHarnessHomeSpaceRecoveryWindow(classification.error)
+    } else {
+      await showInstallLocationRecoveryWindow(osHome, classification.target, error instanceof Error ? error.message : String(error))
+    }
     return
   }
   hostLogPath = join(dshHome, 'logs', 'host.log')
@@ -727,56 +871,7 @@ async function boot(): Promise<void> {
   ipcMain.handle('desktop:choose-install-location', async () => {
     if (window === undefined) throw new Error('desktop install location: no active window')
     if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const
-    const osHome = app.getPath('home')
-    const result = await dialog.showOpenDialog(window, {
-      properties: ['openDirectory', 'createDirectory'],
-      defaultPath: dirname(await harnessHome()),
-    })
-    const chosen = result.canceled ? undefined : result.filePaths[0]
-    if (chosen === undefined) return { status: 'cancelled' } as const
-    const target = resolveChosenInstallLocationPath(chosen, process.platform)
-    if (hasNonAsciiCharacters(target)) {
-      const warning = await dialog.showMessageBox(window, {
-        type: 'warning',
-        buttons: ['继续 · Continue', '选择其他位置 · Choose another location'],
-        defaultId: 1,
-        cancelId: 1,
-        message: '所选路径包含非 ASCII 字符 · The chosen path contains non-ASCII characters',
-        detail: '部分 conda 和 R 包可能无法在这样的路径下正常工作。 · Some conda and R packages may not work correctly under such a path.',
-      })
-      if (warning.response !== 0) return { status: 'cancelled' } as const
-    }
-    const confirmation = installLocationConfirmationDialog(target)
-    const confirmed = await dialog.showMessageBox(window, {
-      type: 'question',
-      buttons: [...confirmation.buttons],
-      defaultId: confirmation.defaultId,
-      cancelId: confirmation.cancelId,
-      message: confirmation.message,
-      detail: confirmation.detail,
-    })
-    if (!confirmsInstallLocation(confirmed.response)) return { status: 'cancelled' } as const
-    // Validating (and creating) the target directory only after every
-    // cancellable step above keeps a decline at any of them from leaving a
-    // newly created, empty directory behind — resolveHarnessHome's mkdir is
-    // the only filesystem side effect this handler has before the pointer
-    // write below.
-    try {
-      await resolveHarnessHome(osHome, target)
-    } catch (error) {
-      // HarnessHomeSpaceError's own message names "your user home directory",
-      // accurate for the default-location failure it was written for but
-      // wrong here: the offending path is the folder just chosen, not the OS
-      // home directory, so this rewrites the reason around the right noun
-      // rather than relaying the shared message unchanged.
-      const reason = error instanceof HarnessHomeSpaceError
-        ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
-        : (error instanceof Error ? error.message : String(error))
-      return { status: 'rejected', reason } as const
-    }
-    await writeInstallLocationPointer(osHome, target)
-    relaunchApplication()
-    return { status: 'restarting' } as const
+    return runChooseInstallLocationFlow(window, dirname(await harnessHome()))
   })
   ipcMain.handle('desktop:reset-install-location', async () => {
     if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const

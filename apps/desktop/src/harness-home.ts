@@ -39,9 +39,9 @@ function requireNoAsciiSpace(path: string): void {
  * it is the only tier a GUI user can set without one.
  *
  * The science-runtime R probe and kernel both refuse to run with an ASCII
- * space anywhere in their scratch `TMPDIR`
- * (`packages/science/science-runtime/src/environment.ts:402`,
- * `kernel-process.ts:340`), and on macOS Electron's `userData` path
+ * space anywhere in their scratch `TMPDIR` (science-runtime's
+ * `environment.ts` `prepareProbeAttempt`, `kernel-process.ts`
+ * `KernelProcess.start`), and on macOS Electron's `userData` path
  * (`~/Library/Application Support/<app name>`) contains one, which made
  * every R kernel fail unconditionally on desktop. Resolving under the home
  * directory directly avoids that path segment; `osHomeDir`, `customHomeDir`,

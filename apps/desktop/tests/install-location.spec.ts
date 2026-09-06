@@ -196,7 +196,7 @@ describe('isInstallLocationUnavailable', () => {
     expect(isInstallLocationUnavailable(undefined, new Error('ENOENT: no such file or directory'))).toBe(false)
   })
 
-  it('is false for a space-containing path, which has its own dedicated error page', () => {
+  it('is false for a space-containing path, which classifyBootInstallLocationFailure routes to the dedicated space-error recovery page instead', () => {
     expect(isInstallLocationUnavailable('/a user/.papermachine', new HarnessHomeSpaceError('/a user/.papermachine'))).toBe(false)
   })
 })
@@ -204,19 +204,25 @@ describe('isInstallLocationUnavailable', () => {
 describe('classifyBootInstallLocationFailure', () => {
   it('routes a pointer file that could not be read at all to the placeholder target', () => {
     expect(classifyBootInstallLocationFailure(undefined, true, new Error('desktop install location: /home/.papermachine-home is empty')))
-      .toBe(UNREADABLE_INSTALL_LOCATION_POINTER_TARGET)
+      .toEqual({ kind: 'unavailable-pointer', target: UNREADABLE_INSTALL_LOCATION_POINTER_TARGET })
   })
 
   it('routes a pointer whose target is unreachable to that target, same as isInstallLocationUnavailable', () => {
     expect(classifyBootInstallLocationFailure('/Volumes/Data/PaperMachine', false, new Error('ENOENT: no such file or directory')))
-      .toBe('/Volumes/Data/PaperMachine')
+      .toEqual({ kind: 'unavailable-pointer', target: '/Volumes/Data/PaperMachine' })
   })
 
   it('rethrows when no pointer is in effect and reading it did not fail', () => {
     expect(classifyBootInstallLocationFailure(undefined, false, new Error('ENOENT: no such file or directory'))).toBeUndefined()
   })
 
-  it('rethrows for a space-containing path, which has its own dedicated error page', () => {
-    expect(classifyBootInstallLocationFailure('/a user/.papermachine', false, new HarnessHomeSpaceError('/a user/.papermachine'))).toBeUndefined()
+  it('routes a space-containing default home (no pointer in effect) to the space-error recovery page', () => {
+    const error = new HarnessHomeSpaceError('/Users/John Smith/.papermachine')
+    expect(classifyBootInstallLocationFailure(undefined, false, error)).toEqual({ kind: 'space', error })
+  })
+
+  it('routes a space-containing pointer target to the space-error recovery page too, not the pointer-unavailable one', () => {
+    const error = new HarnessHomeSpaceError('/a user/.papermachine')
+    expect(classifyBootInstallLocationFailure('/a user/.papermachine', false, error)).toEqual({ kind: 'space', error })
   })
 })

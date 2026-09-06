@@ -34,6 +34,17 @@ describe('desktop environment declarations', () => {
     expect(parsed.healthChecks.map(check => check.language)).toEqual(['python', 'r'])
   })
 
+  it('accepts the shipped biology declaration as a superset of general', async () => {
+    const general = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')))
+    const biology = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'biology.json'), 'utf8')))
+    expect(biology.id).toBe('biology')
+    expect(biology.healthChecks.map(check => check.language)).toEqual(['python', 'r'])
+    const generalNames = general.packages.map(spec => spec.split('=')[0])
+    const biologyNames = biology.packages.map(spec => spec.split('=')[0])
+    expect(biologyNames).toEqual(expect.arrayContaining(generalNames))
+    expect(biology.sources.every(s => s.channels.length === 2)).toBe(true)
+  })
+
   it('ships three ordered mirror sources, tuna first, the official channel last', async () => {
     const parsed = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')))
     expect(parsed.sources.map(source => source.id)).toEqual(['tuna', 'ustc', 'official'])

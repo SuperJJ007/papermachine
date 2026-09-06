@@ -138,26 +138,43 @@ async function desktopHostConfig(): Promise<DesktopHostConfig> {
   return parseDesktopHostConfig(JSON.parse(await readFile(join(resourceRoot(), 'host.json'), 'utf8')))
 }
 
-/** The one environment this build ships; disciplines are added as further declarations. */
-const SHIPPED_ENVIRONMENT_ID = 'general'
+/**
+ * Every discipline declaration this build ships, in the order onboarding
+ * lists them. `general` stays first: it is the package set the custom editor
+ * starts from and the fallback source list when no applied declaration can
+ * be resolved (see {@link writeRuntimeOverlay}).
+ */
+const SHIPPED_ENVIRONMENT_IDS = ['general', 'biology'] as const
+type ShippedEnvironmentId = (typeof SHIPPED_ENVIRONMENT_IDS)[number]
+const STANDARD_ENVIRONMENT_ID: ShippedEnvironmentId = 'general'
 
-/** Read the shipped declaration; the standard package set onboarding offers and the custom editor starts from. */
-async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
+/** Read one shipped declaration by id. */
+async function readShippedDeclaration(id: ShippedEnvironmentId): Promise<EnvironmentDeclaration> {
   return parseEnvironmentDeclaration(
-    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${SHIPPED_ENVIRONMENT_ID}.json`), 'utf8')),
+    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${id}.json`), 'utf8')),
   )
+}
+
+/** Every shipped declaration, in onboarding order. */
+async function shippedDeclarations(): Promise<EnvironmentDeclaration[]> {
+  return Promise.all(SHIPPED_ENVIRONMENT_IDS.map(readShippedDeclaration))
+}
+
+/** The standard (`general`) declaration; the package set the custom editor starts from. */
+async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
+  return readShippedDeclaration(STANDARD_ENVIRONMENT_ID)
 }
 
 /**
  * Every declaration this launch can resolve an applied environment against:
- * the shipped one, plus the user's own package set once they have authored
+ * the shipped ones, plus the user's own package set once they have authored
  * one. The custom declaration must be included for `resolveDisciplineStatus`
  * to report `current` for a working custom install rather than
  * `unknown-discipline`.
  */
 async function declarations(dshHome: string): Promise<readonly EnvironmentDeclaration[]> {
   const custom = await readCustomDeclaration(desktopEnvironmentsRoot(dshHome))
-  return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
+  return [...(await shippedDeclarations()), ...(custom === undefined ? [] : [custom])]
 }
 
 /** The bundled micromamba executable for this machine, shared by provisioning and the Host's package installer. */
@@ -246,7 +263,9 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
         event: 'environment.installed',
         sourceId: published.sourceId,
         durationMs: Date.now() - startedAt,
-        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : 'general',
+        // Shipped discipline ids are a closed, build-time vocabulary and carry
+        // no user content; `custom` never reports the user's package list.
+        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : (declaration.id as 'general' | 'biology'),
       })
       await openWorkspace()
     } catch (error) {
@@ -266,22 +285,25 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
 }
 
 /**
- * Write the Host overlay for `binding`. The install channels are the shipped
- * declaration's sources reordered to start from the bound source, flattened
- * to their channel URLs, so a package install first tries the mirror the
- * environment itself came from; a bound source id the shipped declaration no
- * longer lists (a later build renamed its sources) keeps the declaration's
- * own order, the same rule `orderSourcesFrom` applies to provisioning's
- * preferred source. A custom package set shares the shipped sources
- * unchanged (`buildCustomDeclaration`), so the shipped declaration is the
- * one source list for both.
+ * Write the Host overlay for `binding`. The install channels are the
+ * applied discipline declaration's sources reordered to start from the bound source,
+ * flattened to their channel URLs, so a package install first tries the
+ * mirror the environment itself came from — and, for a discipline such as
+ * `biology` whose sources list a second channel (bioconda) beside
+ * conda-forge, so `install_science_packages` can reach that channel too.
+ * When no applied declaration resolves (a binding written by an older
+ * build, or a custom set), the standard declaration's sources are used, the
+ * previous behaviour.
  * @param dshHome - the Harness home the overlay is written into.
  * @param binding - the bound environment.
  * @returns the overlay path passed to the Host as `--patch`.
  */
 async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
   const overlay = join(dshHome, 'desktop-science.cordis.patch.yml')
-  const sources = orderSourcesFrom((await shippedDeclaration()).sources, binding.sourceId)
+  const applied = await provisioner(dshHome).applied()
+  const known = await declarations(dshHome)
+  const declaration = (applied === undefined ? undefined : known.find(item => item.id === applied.id)) ?? (await shippedDeclaration())
+  const sources = orderSourcesFrom(declaration.sources, binding.sourceId)
   await writeFile(overlay, renderDesktopRuntimeOverlay({
     ...(binding.pythonPrefix === undefined ? {} : { pythonPrefix: binding.pythonPrefix }),
     ...(binding.rPrefix === undefined ? {} : { rPrefix: binding.rPrefix }),

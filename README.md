@@ -86,9 +86,26 @@ On Windows, SmartScreen warns about an unrecognized publisher: choose **More inf
 </details>
 
 <details>
+<summary>The biology discipline environment (40 packages)</summary>
+
+Superset of the general science environment, adding computational biology and wet-lab assay analysis libraries.
+
+| Python 3.13 | R 4.5 |
+|---|---|
+| Biopython, scanpy, anndata | survival, survminer |
+| leidenalg, python-igraph, umap-learn | vegan, ape, phangorn |
+| lifelines, scikit-posthocs | pheatmap, ggpubr, rstatix, emmeans, drc |
+
+</details>
+
+<details>
 <summary>Skills and tools</summary>
 
-Three bundled skills, invoked by typing `/` in the composer: `scientific-visualization`, `statistical-analysis`, and `scientific-writing`. Your own skills in `~/.papermachine/skills` shadow bundled ones of the same name.
+Nine bundled skills, invoked by typing `/` in the composer:
+- Core science: `scientific-visualization`, `statistical-analysis`, `scientific-writing`
+- Biology: `bulk-rnaseq-analysis`, `single-cell-analysis`, `sequence-analysis`, `survival-analysis`, `bioassay-and-dose-response`, `ecology-and-diversity`
+
+Your own skills in `~/.papermachine/skills` shadow bundled ones of the same name.
 
 Five science tools the model can call: `run_python`, `run_r`, `get_science_state`, `annotate_artifact`, and `install_science_packages`. The model has read-only access to your workspace and no shell.
 
@@ -119,7 +136,7 @@ PaperMachine 0.1 is an early release. Known limitations:
 ## Roadmap
 
 - Windows analysis support: pipe-based kernel transport and explicit sandbox policy for the Windows backend.
-- Discipline environments, starting with the social sciences.
+- Discipline environments: biology environment and domain skills shipped; social sciences next.
 - A variable history view: shape changes of each dataset across cleaning steps.
 
 ## Feedback

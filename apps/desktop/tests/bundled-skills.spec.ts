@@ -35,13 +35,19 @@ async function listCandidates(provider: FileSystemSkillProvider): Promise<readon
 }
 
 describe('desktop bundled default Science skills', () => {
-  it('discovers exactly the three shipped skills, each named for its directory', async () => {
+  it('discovers exactly the shipped skills, each named for its directory', async () => {
     const candidates = await listCandidates(bundledSkillsProvider())
 
     expect(candidates.map(candidate => candidate.name).sort()).toEqual([
+      'bioassay-and-dose-response',
+      'bulk-rnaseq-analysis',
+      'ecology-and-diversity',
       'scientific-visualization',
       'scientific-writing',
+      'sequence-analysis',
+      'single-cell-analysis',
       'statistical-analysis',
+      'survival-analysis',
     ])
     for (const candidate of candidates) {
       expect(candidate.source).toBe('bundled')

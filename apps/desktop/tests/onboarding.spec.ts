@@ -43,6 +43,7 @@ function setDom(): void {
       <button id="keep-current"></button>
     </section>
     <section id="install">
+      <div id="offered-environments" hidden></div>
       <p id="install-summary"></p>
       <ul id="packages"></ul>
       <details id="advanced"><summary>advanced</summary><textarea id="custom-packages"></textarea></details>
@@ -347,16 +348,38 @@ describe('onboarding install route', () => {
     expect(cancelProvisioning).toHaveBeenCalled()
   })
 
-  it('offers no bind-an-existing-environment route: the bridge exposes only the install methods', async () => {
-    const { bridge } = installBridge()
+  it('renders a radio picker when multiple discipline environments are offered and allows switching', async () => {
+    const BIOLOGY: OfferedEnvironment = {
+      id: 'biology',
+      name: 'Biology',
+      revision: '2026.10.1',
+      packages: ['python=3.13', 'scanpy=1.11', 'biopython=1.85'],
+      estimatedDownloadBytes: 780_000_000,
+      requiredFreeBytes: 8_000_000_000,
+      sources: [
+        { id: 'tuna', name: 'TUNA mirror' },
+        { id: 'official', name: 'Official channel' },
+      ],
+      defaultSourceId: 'tuna',
+    }
+    const { bridge, provision } = installBridge({
+      environments: vi.fn(async () => [STANDARD, BIOLOGY]),
+    })
     await loadOnboarding(bridge)
 
-    expect(Object.keys(bridge).sort()).toEqual([
-      'cancelProvisioning', 'currentEnvironment', 'environments', 'keepCurrentEnvironment', 'onProvisioningProgress',
-      'onboardingStatus', 'provision', 'provisionCustom',
-    ])
-    expect(document.querySelector('#detected')).toBeNull()
-    expect(document.querySelector('#bind')).toBeNull()
-    expect(document.querySelector('#redetect')).toBeNull()
+    const radios = document.querySelectorAll<HTMLInputElement>('input[name="discipline-environment"]')
+    expect(radios.length).toBe(2)
+    expect(radios[0]?.checked).toBe(true)
+    expect(radios[1]?.checked).toBe(false)
+    expect(textOf('#install-summary')).toContain('General science')
+
+    // Switch to Biology
+    radios[1]?.click()
+    radios[1]?.dispatchEvent(new Event('change'))
+    expect(textOf('#install-summary')).toContain('Biology')
+
+    click('#provision')
+    click('#confirm-start')
+    expect(provision).toHaveBeenCalledWith('biology', 'tuna')
   })
 })

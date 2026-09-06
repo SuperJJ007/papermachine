@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "biology",
+  "revision": "2026.10.1",
+  "name": "生物学环境 · Biology",
+  "supportedPlatforms": ["darwin-arm64", "darwin-x64", "win32-x64"],
+  "sources": [
+    {
+      "id": "tuna",
+      "name": "清华 TUNA 镜像 · TUNA mirror",
+      "channels": [
+        "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge",
+        "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda"
+      ]
+    },
+    {
+      "id": "ustc",
+      "name": "中科大 USTC 镜像 · USTC mirror",
+      "channels": [
+        "https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge",
+        "https://mirrors.ustc.edu.cn/anaconda/cloud/bioconda"
+      ]
+    },
+    {
+      "id": "official",
+      "name": "官方源 · Official channels",
+      "channels": [
+        "https://conda.anaconda.org/conda-forge",
+        "https://conda.anaconda.org/bioconda"
+      ]
+    }
+  ],
+  "packages": [
+    "python=3.13", "numpy=2.3", "scipy=1.16", "pandas=2.3", "matplotlib=3.10", "seaborn=0.13",
+    "statsmodels=0.14", "scikit-learn=1.7", "pyarrow=21", "openpyxl=3.1", "pyreadstat=1.3", "pillow=11",
+    "biopython=1.85", "scanpy=1.11", "anndata=0.12", "leidenalg=0.10", "python-igraph=0.11",
+    "umap-learn=0.5", "lifelines=0.30", "scikit-posthocs=0.11",
+    "r-base=4.5", "r-tidyverse=2.0", "r-haven=2.5", "r-broom=1.0", "r-modelr=0.1", "r-lme4",
+    "r-survey=4.5", "r-srvyr=1.3", "r-data.table=1.18", "r-jsonlite=2.0",
+    "r-survival=3.8", "r-survminer=0.5", "r-vegan=2.6", "r-ape=5.8", "r-phangorn=2.12",
+    "r-pheatmap=1.0", "r-ggpubr=0.6", "r-rstatix=0.7", "r-emmeans=1.10", "r-drc=3.0"
+  ],
+  "estimatedDownloadBytes": 780000000,
+  "requiredFreeBytes": 8000000000,
+  "timeoutMs": 3600000,
+  "healthChecks": [
+    {
+      "language": "python",
+      "executable": "python",
+      "args": ["-c", "import numpy,scipy,pandas,matplotlib,seaborn,statsmodels,sklearn,pyarrow,openpyxl,pyreadstat,PIL,Bio,scanpy,anndata,leidenalg,igraph,umap,lifelines,scikit_posthocs"]
+    },
+    {
+      "language": "r",
+      "executable": "Rscript",
+      "args": ["-e", "library(tidyverse);library(haven);library(lme4);library(survey);library(data.table);library(survival);library(survminer);library(vegan);library(ape);library(phangorn);library(pheatmap);library(ggpubr);library(drc)"]
+    }
+  ]
+}

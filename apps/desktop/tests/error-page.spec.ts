@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { HarnessHomeSpaceError } from '../src/harness-home.ts'
-import { errorPage, errorSurface, harnessHomeSpaceErrorPage, launchErrorPage, RESTART_URL } from '../src/error-page.ts'
+import {
+  errorPage,
+  errorSurface,
+  harnessHomeSpaceErrorPage,
+  installLocationUnavailableErrorPage,
+  launchErrorPage,
+  QUIT_URL,
+  RESTART_URL,
+  USE_DEFAULT_INSTALL_LOCATION_URL,
+} from '../src/error-page.ts'
 
 /** Decode one of this module's `data:text/html` URLs back to its HTML source. */
 function decode(dataUrl: string): string {
@@ -11,22 +20,26 @@ function decode(dataUrl: string): string {
 
 describe('errorSurface', () => {
   it('renders the heading and detail, escaped', () => {
-    const html = decode(errorSurface('<Heading>', 'detail & "quoted"', false))
+    const html = decode(errorSurface('<Heading>', 'detail & "quoted"', []))
 
     expect(html).toContain('<h1>&lt;Heading&gt;</h1>')
     expect(html).toContain('<p>detail &amp; &quot;quoted&quot;</p>')
   })
 
-  it('includes the Restart Host link only when requested', () => {
-    expect(decode(errorSurface('h', 'd', true))).toContain(`href="${RESTART_URL}"`)
-    expect(decode(errorSurface('h', 'd', false))).not.toContain(RESTART_URL)
+  it('renders every given action link, in order, and none when empty', () => {
+    const html = decode(errorSurface('h', 'd', [
+      { label: 'First', href: 'dsh-desktop://first' },
+      { label: 'Second', href: 'dsh-desktop://second' },
+    ]))
+    expect(html.indexOf('dsh-desktop://first')).toBeLessThan(html.indexOf('dsh-desktop://second'))
+    expect(decode(errorSurface('h', 'd', []))).not.toContain('<a href')
   })
 
   it('names the Host log path when given one, escaped', () => {
-    const withPath = decode(errorSurface('h', 'd', true, '/Users/me/.papermachine/logs/host.log'))
+    const withPath = decode(errorSurface('h', 'd', [], '/Users/me/.papermachine/logs/host.log'))
     expect(withPath).toContain('/Users/me/.papermachine/logs/host.log')
 
-    const withoutPath = decode(errorSurface('h', 'd', true))
+    const withoutPath = decode(errorSurface('h', 'd', []))
     expect(withoutPath).not.toContain('Host log')
   })
 })
@@ -56,6 +69,25 @@ describe('harnessHomeSpaceErrorPage', () => {
 
     expect(html).toContain('PaperMachine cannot start')
     expect(html).toContain('/a user/.papermachine')
+    expect(html).not.toContain(RESTART_URL)
+    expect(html).not.toContain('Host log')
+  })
+})
+
+describe('installLocationUnavailableErrorPage', () => {
+  it('names the pointer file, the unreachable target, and the underlying reason', () => {
+    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/.papermachine', 'ENOENT: no such file or directory'))
+
+    expect(html).toContain('/Users/me/.papermachine-home')
+    expect(html).toContain('/Volumes/Data/.papermachine')
+    expect(html).toContain('ENOENT: no such file or directory')
+  })
+
+  it('offers "Use default location" and "Quit" instead of Restart Host, and no Host log path', () => {
+    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/.papermachine', 'boom'))
+
+    expect(html).toContain(`href="${USE_DEFAULT_INSTALL_LOCATION_URL}"`)
+    expect(html).toContain(`href="${QUIT_URL}"`)
     expect(html).not.toContain(RESTART_URL)
     expect(html).not.toContain('Host log')
   })

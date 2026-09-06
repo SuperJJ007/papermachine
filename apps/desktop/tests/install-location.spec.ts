@@ -2,10 +2,12 @@ import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { HarnessHomeSpaceError } from '../src/harness-home.ts'
 import {
   clearInstallLocationPointer,
   hasNonAsciiCharacters,
   installLocationPointerPath,
+  isInstallLocationUnavailable,
   readInstallLocationPointer,
   writeInstallLocationPointer,
 } from '../src/install-location.ts'
@@ -118,5 +120,23 @@ describe('hasNonAsciiCharacters', () => {
 
   it('is false for a path containing only spaces (a distinct, separately-checked risk)', () => {
     expect(hasNonAsciiCharacters('/Users/a user/.papermachine')).toBe(false)
+  })
+})
+
+describe('isInstallLocationUnavailable', () => {
+  it('is true when a pointer is set and its target does not exist', () => {
+    expect(isInstallLocationUnavailable('/Volumes/Data/.papermachine', new Error('ENOENT: no such file or directory, mkdir \'/Volumes/Data/.papermachine\''))).toBe(true)
+  })
+
+  it('is true when a pointer is set and its target is not writable', () => {
+    expect(isInstallLocationUnavailable('/Volumes/Data/.papermachine', new Error('EPERM: operation not permitted, mkdir \'/Volumes/Data/.papermachine\''))).toBe(true)
+  })
+
+  it('is false for the ordinary case: no pointer in effect', () => {
+    expect(isInstallLocationUnavailable(undefined, new Error('ENOENT: no such file or directory'))).toBe(false)
+  })
+
+  it('is false for a space-containing path, which has its own dedicated error page', () => {
+    expect(isInstallLocationUnavailable('/a user/.papermachine', new HarnessHomeSpaceError('/a user/.papermachine'))).toBe(false)
   })
 })

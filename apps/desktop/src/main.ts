@@ -15,7 +15,7 @@ import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
 import { resolveHarnessHome } from './harness-home.ts'
-import { clearInstallLocationPointer, hasNonAsciiCharacters, readInstallLocationPointer, writeInstallLocationPointer } from './install-location.ts'
+import { clearInstallLocationPointer, hasNonAsciiCharacters, installLocationPointerPath, isInstallLocationUnavailable, readInstallLocationPointer, writeInstallLocationPointer } from './install-location.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
@@ -25,7 +25,7 @@ import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts
 import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
 import { applicationMenuTemplate } from './application-menu.ts'
 import { resolveDisciplineStatus } from './discipline-status.ts'
-import { errorPage, launchErrorPage, RESTART_URL } from './error-page.ts'
+import { errorPage, installLocationUnavailableErrorPage, launchErrorPage, QUIT_URL, RESTART_URL, USE_DEFAULT_INSTALL_LOCATION_URL } from './error-page.ts'
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 // Milliseconds the Host supervisor allows for cooperative Cordis disposal
@@ -342,7 +342,9 @@ function hostCommand(dshHome: string, overlay: string, port: number, config: Des
 /**
  * Shared guard for the workspace window's `will-navigate` and `will-redirect`
  * events: both fire for a navigation the workspace document did not stay
- * within its own origin for, and both accept the restart link.
+ * within its own origin for, and both accept the restart and
+ * install-location-recovery links {@link errorPage} and
+ * {@link installLocationUnavailableErrorPage} render.
  * @param event - the navigation event to cancel when the target is disallowed.
  * @param target - the destination URL.
  */
@@ -350,6 +352,16 @@ function guardWorkspaceNavigation(event: Electron.Event, target: string): void {
   if (target === RESTART_URL) {
     event.preventDefault()
     void restartHost()
+    return
+  }
+  if (target === USE_DEFAULT_INSTALL_LOCATION_URL) {
+    event.preventDefault()
+    void clearInstallLocationPointer(app.getPath('home')).then(relaunchApplication)
+    return
+  }
+  if (target === QUIT_URL) {
+    event.preventDefault()
+    app.quit()
     return
   }
   if (activeOrigin === undefined || new URL(target).origin !== activeOrigin) event.preventDefault()
@@ -608,9 +620,37 @@ app.setName('PaperMachine')
  * Agent Note, 2026-08-23). A `telemetry.json` that fails to parse throws
  * here and propagates to this function's own caller, which logs and exits —
  * a loud build/launch error rather than a silently disabled feature.
+ *
+ * The very first Harness-home resolution is singled out from every other
+ * `harnessHome()` call in this file: {@link isInstallLocationUnavailable}
+ * decides whether its failure is an install-location pointer naming a
+ * target this launch cannot reach, in which case a dedicated recovery
+ * window opens and this function returns before registering any IPC
+ * handler, menu, or quit listener — there is nothing running yet to tear
+ * down. Every other failure (no pointer in effect, or a
+ * {@link HarnessHomeSpaceError} already routed to its own page by
+ * `launchErrorPage`) rethrows unchanged, preserving this function's
+ * pre-existing loud-failure behavior.
  */
 async function boot(): Promise<void> {
-  const dshHome = await harnessHome()
+  const osHome = app.getPath('home')
+  const pointer = await readInstallLocationPointer(osHome)
+  let dshHome: string
+  try {
+    dshHome = await resolveHarnessHome(osHome, pointer)
+  } catch (error) {
+    if (!isInstallLocationUnavailable(pointer, error)) throw error
+    const created = createWindow('system')
+    window = created
+    created.once('closed', () => { if (window === created) window = undefined; app.quit() })
+    await created.loadURL(installLocationUnavailableErrorPage(
+      installLocationPointerPath(osHome),
+      pointer,
+      error instanceof Error ? error.message : String(error),
+    ))
+    created.show()
+    return
+  }
   hostLogPath = join(dshHome, 'logs', 'host.log')
   telemetry = await createTelemetryReporter(dshHome)
   void telemetry.report({ event: 'app.launch' })

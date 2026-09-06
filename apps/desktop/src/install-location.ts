@@ -10,6 +10,7 @@
 import { readFile, rm } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
+import { HarnessHomeSpaceError } from './harness-home.ts'
 
 /** ASCII-only filename so the pointer stays readable even when the OS home path itself is otherwise problematic. */
 const POINTER_FILE_NAME = '.papermachine-home'
@@ -81,4 +82,23 @@ export function hasNonAsciiCharacters(path: string): boolean {
     if (path.charCodeAt(index) > 0x7f) return true
   }
   return false
+}
+
+/**
+ * Whether a Harness-home resolution failure is a pointer's target becoming
+ * unreachable (an unplugged drive, an unmounted network share, a permission
+ * change) — the case `main.ts`'s `boot()` routes to
+ * `installLocationUnavailableErrorPage` instead of the general launch-error
+ * page, because restarting the Host against the same pointer cannot help
+ * and the fix is to fall back to the default Harness home. `false` both
+ * when no pointer is in effect (the default location itself failed, which
+ * a pointer cannot rescue) and for {@link HarnessHomeSpaceError}, which
+ * already has its own dedicated error page.
+ * @param pointer - the install-location pointer this launch read, or
+ *   `undefined` when none is in effect.
+ * @param error - the error `resolveHarnessHome` threw for `pointer`.
+ * @returns whether `error` should route to the install-location recovery page.
+ */
+export function isInstallLocationUnavailable(pointer: string | undefined, error: unknown): pointer is string {
+  return pointer !== undefined && !(error instanceof HarnessHomeSpaceError)
 }

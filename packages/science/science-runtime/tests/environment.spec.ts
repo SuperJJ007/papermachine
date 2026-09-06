@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding } from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
@@ -1868,10 +1868,13 @@ describe('ScienceRuntime.installPackages', () => {
     id: string,
     utf8Probe: 'valid' | 'invalid' = 'valid',
     installChannels: string[] = DEFAULT_INSTALL_CHANNELS,
+    /** Config `minimumEnforcement` and the sandbox's own reported enforcement, for install confinement coverage. */
+    enforcement?: { readonly minimum: SandboxEnforcement; readonly reported: SandboxEnforcement },
   ): Promise<{
     readonly runtime: ScienceRuntime
     readonly session: ReturnType<typeof createScienceSession>
     readonly subprocess: ControlledSubprocess
+    readonly sandbox: DirectSandbox
     readonly micromambaPath: string
     readonly root: string
   }> {
@@ -1880,15 +1883,17 @@ describe('ScienceRuntime.installPackages', () => {
     const prefix = createFakePythonPrefix(root)
     const micromambaPath = makeMicromamba(root)
     const harness = await createControlledRuntimeHarness(
-      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels },
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined,
+      { micromambaPath, installChannels, ...(enforcement === undefined ? {} : { minimumEnforcement: enforcement.minimum }) },
     )
+    if (enforcement !== undefined) harness.sandbox.enforcement = enforcement.reported
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, id)
     harness.subprocess.utf8Probe = utf8Probe
     await harness.runtime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })
-    return { runtime: harness.runtime, session, subprocess: harness.subprocess, micromambaPath, root }
+    return { runtime: harness.runtime, session, subprocess: harness.subprocess, sandbox: harness.sandbox, micromambaPath, root }
   }
 
   /** Every install-attempt spawn (never a version/package-inventory/UTF-8 probe) in issue order. */
@@ -2198,6 +2203,46 @@ describe('ScienceRuntime.installPackages', () => {
       const result = await pending
       expect(result.status).toBe('cancelled')
       expect(installAttempts(subprocess)).toHaveLength(1)
+    })
+  })
+
+  // POSIX-only fixture: boundHarness binds through createFakePythonPrefix's
+  // `<prefix>/bin/python`, a shape win32's executable-layout lookup never
+  // finds, so the environment this install path requires never reaches
+  // 'applied' there.
+  describe.skipIf(process.platform === 'win32')('minimumEnforcement forwarding', () => {
+    // Regression coverage for installPackages' own `confineInstallArgv` call
+    // forwarding `this.minimumEnforcement` (as opposed to a hardcoded
+    // `'full'`): a win32 desktop deployment configures `minimumEnforcement:
+    // 'partial'` against a sandbox provider that only ever reports
+    // 'partial' (`windows-acl`); deleting the forwarding argument at the
+    // call site (or hardcoding `'full'` there again) makes this reject
+    // instead of succeed.
+    it('succeeds installing against a partial-reporting sandbox when the configured minimum is partial', async () => {
+      const { runtime, session } = await boundHarness(
+        'install-enforcement-partial', 'valid', DEFAULT_INSTALL_CHANNELS, { minimum: 'partial', reported: 'partial' },
+      )
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('success')
+    })
+
+    it('rejects with CONFINEMENT_UNAVAILABLE, naming both levels with no sandbox-configuration action, when the sandbox reports less than the configured minimum', async () => {
+      const { runtime, session, sandbox } = await boundHarness(
+        'install-enforcement-full', 'valid', DEFAULT_INSTALL_CHANNELS, { minimum: 'full', reported: 'full' },
+      )
+      // bindEnvironment's own probe confinement (boundHarness, above) also
+      // requires the configured minimum, so the sandbox is set to report
+      // less than it only once binding has already succeeded — isolating
+      // the assertion to install's own confinement site.
+      sandbox.enforcement = 'partial'
+      await expect(runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })).rejects.toMatchObject({
+        code: 'CONFINEMENT_UNAVAILABLE',
+        message: 'Science requires at least full sandbox enforcement; the sandbox reported partial',
+      })
     })
   })
 })

@@ -229,7 +229,7 @@ describe('confineInstallArgv', () => {
   it('confines under a workspace-write policy rooted at the prefix itself', async () => {
     const sandbox = await mountSandbox(DirectSandbox)
     const session = { id: SessionId('confine-test') }
-    const confined = confineInstallArgv(sandbox, session as never, '/opt/prefix', ['/opt/micromamba', 'install'])
+    const confined = confineInstallArgv(sandbox, session as never, '/opt/prefix', ['/opt/micromamba', 'install'], 'full')
     expect(confined.argv).toEqual(['/opt/micromamba', 'install'])
     expect(sandbox.policies).toEqual([{ mode: 'workspace-write', workspaceRoot: '/opt/prefix', sessionId: session.id }])
   })
@@ -242,7 +242,7 @@ describe('confineInstallArgv', () => {
     }
     const sandbox = await mountSandbox(UnavailableSandbox)
     const session = { id: SessionId('confine-test-2') }
-    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'])).toThrow(
+    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'full')).toThrow(
       expect.objectContaining({ code: 'CONFINEMENT_UNAVAILABLE' }),
     )
   })
@@ -255,14 +255,14 @@ describe('confineInstallArgv', () => {
     }
     const sandbox = await mountSandbox(BrokenSandbox)
     const session = { id: SessionId('confine-test-3') }
-    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'])).toThrow(/injected confinement failure/)
+    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'full')).toThrow(/injected confinement failure/)
   })
 
-  it('rejects less-than-full enforcement as CONFINEMENT_UNAVAILABLE', async () => {
+  it('rejects a partial-reporting sandbox as CONFINEMENT_UNAVAILABLE when the configured minimum is full', async () => {
     const sandbox = await mountSandbox(DirectSandbox)
     sandbox.enforcement = 'partial'
     const session = { id: SessionId('confine-test-4') }
-    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'])).toThrow(
+    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'full')).toThrow(
       expect.objectContaining({ code: 'CONFINEMENT_UNAVAILABLE' }),
     )
   })
@@ -272,7 +272,32 @@ describe('confineInstallArgv', () => {
     // itself as workspaceRoot must succeed rather than throw.
     const sandbox = await mountSandbox(DirectSandbox)
     const session = { id: SessionId('confine-test-5') }
-    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'])).not.toThrow()
+    expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'full')).not.toThrow()
+  })
+
+  describe('minimumEnforcement forwarding', () => {
+    it('accepts a partial-reporting sandbox when the configured minimum is partial (win32 desktop deployments confine installs at partial)', async () => {
+      const sandbox = await mountSandbox(DirectSandbox)
+      sandbox.enforcement = 'partial'
+      const session = { id: SessionId('confine-test-6') }
+      expect(() => confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'partial')).not.toThrow()
+    })
+
+    it('rejects a partial-reporting sandbox with the same message shape confineWithEnforcement uses elsewhere, naming both levels and no sandbox-configuration action', async () => {
+      const sandbox = await mountSandbox(DirectSandbox)
+      sandbox.enforcement = 'partial'
+      const session = { id: SessionId('confine-test-7') }
+      try {
+        confineInstallArgv(sandbox, session as never, '/opt/prefix', ['x'], 'full')
+        expect.unreachable()
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'CONFINEMENT_UNAVAILABLE',
+          message: 'Science requires at least full sandbox enforcement; the sandbox reported partial',
+        })
+        expect((error as Error).message).not.toMatch(/sandbox settings|configure.*sandbox/i)
+      }
+    })
   })
 })
 

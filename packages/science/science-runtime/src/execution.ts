@@ -214,11 +214,15 @@ export function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): voi
  * minimum: `'full'` accepts only a `'full'` report; `'partial'` accepts
  * either `'full'` or `'partial'`. The sandbox provider itself never sees
  * this comparison — it always reports the level it actually achieved.
+ * Shared by every confinement site in this Runtime, including `install.ts`'s
+ * `confineInstallArgv`, which cannot call {@link confineWithEnforcement}
+ * itself (that helper also asserts the interpreter's prefix stays outside
+ * the writable root, the opposite of what an install needs).
  * @param reported - enforcement level `SandboxProvider.confine` reported.
  * @param minimum - lowest level Science is configured to accept.
  * @returns whether `reported` meets or exceeds `minimum`.
  */
-function meetsMinimumEnforcement(reported: SandboxEnforcement, minimum: SandboxEnforcement): boolean {
+export function meetsMinimumEnforcement(reported: SandboxEnforcement, minimum: SandboxEnforcement): boolean {
   return minimum === 'partial' || reported === 'full'
 }
 

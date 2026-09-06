@@ -10,10 +10,10 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
-import type { ConfinedArgv, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessOutputRead, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment } from './execution.ts'
+import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, meetsMinimumEnforcement } from './execution.ts'
 import type { OperationControl } from './lifecycle.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type { InstallScienceEnvironmentPackagesStatus, ScienceRunOutput } from './types.ts'
@@ -199,32 +199,43 @@ function installConfinementPolicy(session: Session, canonicalPrefix: string): Sa
  * environment it observes or runs against. An install's entire purpose is
  * writing into that same prefix, so this never calls `assertPrefixReadOnly`
  * — the one deliberate asymmetry against that shared helper. Every other
- * safety property still holds: full enforcement is required, and an
- * unavailable sandbox maps to the same `CONFINEMENT_UNAVAILABLE` code.
+ * safety property still holds: the same {@link meetsMinimumEnforcement}
+ * comparison every other confinement site in this Runtime uses gates the
+ * result, and an unavailable sandbox maps to the same
+ * `CONFINEMENT_UNAVAILABLE` code.
  * @param sandbox - sandbox provider performing the confinement.
  * @param session - exact live Session that owns the confinement policy.
  * @param canonicalPrefix - canonicalized target Conda prefix.
  * @param argv - direct, unconfined argv (see {@link installArgv}).
+ * @param minimumEnforcement - lowest enforcement level Science is configured
+ *   to accept (`science-runtime`'s configured `minimumEnforcement`,
+ *   forwarded the same way `confineInterpreterArgv` in `execution.ts`
+ *   receives it).
  * @returns the confined argv.
- * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the sandbox is unavailable or reports less than full enforcement.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
+ *   sandbox is unavailable or reports less than `minimumEnforcement`.
  */
 export function confineInstallArgv(
   sandbox: SandboxProvider,
   session: Session,
   canonicalPrefix: string,
   argv: readonly string[],
+  minimumEnforcement: SandboxEnforcement,
 ): ConfinedArgv {
   let confined: ConfinedArgv
   try {
     confined = sandbox.confine(argv, installConfinementPolicy(session, canonicalPrefix))
   } catch (error) {
     if (error instanceof SandboxUnavailableError) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available full sandbox', { cause: error })
+      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available sandbox', { cause: error })
     }
     throw error
   }
-  if (confined.enforcement !== 'full') {
-    throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires full sandbox enforcement')
+  if (!meetsMinimumEnforcement(confined.enforcement, minimumEnforcement)) {
+    throw new ScienceRuntimeError(
+      'CONFINEMENT_UNAVAILABLE',
+      `Science requires at least ${minimumEnforcement} sandbox enforcement; the sandbox reported ${confined.enforcement}`,
+    )
   }
   return confined
 }

@@ -845,7 +845,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       let outcome: InstallOutcome | undefined
       for (const [index, channelUrl] of installer.channels.entries()) {
         const argv = installArgv(executable, binding.canonicalPrefix, request.packages, channelUrl)
-        const confined = confineInstallArgv(this.ctx.sandbox, request.session, binding.canonicalPrefix, argv)
+        const confined = confineInstallArgv(this.ctx.sandbox, request.session, binding.canonicalPrefix, argv, this.minimumEnforcement)
         const scratch = planInstallScratch(binding.canonicalPrefix)
         await createInstallScratch(scratch)
         try {

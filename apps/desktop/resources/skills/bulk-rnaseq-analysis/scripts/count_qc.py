@@ -94,16 +94,26 @@ def count_qc(
     x = lc.loc[top].T
     x = x - x.mean(axis=0)
     u, s, vt = np.linalg.svd(x.values, full_matrices=False)
-    var_exp = s ** 2 / (s ** 2).sum()
-    pcs = pd.DataFrame(u[:, :4] * s[:4], index=x.index, columns=[f"PC{i+1}" for i in range(4)])
+    var_sum = (s ** 2).sum()
+    var_exp = s ** 2 / var_sum if var_sum > 0 else np.zeros_like(s)
+    n_pcs = min(4, len(s))
+    pc_cols = [f"PC{i+1}" for i in range(n_pcs)]
+    pcs = pd.DataFrame(u[:, :n_pcs] * s[:n_pcs], index=x.index, columns=pc_cols)
     pcs = pcs.join(meta)
 
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
-    sns.scatterplot(data=pcs, x="PC1", y="PC2", hue=color, style=shape, s=110, ax=ax, edgecolor="black")
-    for name, row in pcs.iterrows():
-        ax.annotate(str(name), (row["PC1"], row["PC2"]), fontsize=7, xytext=(4, 4), textcoords="offset points")
-    ax.set_xlabel(f"PC1 ({var_exp[0]*100:.1f}%)")
-    ax.set_ylabel(f"PC2 ({var_exp[1]*100:.1f}%)")
+    if n_pcs >= 2:
+        sns.scatterplot(data=pcs, x="PC1", y="PC2", hue=color, style=shape, s=110, ax=ax, edgecolor="black")
+        for name, row in pcs.iterrows():
+            ax.annotate(str(name), (row["PC1"], row["PC2"]), fontsize=7, xytext=(4, 4), textcoords="offset points")
+        ax.set_xlabel(f"PC1 ({var_exp[0]*100:.1f}%)")
+        ax.set_ylabel(f"PC2 ({var_exp[1]*100:.1f}%)")
+    elif n_pcs == 1:
+        sns.scatterplot(data=pcs, x="PC1", y=np.zeros(len(pcs)), hue=color, style=shape, s=110, ax=ax, edgecolor="black")
+        for name, row in pcs.iterrows():
+            ax.annotate(str(name), (row["PC1"], 0), fontsize=7, xytext=(4, 4), textcoords="offset points")
+        ax.set_xlabel(f"PC1 ({var_exp[0]*100:.1f}%)" if len(var_exp) > 0 else "PC1")
+        ax.set_ylabel("")
     ax.set_title(f"PCA on top {len(top)} variable genes (log2 CPM)")
     ax.axhline(0, lw=0.5, color="grey"); ax.axvline(0, lw=0.5, color="grey")
     fig.tight_layout()
@@ -113,4 +123,4 @@ def count_qc(
     figures.append(p)
 
     return {"figures": figures, "pca": pcs, "library_size": lib, "zero_fraction": zero_frac,
-            "variance_explained": pd.Series(var_exp[:4], index=pcs.columns[:4])}
+            "variance_explained": pd.Series(var_exp[:n_pcs], index=pcs.columns[:n_pcs])}

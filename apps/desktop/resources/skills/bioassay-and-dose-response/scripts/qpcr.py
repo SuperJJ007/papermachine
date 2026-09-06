@@ -128,7 +128,9 @@ def fit_logistic(t, od, blank: float = 0.0) -> dict:
     slope = np.gradient(fit_y, grid); k = int(np.argmax(slope))
     lag = grid[k] - (fit_y[k] - N0) / slope[k] if slope[k] > 0 else np.nan
     yhat = logistic(t, *popt); r2 = 1 - np.sum((y - yhat) ** 2) / np.sum((y - y.mean()) ** 2)
+    trapz_fn = getattr(np, "trapezoid", getattr(np, "trapz", None))
+    auc = float(trapz_fn(y, t)) if trapz_fn is not None else np.nan
     return dict(K=K, N0=N0, r=r, se=dict(K=perr[0], N0=perr[1], r=perr[2]),
                 doubling_time_model=np.log(2) / r, doubling_time_window=np.log(2) / mu_max if mu_max else np.nan,
                 window=(best[2], best[3], best[0]) if best else None, lag=max(lag, 0) if np.isfinite(lag) else np.nan,
-                auc=np.trapz(y, t), r2=r2, predict=lambda tt: logistic(np.asarray(tt, float), *popt))
+                auc=auc, r2=r2, predict=lambda tt: logistic(np.asarray(tt, float), *popt))

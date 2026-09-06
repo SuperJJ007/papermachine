@@ -69,7 +69,7 @@ PaperMachine 不使用你机器上已有的 conda 环境,而是自带一份 micr
 xattr -d com.apple.quarantine /Applications/PaperMachine.app
 ```
 
-Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再点**仍要运行**。安装包是 per-user 安装,不需要管理员权限。
+Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再点**仍要运行**。安装包是 per-user 安装,不需要管理员权限。不要求机器上预装 Visual C++ 运行库。
 
 ## 里面有什么
 

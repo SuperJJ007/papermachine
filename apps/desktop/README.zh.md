@@ -20,7 +20,7 @@ development 需要当前机器对应的 pinned micromamba asset：
 pnpm --filter @deepseek-ai/dsh-desktop fetch:micromamba darwin-arm64
 ```
 
-Intel Mac 使用 `darwin-x64`，Windows 使用 `win32-x64`；`DESKTOP_PLATFORMS`（`src/environment-declaration.ts`）是这份清单，脚本拒绝清单之外的 target。只有下载内容的 SHA-256 digest 与 `resources/micromamba.json` 一致时才会被接纳；Windows target 落盘为 `micromamba.exe`。
+Intel Mac 使用 `darwin-x64`，Windows 使用 `win32-x64`；`DESKTOP_PLATFORMS`（`src/environment-declaration.ts`）是这份清单，脚本拒绝清单之外的 target。只有下载内容的 SHA-256 digest 与 `resources/micromamba.json` 一致时才会被接纳；Windows target 落盘为 `micromamba.exe`。`fetch:micromamba win32-x64` 还会额外下载 conda-forge 的 `vc14_runtime` 包，把它的 11 个根目录 DLL 落到 `micromamba.exe` 旁边：随包的 `micromamba.exe` 动态链接 MSVC C/C++ 运行库，裸机的 `System32` 里没有这些 DLL，此前也没有任何 Windows DLL 搜索顺序会查到的地方带着它们——见[随包本地 CRT 的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.zh.md)。
 
 carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，而 active Host origin 之外的其他 navigation 一律拒绝。Host 意外退出时 Harness home 保持不变，页面替换为 restart 操作。
 
@@ -62,7 +62,7 @@ Onboarding 的安装位置这一行，让用户在安装之前把 Harness home �
 
 `package:mac` 与 `package:win` 各自构建仓库、下载本平台 target 的 pinned micromamba 资产、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成本平台的安装包——macOS 上是 arm64 与 x64 DMG，Windows 上是 x64 NSIS 安装包。两者都只能在各自平台上运行，且都通过 `pnpm -w run build --profile official` 选择官方 client profile，而不是用前置环境变量赋值——Windows 上 pnpm 运行脚本所用的 shell 不接受后者。两者都不发布：`--publish never` 阻止 Electron Builder 读取 `repository` 字段并索要 GitHub token，release 由 workflow 自己创建。随后 `scripts/write-update-metadata.ts` 记录该次运行所出安装包的名称、架构、大小与 SHA-256，并拒绝产出不足本平台完整集合的运行。
 
-Windows 安装包是 per-user 安装（`%LOCALAPPDATA%`，不需要提权），两个平台的安装包都未做代码签名。`.github/workflows/desktop-release.yml` 构建两个平台并把产物收进同一个 draft GitHub release；draft 不创建 tag，在有人发布它之前对仓库写者之外不可见。
+Windows 安装包是 per-user 安装（`%LOCALAPPDATA%`，不需要提权），两个平台的安装包都未做代码签名。Windows 安装包的 `resources/bin/win32-x64/` 同时带着 `fetch:micromamba win32-x64` 落在那里的 MSVC C/C++ 运行库 DLL，随包本地、与 `micromamba.exe` 同目录：一个 per-user、不提权的安装器无法要求或运行裸机上缺失的那次机器级 Visual C++ 可再发行组件安装（见[随包本地 CRT 的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.zh.md)）。`.github/workflows/desktop-release.yml` 构建两个平台并把产物收进同一个 draft GitHub release；draft 不创建 tag，在有人发布它之前对仓库写者之外不可见。
 
 生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 `~/.papermachine` 下，既在 application payload 之外,也在 Electron `userData` 之外。
 

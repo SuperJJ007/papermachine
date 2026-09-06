@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.md
+2026-09-07-win32-micromamba-app-local-crt.md: 1e4c086357ebc0ac41ebeff32c67bfedb1f0b15e
+2026-09-07-win32-micromamba-app-local-crt.zh.md: 76a96381e55d198c2de60bea6cc0944f4ebc2325

@@ -22,7 +22,7 @@ Status: implemented
 
 - 透传一份 `WIN32_AMBIENT_ENVIRONMENT_KEYS` 清单（`SystemRoot`、`windir`、`SystemDrive`、`ComSpec`、`PATHEXT`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA`、`NUMBER_OF_PROCESSORS`、`PROCESSOR_ARCHITECTURE`)——这是 science-runtime `kernel-process.ts` 里同一份清单的复制，而不是 import：本应用不能依赖 science-runtime，后者作为独立的 Host 进程被打包进产物，而不是本 carrier 链接的一个库。复制就有两份清单悄悄走散的风险，因此 `provisioning.spec.ts` 直接读取 `kernel-process.ts` 的源码文本（不做跨包 import）并断言两份清单一致，沿用的是 `interpreter-presence.ts` 的布局表对照 science-runtime `environment.ts` 时已经确立的同一模式（这一先例见 min-sandbox-enforcement 与 package-cache 两篇 Note）。
 - 把 `TEMP`/`TMP` 指向 `provisioningScratchTempDir(root)`（`<root>/tmp`，位于 provisioner root 之下），而不是转发 Host 自己的 ambient temp 目录。Python 的 `tempfile` 与 R 的 `tempdir()` 在 win32 上都不查 `TMPDIR`，所以 `TEMP`/`TMP` 不设置时会退到 `GetTempPath()`，而它在 `TEMP`/`TMP`/`USERPROFILE` 全部缺失时会解析到 Windows 目录（普通用户不可写）——这正是本应用自己此前那份白名单造成的状态。provisioner root 本身已经排除了 ASCII 空格（它派生自的 Harness home 会在 `harness-home.ts` 里拒绝空格），所以这个 scratch 目录不需要再单独检查就继承了这条保证。
-- 把 `dirname(process.execPath)`（Electron 可执行文件自己所在目录，其中带有随应用打包的 `vcruntime140.dll`/`msvcp140.dll`）前置到子进程的 `PATH`，这样单独 spawn 的 `micromamba.exe` 就能通过 Windows 自己的搜索顺序找到这些 DLL，即便是在一台没装 Visual C++ Runtime 的裸机上。
+- 把 `dirname(process.execPath)`（Electron 可执行文件自己所在目录，其中带有随应用打包的 `vcruntime140.dll`/`msvcp140.dll`）前置到子进程的 `PATH`，这样单独 spawn 的 `micromamba.exe` 就能通过 Windows 自己的搜索顺序找到这些 DLL，即便是在一台没装 Visual C++ Runtime 的裸机上。**已在[随包本地 CRT 的 Agent Note](2026-09-07-win32-micromamba-app-local-crt.zh.md)中订正：真实 Windows Server 裸机证明这个前提是错的（Electron 自己所在目录并不带这些 DLL——Chromium 静态链接了自己的 CRT），这个 `PATH` 前置已被整段移除。**
 
 `SECRET_ENV_PATTERN` 的凭据剥离先于以上逻辑运行，不受影响——上面列出的固定 win32 键都不是凭据形状。
 

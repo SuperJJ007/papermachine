@@ -69,7 +69,7 @@ Neither installer is code-signed. On macOS, if the system reports the app is dam
 xattr -d com.apple.quarantine /Applications/PaperMachine.app
 ```
 
-On Windows, SmartScreen warns about an unrecognized publisher: choose **More info**, then **Run anyway**. The installer is per-user and asks for no administrator rights.
+On Windows, SmartScreen warns about an unrecognized publisher: choose **More info**, then **Run anyway**. The installer is per-user and asks for no administrator rights. It does not require a Visual C++ Runtime already installed on the machine.
 
 ## What is inside
 

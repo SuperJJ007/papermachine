@@ -43,7 +43,7 @@ import type { Config, ConfiguredProfile, ResolvedConfig } from './config.ts'
 import { collectProjectArtifactEvents } from './reconcile-trigger.ts'
 import type { CollectProjectArtifactEventsCursor } from './reconcile-trigger.ts'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { assertProfileRunConfinement, observeProfile, sameObservation } from './environment.ts'
+import { assertProfileRunConfinement, observeProfile, prefixHistoryDigest, sameObservation } from './environment.ts'
 import type { ObservedProfile } from './environment.ts'
 import { DESCENDANT_GRACE_MS, kernelRunTerminal, planRun, readCaptureTail, selectBinding, startCandidate } from './execution.ts'
 import type { KernelRunFailureCode } from './execution.ts'
@@ -167,6 +167,28 @@ function sameInstalledBinding(
   current: ScienceInterpreterBinding | undefined,
 ): boolean {
   return sameObservation(observed, current) && observed?.packagesSha256 === current?.packagesSha256
+}
+
+/**
+ * Whether the shared prefix backing any of an applied environment's
+ * available bindings no longer matches its recorded `condaHistorySha256` —
+ * `startRun`'s cheap, non-probing per-run check (a single small file read
+ * per declared language, no probe scratch, no confined subprocess) for the
+ * cross-session drift issue #15 describes: another session's
+ * `installPackages` call writes the same shared prefix this session bound,
+ * and this session's own binding never hears about it on its own. A digest
+ * that could not be read ({@link prefixHistoryDigest} returning `undefined`)
+ * counts as drift, never as a match — an unreadable history is exactly the
+ * ambiguous state re-observation, not this cheap check, must resolve.
+ * @param environment - the session's current applied durable environment revision.
+ * @returns whether `startRun` must re-observe before proceeding.
+ */
+async function prefixDrifted(environment: ScienceEnvironmentBinding): Promise<boolean> {
+  for (const binding of [environment.python, environment.r]) {
+    if (binding?.capability !== 'available') continue
+    if (await prefixHistoryDigest(binding.canonicalPrefix) !== binding.condaHistorySha256) return true
+  }
+  return false
 }
 
 /** Where `annotate_artifact`'s not-found diagnostic located a retained, uncaptured same-named PNG, if anywhere. */
@@ -887,50 +909,99 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       if (outcome.status !== 'success') {
         return { status: outcome.status, stdout: outcome.stdout, stderr: outcome.stderr }
       }
-      this.assertPrepublication(request.session, lease.control)
-      const sessionScratch = await planSessionScratch(this.dshHome, request.session)
-      const observed = await observeProfile({
-        subprocess: this.ctx.subprocess,
-        sandbox: this.ctx.sandbox,
-        sessionScratch,
-        sessionId: request.session.id,
-        signal: lease.control.signal,
-        packagesMaxEntries: this.packagesMaxEntries,
-        packagesMaxBytes: this.packagesMaxBytes,
-        minimumEnforcement: this.minimumEnforcement,
-      }, profile)
-      this.assertPrepublication(request.session, lease.control)
-      const current = this.assertSession(request.session).environment
-      // Unreachable: the durable Science fold only ever appends an
-      // environment revision, never clears one, so a session already
-      // holding an applied revision above can never replay back to
-      // `environment === null`. Narrows the type the projection's `.environment`
-      // field carries rather than asserting past a real defensive gap.
-      /* v8 ignore next 3 */
-      if (current === null) {
-        throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during package install')
-      }
-      // A redundant install (every requested spec was already on disk, or a
-      // prior attempt reporting 'timed-out' had in fact already finished
-      // writing the prefix — see runMicromambaInstall's own reordered
-      // classification) re-observes the identical binding for both
-      // languages. Appending a revision unconditionally here would advance
-      // `current.revision` past what changed, and the next `startRun` for
-      // either language would read that revision mismatch as a real rebind
-      // and restart an otherwise-unaffected kernel, discarding its in-memory
-      // variables for no environment change.
-      if (sameInstalledBinding(observed.python?.binding, current.python) && sameInstalledBinding(observed.r?.binding, current.r)) {
-        return { status: 'success', environment: current, environmentChanged: false, stdout: outcome.stdout, stderr: outcome.stderr }
-      }
-      const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
-      this.assertPrepublication(request.session, lease.control)
-      request.session.append('science/environment-bound', { version: 1, environment: fresh })
-      return { status: 'success', environment: fresh, environmentChanged: true, stdout: outcome.stdout, stderr: outcome.stderr }
+      const rebind = await this.reobserveAndMaybeRebind(request.session, profile, lease.control, 'install')
+      return { status: 'success', environment: rebind.environment, environmentChanged: rebind.changed, stdout: outcome.stdout, stderr: outcome.stderr }
     } catch (error) {
       throw this.prepublicationError(lease.control, error)
     } finally {
       this.leases.release(lease)
     }
+  }
+
+  /**
+   * Re-observe the whole profile and, when it differs from the session's
+   * current binding, append a fresh whole-value `science/environment-bound`
+   * revision — the operation `installPackages` performs unconditionally
+   * after every successful install (`reason: 'install'`), and `startRun`
+   * performs conditionally when its cheap pre-run prefix-digest check finds
+   * the applied binding no longer matches the shared prefix on disk
+   * (`reason: 'drift'`).
+   *
+   * A redundant install (every requested spec was already on disk, or a
+   * prior attempt reporting 'timed-out' had in fact already finished
+   * writing the prefix — see `runMicromambaInstall`'s own reordered
+   * classification) re-observes the identical binding for both languages.
+   * Appending a revision unconditionally here would advance
+   * `current.revision` past what changed, and the next `startRun` for
+   * either language would read that revision mismatch as a real rebind and
+   * restart an otherwise-unaffected kernel, discarding its in-memory
+   * variables for no environment change.
+   *
+   * `reason: 'drift'` additionally never appends an `invalid` re-observation:
+   * `bindEnvironment` refuses to rebind a session once it has run (see its
+   * own post-first-run guard), so one `invalid` revision appended here would
+   * leave the session permanently unable to run either language again —
+   * `assertIdleAppliedEnvironment` would reject every later call and no
+   * caller-reachable operation could ever un-stick it. `startRun` instead
+   * rejects only this call with `ENVIRONMENT_NOT_READY`, leaving the
+   * session's last-known-good binding untouched for a later, hopefully
+   * successful, run. `reason: 'install'` keeps appending an `invalid`
+   * revision when re-observation finds one, matching this Runtime's
+   * existing `installPackages` behavior: an install the caller just
+   * explicitly requested is a deliberate action to report the truth about,
+   * not an incidental background check to fail safe around.
+   * @param session - exact live Session whose environment may be re-bound.
+   * @param profile - the session's currently applied environment's configured profile (both languages' prefixes).
+   * @param control - this call's fused cancellation/timeout signal.
+   * @param reason - see above.
+   * @returns the environment revision to use for the remainder of this
+   *   operation — freshly appended, or unchanged when nothing differed —
+   *   and whether this call appended a fresh revision.
+   * @throws {@link ScienceRuntimeError} (`ENVIRONMENT_NOT_READY`) for
+   *   `reason: 'drift'` when the re-observed profile is not fully `applied`.
+   */
+  private async reobserveAndMaybeRebind(
+    session: Session,
+    profile: ConfiguredProfile,
+    control: OperationControl,
+    reason: 'install' | 'drift',
+  ): Promise<{ readonly environment: ScienceEnvironmentBinding; readonly changed: boolean }> {
+    this.assertPrepublication(session, control)
+    const sessionScratch = await planSessionScratch(this.dshHome, session)
+    const observed = await observeProfile({
+      subprocess: this.ctx.subprocess,
+      sandbox: this.ctx.sandbox,
+      sessionScratch,
+      sessionId: session.id,
+      signal: control.signal,
+      packagesMaxEntries: this.packagesMaxEntries,
+      packagesMaxBytes: this.packagesMaxBytes,
+      minimumEnforcement: this.minimumEnforcement,
+    }, profile)
+    this.assertPrepublication(session, control)
+    const current = this.assertSession(session).environment
+    // Unreachable: the durable Science fold only ever appends an
+    // environment revision, never clears one, so a session already
+    // holding an applied revision above can never replay back to
+    // `environment === null`. Narrows the type the projection's `.environment`
+    // field carries rather than asserting past a real defensive gap.
+    /* v8 ignore next 3 */
+    if (current === null) {
+      throw new ScienceRuntimeError('INFRASTRUCTURE_FAILURE', 'Science environment was unbound during re-observation')
+    }
+    if (sameInstalledBinding(observed.python?.binding, current.python) && sameInstalledBinding(observed.r?.binding, current.r)) {
+      return { environment: current, changed: false }
+    }
+    const fresh = environmentBinding(current.revision + 1, current.profileId, observed)
+    if (reason === 'drift' && fresh.status !== 'applied') {
+      throw new ScienceRuntimeError(
+        'ENVIRONMENT_NOT_READY',
+        'the shared Science environment changed during this run and could not be re-bound; the environment last successfully bound to this session remains in effect',
+      )
+    }
+    this.assertPrepublication(session, control)
+    session.append('science/environment-bound', { version: 1, environment: fresh })
+    return { environment: fresh, changed: true }
   }
 
   /**
@@ -954,8 +1025,22 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     let scratchPreparation: Awaited<ReturnType<typeof materializeSessionScratch>> | undefined
     let runScratch: Awaited<ReturnType<typeof createRunScratch>> | undefined
     try {
-      const { projection, environment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
-      const profile = this.profile(String(environment.profileId))
+      const { projection, environment: appliedEnvironment } = this.assertIdleAppliedEnvironment(request.session, lease.control)
+      const profile = this.profile(String(appliedEnvironment.profileId))
+      let environment = appliedEnvironment
+      // Cheap, non-probing per-run drift check (#15): another session's
+      // `installPackages` call may have mutated this shared prefix without
+      // ever touching this session's own binding (`installPackages` only
+      // appends to the session that called it). A digest mismatch re-runs
+      // the same re-observe/append path `installPackages` uses, so a
+      // drifted prefix restarts this run's kernel (`environment-rebound`)
+      // instead of silently executing against packages the durable
+      // provenance never named.
+      if (await prefixDrifted(environment)) {
+        scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
+        environment = (await this.reobserveAndMaybeRebind(request.session, profile, lease.control, 'drift')).environment
+        this.assertPrepublication(request.session, lease.control)
+      }
       const plan = planRun(environment, request.language, request.code)
       const projectId = await this.sessionProject(request.session)
       const preparedArtifacts = await prepareRunArtifacts(
@@ -970,7 +1055,9 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
         lease.control.signal,
       )
       this.assertPrepublication(request.session, lease.control)
-      scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
+      if (scratchPreparation === undefined) {
+        scratchPreparation = await materializeSessionScratch(this.dshHome, request.session)
+      }
       sessionScratch = scratchPreparation.scratch
       await assertProfileRunConfinement(profile, request.session, sessionScratch.root)
       this.assertPrepublication(request.session, lease.control)

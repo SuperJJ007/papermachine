@@ -1677,6 +1677,39 @@ describe('run_python', () => {
     expect(secondText.startsWith('kernel restarted (environment re-bind): variables from earlier runs are gone\n')).toBe(true)
   })
 
+  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('prepends the kernel-restart line when another session\'s install drifts the shared prefix, not only on a manually appended rebind', async () => {
+    // Unlike the test above (a direct log append standing in for a rebind),
+    // this mutates conda-meta/history on disk directly — the same shared
+    // prefix `install_science_packages` from a DIFFERENT session would
+    // write — so `ctx.scienceRuntime.startRun`'s own per-run drift check
+    // (#15) is what appends the fresh revision here, not the test.
+    const { ctx } = await setup()
+    const session = scienceSession(ctx, 'science-run-restart-prefix-drift')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
+    const first = authorizeToolCall(session, 1, 'run_python', 'drift-run-1')
+    const firstResult = await ctx.tools.execute({
+      signal: testSignal, callId: first, name: 'run_python',
+      arguments: { code: kernelAction({ status: 'ok' }) },
+      agent: fakeAgent(session),
+    })
+    expect(firstResult.isError).toBe(false)
+
+    writeFileSync(join(root, 'fake-conda', 'conda-meta', 'history'), '==> 2026-09-06 <==\n+lifelines-0.29.0\n')
+
+    const second = authorizeToolCall(session, 2, 'run_python', 'drift-run-2')
+    const secondResult = await ctx.tools.execute({
+      signal: testSignal, callId: second, name: 'run_python',
+      arguments: { code: kernelAction({ status: 'ok' }) },
+      agent: fakeAgent(session),
+    })
+    expect(secondResult.isError).toBe(false)
+    const secondText = secondResult.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(secondText.startsWith('kernel restarted (environment re-bind): variables from earlier runs are gone\n')).toBe(true)
+    const bound = session.events.filter(event => event.type === 'science/environment-bound')
+    expect(bound).toHaveLength(2)
+  })
+
   it('presentationMeta projects every captured file (image and non-image) into one clickable-reference list', async () => {
     const { ctx } = await setup()
     const tool = ctx.tools.get('run_python')

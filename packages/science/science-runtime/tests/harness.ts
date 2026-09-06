@@ -1,6 +1,7 @@
 /** Shared real-session/fake-prefix assembly for Science Runtime behavior tests. */
 
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -331,6 +332,21 @@ esac
 `)
   chmodSync(executable, 0o755)
   return prefix
+}
+
+/**
+ * The exact digest `prefixHistoryDigest`/`staticInterpreter` compute for a
+ * fixture prefix's `conda-meta/history` right now. A test that appends a
+ * `science/environment-bound` fact directly (bypassing `bindEnvironment`,
+ * to reach a `startRun` code path a real probe would short-circuit before)
+ * must record this real value as `condaHistorySha256`, not a fixed
+ * placeholder: startRun's per-run drift check (#15) reads that field fresh
+ * on every run, and a placeholder that does not match the prefix's actual
+ * bytes on disk would make the fixture look drifted before the test's own
+ * scenario ever begins.
+ */
+export function realHistorySha256(prefix: string): string {
+  return createHash('sha256').update(readFileSync(join(prefix, 'conda-meta', 'history'))).digest('hex')
 }
 
 /**

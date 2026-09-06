@@ -29,6 +29,7 @@ import {
   DirectSandbox,
   kernelAction,
   mountArtifactStore,
+  realHistorySha256,
 } from './harness.ts'
 
 // Several cases here spawn a real kernel subprocess through
@@ -748,7 +749,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
           executable: join(rPrefix, 'bin', 'Rscript'),
           executableIdentity: 'test-identity',
           languageVersion: 'Fake R 4.5.0',
-          condaHistorySha256: 'a'.repeat(64),
+          condaHistorySha256: realHistorySha256(rPrefix),
           bindingFingerprint: 'b'.repeat(64),
           packages: [{ name: 'base', version: '4.5.0' }],
           packagesSha256: 'f'.repeat(64),

@@ -1,6 +1,7 @@
 # Agent Note: Windows 启动时先展示不支持页面，再谈下载
 
 Status: implemented
+Archived: 2026-09-06
 
 [English](2026-09-05-windows-launch-shows-unsupported-page.md) | 中文
 

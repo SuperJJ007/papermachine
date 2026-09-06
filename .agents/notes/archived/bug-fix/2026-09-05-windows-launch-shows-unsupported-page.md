@@ -1,6 +1,7 @@
 # Agent Note: Windows launch shows the unsupported-analysis page before any download
 
 Status: implemented
+Archived: 2026-09-06
 
 English | [中文](2026-09-05-windows-launch-shows-unsupported-page.zh.md)
 

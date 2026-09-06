@@ -32,7 +32,7 @@ Status: implemented
 
 ## 后果
 
-一次 interpreter probe(`bindEnvironment`,先于任何 kernel spawn)现在只有在部署方在 `science-runtime` 配置中显式设置 `minimumEnforcement: 'partial'` 时,才会在沙箱报告 `'partial'` 的情况下成功;默认值(`'full'`)在未显式覆盖的每一处都保持今天的行为不变。`apps/desktop` 的 `runtime-overlay.ts` 只对 `platform: 'win32-x64'` 在生成的 `cordis.yml` overlay 中设置 `minimumEnforcement: partial`;每个 darwin 目标都省略该字段,保持 `'full'` 默认值。这次 overlay 改动目前在真实桌面启动路径上是不生效的:`apps/desktop/src/main.ts` 的 `openInitialSurface()` 早已在 onboarding 开始之前就拒绝 win32 启动(`unsupportedPlatformErrorPage()`,来自 PR #17),因此本次改动写入的 overlay 设置尚未被一个真实的 win32 用户触达——它是启用 Windows 分析能力中配置层的那一半,先于 kernel-transport 与平台闸门相关工作落地而准备好,后者落地之后这项 overlay 设置才会端到端生效。
+一次 interpreter probe(`bindEnvironment`,先于任何 kernel spawn)现在只有在部署方在 `science-runtime` 配置中显式设置 `minimumEnforcement: 'partial'` 时,才会在沙箱报告 `'partial'` 的情况下成功;默认值(`'full'`)在未显式覆盖的每一处都保持今天的行为不变。`apps/desktop` 的 `runtime-overlay.ts` 只对 `platform: 'win32-x64'` 在生成的 `cordis.yml` overlay 中设置 `minimumEnforcement: partial`;每个 darwin 目标都省略该字段,保持 `'full'` 默认值。这项 overlay 设置在一次真实的 win32 启动中生效:`apps/desktop/src/main.ts` 的 `openInitialSurface()` 在所有平台上都走同一条绑定与 onboarding 路径——见[《撤掉 Windows 启动拦截》Agent Note](../bug-fix/2026-09-06-windows-launch-block-removed.zh.md)。
 
 Science 写入的每一条 environment binding,只要至少有一个已声明的 interpreter 的 probe 到达过 confinement,现在都会携带 `sandboxEnforcement`,可从会话日志与 client projection 的 `EnvironmentSection` 中读到(沿用既有的 `JSON.stringify` 渲染,无需新增 UI)。`packages/science/tool-science/README.md`/`README.zh.md` 说明了接受级别是可配置且会被记录的。`science-runtime/README.md`/`README.zh.md` 记录了新的 `Config` 字段、被记录的字段,并链接到 `dsh-sandbox-windows-acl` 的边界清单以说明 `'partial'` 究竟意味着什么;新增的一条"已知限制"如实说明了 kernel-spawn confinement 尚未完成的缺口,而不是暗示已经完成端到端接线。
 

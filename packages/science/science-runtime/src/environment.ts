@@ -372,6 +372,53 @@ class StaticInterpreterUnavailableError extends Error {
   override name = 'StaticInterpreterUnavailableError'
 }
 
+/** `conda-meta/history` exists but is not a usable regular, non-symlink file. */
+class HistoryNotRegularFileError extends Error {
+  override name = 'HistoryNotRegularFileError'
+}
+
+/**
+ * Read `<prefix>/conda-meta/history`'s exact bytes: the single computation
+ * {@link staticInterpreter} and the exported {@link prefixHistoryDigest} both
+ * build on, so the two agree on what "the history" is by construction
+ * rather than by a comment asserting they compute the same thing.
+ * @param prefix - already-canonicalized Conda prefix.
+ * @returns the exact bytes at `conda-meta/history`.
+ * @throws the raw `lstat`/`readFile` error (e.g. a missing path) unclassified.
+ * @throws {@link HistoryNotRegularFileError} when the path exists but is a directory, a symlink, or otherwise not a regular file.
+ */
+async function readHistoryFile(prefix: string): Promise<Uint8Array> {
+  const historyPath = join(prefix, 'conda-meta', 'history')
+  const historyInfo = await lstat(historyPath)
+  if (!historyInfo.isFile() || historyInfo.isSymbolicLink()) {
+    throw new HistoryNotRegularFileError('conda-meta/history must be a regular file')
+  }
+  return readFile(historyPath)
+}
+
+/**
+ * Digest of a durably-bound prefix's Conda transaction history, read fresh
+ * and compared against a binding's recorded `condaHistorySha256` to detect
+ * whether the shared prefix changed since that binding was observed —
+ * `startRun`'s cheap, non-probing per-run drift check. Built on the exact
+ * same {@link readHistoryFile} read `staticInterpreter` performs, so a
+ * matching digest here means `staticInterpreter` would read identical bytes
+ * too, not merely bytes this function judges equivalent by some looser rule.
+ * @param canonicalPrefix - a durable binding's already-canonicalized (`realpath`'d) Conda prefix.
+ * @returns the lower-case SHA-256 digest of `conda-meta/history`'s exact
+ *   bytes, or `undefined` when the file is missing, is not a regular
+ *   non-symlink file, or any other read failure occurs. Callers MUST treat
+ *   `undefined` as drift — the binding can no longer be confirmed
+ *   consistent with the prefix on disk — never as "no drift".
+ */
+export async function prefixHistoryDigest(canonicalPrefix: string): Promise<string | undefined> {
+  try {
+    return sha256(await readHistoryFile(canonicalPrefix))
+  } catch {
+    return undefined
+  }
+}
+
 /** Convert an ordinary missing path into an honest invalid binding, preserving other I/O failures. */
 function unavailableOnMissing(error: unknown, description: string): never {
   if (missingPathError(error)) {
@@ -398,15 +445,12 @@ async function staticInterpreter(
   } catch (error) {
     unavailableOnMissing(error, 'configured Conda prefix is absent or cannot be resolved')
   }
-  const historyPath = join(prefix, 'conda-meta', 'history')
-  let historyInfo: Awaited<ReturnType<typeof lstat>>
+  let history: Uint8Array
   try {
-    historyInfo = await lstat(historyPath)
+    history = await readHistoryFile(prefix)
   } catch (error) {
+    if (error instanceof HistoryNotRegularFileError) throw new StaticInterpreterUnavailableError(error.message)
     unavailableOnMissing(error, 'conda-meta/history is absent')
-  }
-  if (!historyInfo.isFile() || historyInfo.isSymbolicLink()) {
-    throw new StaticInterpreterUnavailableError('conda-meta/history must be a regular file')
   }
   let executable: string
   try {
@@ -426,10 +470,8 @@ async function staticInterpreter(
     throw new StaticInterpreterUnavailableError('interpreter is not a regular executable')
   }
   let identity: string
-  let history: Uint8Array
   try {
     identity = executableIdentity(await stat(executable, { bigint: true }))
-    history = await readFile(historyPath)
   } catch (error) {
     unavailableOnMissing(error, 'configured interpreter changed during static observation')
   }

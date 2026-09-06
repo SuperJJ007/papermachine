@@ -1,7 +1,7 @@
 /** Focused fake-prefix coverage for Science environment binding and probes. */
 
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -15,7 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
 import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig, type Config } from '../src/config.ts'
-import { observeProfile, sameObservation } from '../src/environment.ts'
+import { observeProfile, prefixHistoryDigest, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
   ControlledSubprocess,
@@ -37,7 +37,7 @@ import {
 vi.setConfig({ testTimeout: 30_000 })
 
 const staticFsFault = vi.hoisted(() => ({
-  history: '', executable: '', nonObject: '', cleanupPath: '',
+  history: '', executable: '', nonObject: '', cleanupPath: '', identityStat: '',
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -52,6 +52,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (path === staticFsFault.executable) throw Object.assign(new Error('injected static path loss'), { code: 'ENOENT' })
       if (path === staticFsFault.nonObject) throw 'injected non-Error static failure'
       return original.lstat(path, options as never)
+    },
+    // Distinct from `lstat`'s own fault: this fires only on the later
+    // identity `stat(..., { bigint: true })` call, reached after `lstat`
+    // already validated the same path — a real lstat-then-stat TOCTOU race,
+    // not a path that was already gone at the earlier check.
+    stat: async (path: Parameters<typeof original.stat>[0], options?: Parameters<typeof original.stat>[1]) => {
+      if (path === staticFsFault.identityStat) throw Object.assign(new Error('injected identity-stat path loss'), { code: 'ENOENT' })
+      return original.stat(path, options as never)
     },
     rm: async (path: Parameters<typeof original.rm>[0], options?: Parameters<typeof original.rm>[1]) => {
       if (path === staticFsFault.cleanupPath) throw new Error('injected managed cleanup failure')
@@ -74,7 +82,7 @@ const contexts: Context[] = []
 
 afterEach(async () => {
   Object.assign(staticFsFault, {
-    history: '', executable: '', nonObject: '', cleanupPath: '',
+    history: '', executable: '', nonObject: '', cleanupPath: '', identityStat: '',
   })
   fixedInstallUuid.value = undefined
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -1000,9 +1008,20 @@ describe('ScienceRuntime.bindEnvironment', () => {
       await expect(harness.runtime.bindEnvironment({
         session: createScienceSession(harness.ctx, 'science-static-non-error'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
       })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+      staticFsFault.nonObject = ''
+      // The executable vanishes strictly between `lstat` (which already
+      // validated it) and the later identity `stat`: a true TOCTOU race,
+      // distinct from `staticFsFault.executable`'s lstat-time loss above.
+      staticFsFault.identityStat = executable
+      const identityLoss = await harness.runtime.bindEnvironment({
+        session: createScienceSession(harness.ctx, 'science-static-identity-loss'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })
+      expect(identityLoss.python).toMatchObject({ capability: 'invalid' })
+      expect(identityLoss.python?.reason).toMatch(/changed during static observation/)
     } finally {
       staticFsFault.history = ''
       staticFsFault.executable = ''
+      staticFsFault.identityStat = ''
     }
   })
 
@@ -1591,6 +1610,41 @@ describe('sameObservation', () => {
   it('never treats an unavailable binding as matching, even against an identical unavailable binding', () => {
     expect(sameObservation(unavailable, unavailable)).toBe(false)
     expect(sameObservation(unavailable, available('c'.repeat(64)))).toBe(false)
+  })
+})
+
+describe('prefixHistoryDigest', () => {
+  it('digests the exact history bytes stably, and differently once the file changes', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-history-digest-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const historyPath = join(prefix, 'conda-meta', 'history')
+    const first = await prefixHistoryDigest(prefix)
+    const again = await prefixHistoryDigest(prefix)
+    expect(first).toBe(again)
+    expect(first).toBe(createHash('sha256').update(readFileSync(historyPath)).digest('hex'))
+    writeFileSync(historyPath, '==> 2026-09-06 <==\n+lifelines-0.29.0\n')
+    const changed = await prefixHistoryDigest(prefix)
+    expect(changed).not.toBe(first)
+    expect(changed).toBe(createHash('sha256').update(readFileSync(historyPath)).digest('hex'))
+  })
+
+  it('returns undefined, never throwing, when history is missing or not a regular file', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-history-digest-invalid-'))
+    roots.push(root)
+    const missing = createFakePythonPrefix(join(root, 'missing'))
+    unlinkSync(join(missing, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(missing)).resolves.toBeUndefined()
+    const directory = createFakePythonPrefix(join(root, 'directory'))
+    rmSync(join(directory, 'conda-meta', 'history'))
+    mkdirSync(join(directory, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(directory)).resolves.toBeUndefined()
+    const symlinked = createFakePythonPrefix(join(root, 'symlinked'))
+    const realHistory = join(root, 'symlinked-real-history')
+    writeFileSync(realHistory, readFileSync(join(symlinked, 'conda-meta', 'history')))
+    rmSync(join(symlinked, 'conda-meta', 'history'))
+    symlinkSync(realHistory, join(symlinked, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(symlinked)).resolves.toBeUndefined()
   })
 })
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-06-windows-ci-science-signal.md
-2026-09-06-windows-ci-science-signal.md: f949f4585044f983791da3146636320591176a71
-2026-09-06-windows-ci-science-signal.zh.md: fb0df3d9ec836b0244e8ce960a31fd5ab0be6438
+2026-09-06-windows-ci-science-signal.md: 870c26ddc04ac6bdaa37c5daf8c4c439bd303486
+2026-09-06-windows-ci-science-signal.zh.md: 75f3d45533ceb020a3a314aefb40b3f57c4ee752

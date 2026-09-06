@@ -10,6 +10,23 @@
   },
   "win32-x64": {
     "url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.9.0-0/micromamba-win-64",
-    "sha256": "a6d804394b2418991c4e29562853eaace2f2ce9d9da661a98e74e02e8dbb44b0"
+    "sha256": "a6d804394b2418991c4e29562853eaace2f2ce9d9da661a98e74e02e8dbb44b0",
+    "runtime": {
+      "url": "https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda",
+      "sha256": "4e4cb599cdc41bf2109d1464c127b5bcbddf548ce3e322e612afb691338b48f8",
+      "files": [
+        "concrt140.dll",
+        "msvcp140.dll",
+        "msvcp140_1.dll",
+        "msvcp140_2.dll",
+        "msvcp140_atomic_wait.dll",
+        "msvcp140_codecvt_ids.dll",
+        "vcamp140.dll",
+        "vccorlib140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll",
+        "vcruntime140_threads.dll"
+      ]
+    }
   }
 }

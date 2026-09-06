@@ -9,6 +9,14 @@
   },
   "include": [
     "src",
+    // Only the two script modules `tests/conda-package.spec.ts` imports:
+    // most of `scripts/` (`stage-host.ts` among them) reaches outside this
+    // project's `rootDir` into the repository-root `scripts/` directory,
+    // which this composite project cannot represent — the full directory is
+    // typechecked instead by the root `tsconfig.host.json` aggregate's own
+    // `apps/desktop/scripts/**/*.ts` entry.
+    "scripts/conda-package.ts",
+    "scripts/fetch-micromamba.ts",
     "tests"
   ],
   "references": [

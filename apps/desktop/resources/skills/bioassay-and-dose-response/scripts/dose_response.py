@@ -18,7 +18,8 @@ from scipy import stats
 
 
 def four_pl(logx, bottom, top, logic50, hill):
-    return bottom + (top - bottom) / (1 + 10 ** ((logic50 - logx) * hill))
+    exponent = np.clip((logic50 - logx) * hill, -100.0, 100.0)
+    return bottom + (top - bottom) / (1.0 + np.power(10.0, exponent))
 
 
 def fit_4pl(x, y, fix_top=None, fix_bottom=None, weights=None) -> dict:
@@ -60,12 +61,18 @@ def fit_4pl(x, y, fix_top=None, fix_bottom=None, weights=None) -> dict:
     bottom, top, logic50, hill = full
     yhat = four_pl(lx, *full)
     ss_res = np.sum((y - yhat) ** 2); ss_tot = np.sum((y - y.mean()) ** 2)
-    ic50_ci = (10 ** (logic50 - tcrit * se[2]), 10 ** (logic50 + tcrit * se[2]))
+    lo_ci_exp = logic50 - tcrit * se[2]
+    hi_ci_exp = logic50 + tcrit * se[2]
+    ic50_ci = (
+        float(np.power(10.0, lo_ci_exp)) if lo_ci_exp > -300 else 0.0,
+        float(np.power(10.0, hi_ci_exp)) if hi_ci_exp < 300 else np.inf,
+    )
+    ic50 = float(np.power(10.0, logic50)) if logic50 < 300 else np.inf
     x_range = (x.min(), x.max())
     plateau_note = None
-    if 10 ** logic50 < x_range[0] or 10 ** logic50 > x_range[1]:
+    if ic50 < x_range[0] or ic50 > x_range[1]:
         plateau_note = "IC50 lies outside the tested dose range — report as not estimable"
-    result = dict(bottom=bottom, top=top, logic50=logic50, ic50=10 ** logic50, ic50_ci95=ic50_ci, hill=hill,
+    result = dict(bottom=bottom, top=top, logic50=logic50, ic50=ic50, ic50_ci95=ic50_ci, hill=hill,
                   se=dict(zip(names, se)), r2=1 - ss_res / ss_tot if ss_tot > 0 else np.nan,
                   residual_sd=np.sqrt(ss_res / dof), n=len(y), dof=dof, fixed=dict(top=fix_top, bottom=fix_bottom),
                   dose_range=x_range, warning=plateau_note,
@@ -86,17 +93,22 @@ def inverse_predict(fit: dict, y_new, level: float = 0.95) -> pd.DataFrame:
             rows.append(dict(response=yv, conc=np.nan, conc_lower=np.nan, conc_upper=np.nan, flag="outside curve asymptotes"))
             continue
         ratio = (top - bottom) / (yv - bottom) - 1
+        if ratio <= 0:
+            rows.append(dict(response=yv, conc=np.nan, conc_lower=np.nan, conc_upper=np.nan, flag="outside curve asymptotes"))
+            continue
         lx = logic50 - np.log10(ratio) / hill
         # slope dy/dlogx at lx, for an approximate interval from the residual SD
         h = 1e-4
         slope = (four_pl(lx + h, bottom, top, logic50, hill) - four_pl(lx - h, bottom, top, logic50, hill)) / (2 * h)
         tcrit = stats.t.ppf(0.5 + level / 2, fit["dof"])
         half = tcrit * fit["residual_sd"] / abs(slope) if slope != 0 else np.inf
-        conc = 10 ** lx
+        conc = float(np.power(10.0, lx)) if lx < 300 else np.inf
         flag = ""
         if conc < fit["dose_range"][0] or conc > fit["dose_range"][1]:
             flag = "outside calibrated range — extrapolated"
-        rows.append(dict(response=yv, conc=conc, conc_lower=10 ** (lx - half), conc_upper=10 ** (lx + half), flag=flag))
+        conc_lower = float(np.power(10.0, lx - half)) if (lx - half) > -300 else 0.0
+        conc_upper = float(np.power(10.0, lx + half)) if (lx + half) < 300 else np.inf
+        rows.append(dict(response=yv, conc=conc, conc_lower=conc_lower, conc_upper=conc_upper, flag=flag))
     return pd.DataFrame(rows)
 
 

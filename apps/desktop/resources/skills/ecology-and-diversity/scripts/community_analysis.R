@@ -6,7 +6,7 @@
 #   beta$permanova ; beta$dispersion ; beta$pairwise ; beta$figures        # declare beta$figures in raster_artifacts
 #   bars  <- top_taxa_bars(otu, meta, taxonomy, rank = "Genus", group = "treatment", top_n = 12, out_dir = ...)
 
-suppressPackageStartupMessages({ library(vegan); library(ape); library(ggplot2); library(dplyr); library(tidyr) })
+suppressPackageStartupMessages({ library(vegan); library(ape); library(ggplot2); library(dplyr); library(tidyr); library(scales) })
 
 alpha_table <- function(otu, meta, group, depth = NULL, seed = 1) {
   set.seed(seed)
@@ -24,7 +24,7 @@ alpha_table <- function(otu, meta, group, depth = NULL, seed = 1) {
     observed = specnumber(rar), chao1 = est[, "S.chao1"], chao1_se = est[, "se.chao1"],
     shannon_ln = diversity(rar, "shannon"), gini_simpson = diversity(rar, "simpson"),
     inv_simpson = diversity(rar, "invsimpson"), row.names = NULL)
-  out$pielou_evenness <- out$shannon_ln / log(out$observed)
+  out$pielou_evenness <- ifelse(out$observed > 1, out$shannon_ln / log(out$observed), 0)
   attr(out, "dropped_samples") <- rownames(otu)[!keep]
   out
 }

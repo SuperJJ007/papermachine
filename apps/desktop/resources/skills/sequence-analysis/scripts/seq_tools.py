@@ -137,10 +137,15 @@ def pairwise_identity(a, b, kind: str = "dna") -> dict:
         aligner.match_score, aligner.mismatch_score = 2, -1
         aligner.open_gap_score, aligner.extend_gap_score = -2, -0.5
         params = "match 2, mismatch -1, gap open -2, extend -0.5"
-    aln = aligner.align(str(a), str(b))[0]
+    sa, sb = str(a), str(b)
+    if not sa or not sb:
+        return dict(score=0.0, parameters=params, alignment_length=0, gaps=0,
+                    identity_aligned_pct=0.0, identity_shorter_pct=0.0, alignment="")
+    aln = aligner.align(sa, sb)[0]
     cols = aln.counts()             # identities, mismatches, gaps (Biopython >= 1.80)
     aligned_cols = cols.identities + cols.mismatches
+    min_len = min(len(sa), len(sb))
     return dict(score=aln.score, parameters=params, alignment_length=aln.length, gaps=cols.gaps,
                 identity_aligned_pct=round(100 * cols.identities / aligned_cols, 2) if aligned_cols else 0.0,
-                identity_shorter_pct=round(100 * cols.identities / min(len(a), len(b)), 2),
+                identity_shorter_pct=round(100 * cols.identities / min_len, 2) if min_len else 0.0,
                 alignment=str(aln))

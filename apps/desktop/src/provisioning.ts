@@ -338,6 +338,66 @@ export function provisioningScratchTempDir(root: string): string {
 }
 
 /**
+ * Case-insensitive lookup of `PATH`'s value in a win32 environment block.
+ * Node preserves whatever case the OS environment used for each key rather
+ * than normalizing it, and Windows conventionally names the variable
+ * `Path` (or occasionally `Path` with other casing), not POSIX's uniform
+ * `PATH` — an exact `key === 'PATH'` match therefore silently finds nothing
+ * on a real Windows host, discarding the entire system `PATH` (`System32`
+ * and everything else it carries) rather than merely failing to reorder it.
+ * Reading directly from `source` here, not from the allowlist loop's own
+ * output, is deliberate: that loop's exact-case match already found
+ * nothing under the real key's casing.
+ * @param source - the environment to search.
+ * @returns the first value found under a case-insensitive `PATH` key, or `undefined`.
+ */
+function findWin32PathValue(source: NodeJS.ProcessEnv): string | undefined {
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && key.toUpperCase() === 'PATH') return value
+  }
+  return undefined
+}
+
+/**
+ * Fixed ordered Conda prefix subdirectories a win32 health-check child's
+ * `PATH` needs to match what the product's own persistent kernel actually
+ * runs interpreters under. Duplicated from science-runtime's `execution.ts`
+ * `WINDOWS_PATH_SUBDIRECTORIES` rather than imported — this application
+ * cannot depend on science-runtime, which runs as a separate Host process
+ * staged into the package — and kept identical to it by a source-text
+ * comparison test in `provisioning.spec.ts`. Health-checking under any
+ * other `PATH` risks a check passing or failing on a `PATH` shape the
+ * product never actually spawns interpreters under: the `Rscript.exe`
+ * conda launcher and R's own DLL resolution depend on `Library\bin` being
+ * present, and this list is what `conda activate` itself would prepend on
+ * Windows (the prefix root first, since `python.exe` lives there directly
+ * rather than under a `bin`, then the MSYS2/MinGW-toolchain and
+ * Unix-utility shims under `Library`, then the prefix's own `Scripts` and
+ * `bin`). Not used for the `micromamba create` child, which installs into,
+ * rather than runs interpreters from, the prefix these subdirectories name.
+ */
+const WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES = [
+  '',
+  'Library\\mingw-w64\\bin',
+  'Library\\usr\\bin',
+  'Library\\bin',
+  'Scripts',
+  'bin',
+] as const
+
+/**
+ * The win32 `PATH` segments a health check for `prefix` needs, in the order
+ * `conda activate` would set them: see
+ * {@link WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES}.
+ * @param prefix - the environment prefix being health-checked.
+ * @returns the ordered, absolute `PATH` segments for that prefix.
+ */
+function win32HealthCheckPathSegments(prefix: string): readonly string[] {
+  return WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES
+    .map(subdirectory => (subdirectory === '' ? prefix : win32Path.join(prefix, subdirectory)))
+}
+
+/**
  * Build the minimal environment for a provisioning child from an allowlist —
  * `PATH`, `HOME`, `TMPDIR`, locale (`LANG`/`LC_*`), and the proxy variables
  * provisioning legitimately needs to reach package channels — excluding
@@ -349,22 +409,36 @@ export function provisioningScratchTempDir(root: string): string {
  * On win32, this also carries through {@link WIN32_AMBIENT_ENVIRONMENT_KEYS}
  * (without them the child cannot initialize Winsock at all), points
  * `TEMP`/`TMP` at {@link provisioningScratchTempDir} rather than the Host's
- * ambient temp directory, and prepends the Electron executable's own
- * directory to `PATH`: that directory ships `vcruntime140.dll`/
- * `msvcp140.dll` next to the application binary, and a bare Windows host
- * with no Visual C++ Runtime installed otherwise fails the separately
- * spawned `micromamba.exe` with `STATUS_DLL_NOT_FOUND` (observed on real
- * Windows Server hardware with no other Visual C++ Runtime installed;
- * untested by this repository's own automation — see the accompanying
- * Agent Note).
+ * ambient temp directory, and rebuilds `PATH` from three parts, joined in
+ * order: the Electron executable's own directory first (it ships
+ * `vcruntime140.dll`/`msvcp140.dll` next to the application binary, and a
+ * bare Windows host with no Visual C++ Runtime installed otherwise fails
+ * the separately spawned `micromamba.exe` with `STATUS_DLL_NOT_FOUND`,
+ * observed on real Windows Server hardware with no other Visual C++
+ * Runtime installed; untested by this repository's own automation — see
+ * the accompanying Agent Note); then `options.win32HealthCheckPrefix`'s own
+ * {@link win32HealthCheckPathSegments}, when given, for a health-check
+ * child only; then the ambient system `PATH` itself, found through
+ * {@link findWin32PathValue} rather than an exact `key === 'PATH'` match —
+ * Windows conventionally names the variable `Path`, and an exact match
+ * against that on a real Windows host silently discards the entire system
+ * `PATH` (`System32` included) rather than merely failing to reorder it.
+ * The output always writes the normalized key `PATH` regardless of the
+ * source's own casing; Windows treats a process environment block
+ * case-insensitively, so a single `PATH` entry is what every consumer,
+ * including this application's own child process, needs.
  * @param options.platform - the platform the child will run on.
  * @param options.root - the provisioner root, {@link desktopEnvironmentsRoot};
  *   used on win32 to derive {@link provisioningScratchTempDir}.
+ * @param options.win32HealthCheckPrefix - the environment prefix being
+ *   health-checked, when this environment is for a health-check child;
+ *   omitted for every other provisioning child (`micromamba create`, which
+ *   installs into rather than runs interpreters from that prefix).
  * @param source - the environment to allowlist from; defaults to `process.env`.
  * @returns the scrubbed environment to pass to the child.
  */
 export function buildProvisioningEnv(
-  options: { readonly platform: DesktopPlatform; readonly root: string },
+  options: { readonly platform: DesktopPlatform; readonly root: string; readonly win32HealthCheckPrefix?: string },
   source: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
@@ -382,8 +456,12 @@ export function buildProvisioningEnv(
   const scratchTemp = provisioningScratchTempDir(options.root)
   env.TEMP = scratchTemp
   env.TMP = scratchTemp
-  const execDir = dirname(process.execPath)
-  env.PATH = env.PATH === undefined ? execDir : `${execDir};${env.PATH}`
+  const ambientPath = findWin32PathValue(source)
+  const prependedSegments = [
+    dirname(process.execPath),
+    ...(options.win32HealthCheckPrefix === undefined ? [] : win32HealthCheckPathSegments(options.win32HealthCheckPrefix)),
+  ]
+  env.PATH = ambientPath === undefined ? prependedSegments.join(';') : `${prependedSegments.join(';')};${ambientPath}`
   return env
 }
 
@@ -645,7 +723,7 @@ export class DesktopEnvironmentProvisioner {
       await this.#run({
         executable: join(prefix, ...layout[check.language]),
         args: check.args,
-        env: buildProvisioningEnv({ platform: this.options.platform, root: this.options.root }),
+        env: buildProvisioningEnv({ platform: this.options.platform, root: this.options.root, win32HealthCheckPrefix: prefix }),
         signal,
         timeoutMs: Math.min(declaration.timeoutMs, 120_000),
       })

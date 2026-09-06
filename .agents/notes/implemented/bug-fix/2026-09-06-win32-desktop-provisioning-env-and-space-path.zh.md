@@ -14,6 +14,8 @@ Status: implemented
 
 一轮实机测试在同一区域又发现了第三个缺口：打包在 `resources/bin/win32-x64/` 下、作为独立子进程 spawn 的 `micromamba.exe` 依赖 `vcruntime140.dll`/`msvcp140.dll`。Windows 的 DLL 搜索顺序从被 spawn 的可执行文件自己所在目录开始，而不是 Electron 所在目录；一台没装 Visual C++ Runtime 的裸机上，spawn 会以 `STATUS_DLL_NOT_FOUND` 失败。这一点此前只记录在 `.agents/tmp/` 下的一份临时任务文件里，任务完成即删。
 
+对同一改动的一轮验收又发现了 `buildProvisioningEnv` 自身的两个后续缺陷，上面的测试都没能测出来，因为每个测试用的都是 POSIX 形状的键。第一，白名单里 `PATH` 的判断用的是精确字符串相等（`key === 'PATH'`），但 Node 在 Windows 上会保留系统环境变量键名原本的大小写，而 Windows 自己的 PATH 变量名是 `Path`，不是 `PATH`。在真实 Windows 上这个精确匹配什么都匹配不到，于是子进程的 `PATH` 里只剩上面那条里前置的 `dirname(process.execPath)`，Host 自己的 `System32` 等全部丢失——这个缺陷从 0.1.0 起就存在于每个 win32 构建里；`micromamba.exe` 与 health-check interpreter 全靠 `ComSpec` 限定或本来就是绝对路径才撑过去。第二，health check 此前直接用 Host 的 ambient `PATH` 跑 interpreter，而这不是产品自己的持久内核实际使用的 `PATH`：`kernel-process.ts`/`execution.ts` 会从环境 prefix 下一组固定、有序的子目录（`Library\mingw-w64\bin`、`Library\usr\bin`、`Library\bin`、`Scripts`、`bin`）构造 interpreter 的 `PATH`，因为 `Scripts\Rscript.exe` 的 conda launcher 与 R 自己的 DLL 解析都依赖 `Library\bin` 排在 ambient PATH 之前。health check 如果用和内核不同的 PATH 跑，就可能出现健康检查过了/没过与内核实际能不能启动这个 interpreter 互相脱节的情况。
+
 ## Decision
 
 `buildProvisioningEnv` 现在接收 `{ platform, root }`，而不再只依赖 `process.env`。在 win32 上它额外会：
@@ -23,6 +25,8 @@ Status: implemented
 - 把 `dirname(process.execPath)`（Electron 可执行文件自己所在目录，其中带有随应用打包的 `vcruntime140.dll`/`msvcp140.dll`）前置到子进程的 `PATH`，这样单独 spawn 的 `micromamba.exe` 就能通过 Windows 自己的搜索顺序找到这些 DLL，即便是在一台没装 Visual C++ Runtime 的裸机上。
 
 `SECRET_ENV_PATTERN` 的凭据剥离先于以上逻辑运行，不受影响——上面列出的固定 win32 键都不是凭据形状。
+
+这两个后续缺陷各在自己的位置修复。`buildProvisioningEnv` 现在改为对 `source` 自身的键做大小写不敏感的扫描来找到 ambient 的 `PATH` 值（`key.toUpperCase() === 'PATH'`），而不是靠白名单循环里的精确匹配；并且始终把结果写回统一的 `PATH` 键，绝不使用来源键自身的大小写（`Path`）——libuv 对 Windows 子进程的环境块本就大小写不敏感处理，一个 `PATH` 键就够了，也避免同一个环境块里同时出现 `PATH` 和 `Path`。非 win32 平台不受影响：大小写不敏感查找与统一输出键只在已有的 `win32-` 分支内运行。第二，`buildProvisioningEnv` 新增一个可选的 `win32HealthCheckPrefix`；传入时，它会把这个 prefix 自己的 `WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES`（复制自 `execution.ts` 的 `WINDOWS_PATH_SUBDIRECTORIES`——`''`、`Library\mingw-w64\bin`、`Library\usr\bin`、`Library\bin`、`Scripts`、`bin`，用 `path.win32.join` 拼到 prefix 上，复制而非 import 的原因与 `WIN32_AMBIENT_ENVIRONMENT_KEYS` 相同）前置到 `PATH`，位置在 `dirname(process.execPath)` 之后、ambient `PATH` 之前。只有 health-check 的调用点会传入 `win32HealthCheckPrefix`；`micromamba create` 的调用点不传，因为那个子进程是往 prefix 里安装，而不是从 prefix 里跑 interpreter，让它依赖 prefix 里尚未生成的子目录为时过早。`provisioning.spec.ts` 用锁定 `WIN32_AMBIENT_ENVIRONMENT_KEYS` 对照 `kernel-process.ts` 的同一种方式，锁定了 `WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES` 与 `execution.ts` 源码文本的一致性。
 
 `classifyBootInstallLocationFailure`（`apps/desktop/src/install-location.ts`）现在返回一个区分 kind 的 `BootInstallLocationFailure`（`{ kind: 'space', error }` 或 `{ kind: 'unavailable-pointer', target }`），而不是一个裸的 target 字符串。`HarnessHomeSpaceError` 无论是否有 pointer 生效都会分类为 `'space'`，`boot()` 会把它路由到新增的 `showHarnessHomeSpaceRecoveryWindow`，而不是继续 rethrow。这个窗口的页面现在提供"选择其他安装位置"，跑的是与 onboarding 的 `desktop:choose-install-location` 完全相同的目录选择器/校验/pointer 写入/relaunch 流程（提取进了共享的 `runChooseInstallLocationFlow`）；当重新选择的位置本身也不可用时（比如同样含空格），会用一个新增的拒绝原因重新加载同一个页面，而不是丢失原始错误。"退出"动作仍然保留。这次修复刻意**不**放宽 ASCII 空格限制本身：这条限制的存在是因为 R 的 `tempdir()`/内核 `TMPDIR` 确实无法在含空格路径下运行（见上面链接的 science-runtime），不是本 carrier 自己校验发明出来的；这次修复给用户一条走出坏默认值的路，而不是想办法让那个坏默认值继续能用。
 
@@ -36,7 +40,7 @@ vcruntime DLL 这个缺口，除了上面的 `PATH` 前置之外，本次改动�
 
 ## Consequences
 
-`provisioning.spec.ts` 覆盖了 `buildProvisioningEnv` 在 win32 上的新增行为（ambient 键的存在/缺失、`TEMP`/`TMP` 指向 scratch 目录、`PATH` 首段是 `dirname(process.execPath)`、凭据键仍被剥离）以及 darwin 上行为不变，全部可以在 macOS 上跑通（该模块的 `platform: 'win32-x64'` 分支无需真实 Windows 主机即可被覆盖）。`install-location.spec.ts` 与 `error-page.spec.ts` 覆盖了 `classifyBootInstallLocationFailure` 的新路由逻辑和 `harnessHomeSpaceErrorPage` 新增的动作/拒绝原因渲染。
+`provisioning.spec.ts` 覆盖了 `buildProvisioningEnv` 在 win32 上的新增行为（ambient 键的存在/缺失、`TEMP`/`TMP` 指向 scratch 目录、`PATH` 首段是 `dirname(process.execPath)`、凭据键仍被剥离）以及 darwin 上行为不变，全部可以在 macOS 上跑通（该模块的 `platform: 'win32-x64'` 分支无需真实 Windows 主机即可被覆盖）。它还覆盖了这两个后续缺陷：一个只有 `Path` 键（没有 `PATH`）的 win32 来源，仍然会产生一个携带该值、`dirname(process.execPath)` 排最前、且不留下多余 `Path` 键的 `PATH` 输出；health-check 调用点的 `PATH` 会在 `dirname(process.execPath)` 与 ambient `PATH` 之间携带该 prefix 的六个子目录、顺序与 `execution.ts` 一致；`micromamba create` 调用点的 `PATH` 完全不携带任何 prefix 子目录；还有一个端到端的 `DesktopEnvironmentProvisioner.provision` 测试断言 health-check 的子进程（`python.exe`、`Scripts\Rscript.exe`）会收到这条同样有序的 `PATH`，而 `micromamba.exe` 这个 create 子进程不会。`install-location.spec.ts` 与 `error-page.spec.ts` 覆盖了 `classifyBootInstallLocationFailure` 的新路由逻辑和 `harnessHomeSpaceErrorPage` 新增的动作/拒绝原因渲染。
 
 以上都尚未在真实 Windows 硬件上验证过。`.agents/tmp/2026-09-06-windows-followups/windows-device-checklist.md`（临时文件，任务完成即删）现在除已有条目外，还追踪：
 

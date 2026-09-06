@@ -1,7 +1,9 @@
 import type { ChildProcess } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, win32 as win32Path } from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 import {
@@ -329,6 +331,44 @@ describe('DesktopEnvironmentProvisioner', () => {
     ])
   })
 
+  it('gives a win32 health check the same PATH shape the persistent kernel itself runs interpreters under, not the create child\'s PATH', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-win32-health-path-'))
+    const envsByExecutable = new Map<string, NodeJS.ProcessEnv>()
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root, micromambaPath: '/m', platform: 'win32-x64', freeBytes: async () => 1_000,
+      run: async (request) => {
+        envsByExecutable.set(request.executable, request.env)
+        if (request.args[0] === 'create') {
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(prefix, { recursive: true })
+        }
+      },
+    })
+    const applied = await provisioner.provision(win32Declaration, new AbortController().signal)
+    const prefix = applied.prefix
+
+    // The micromamba create child installs into, rather than runs
+    // interpreters from, the prefix — its PATH carries no prefix subdirectories.
+    expect(envsByExecutable.get('/m')!.PATH).not.toContain(prefix)
+
+    for (const executable of [join(prefix, 'python.exe'), join(prefix, 'Scripts', 'Rscript.exe')]) {
+      const path = envsByExecutable.get(executable)!.PATH!
+      const segments = path.split(';')
+      // win32Path.join, not manual backslash concatenation: it is what the
+      // production code itself uses to build a literal win32 PATH string
+      // regardless of the host OS, and normalizes a POSIX-shaped test
+      // prefix (this test runs cross-platform) the same way.
+      expect(segments.slice(1, 7)).toEqual([
+        prefix,
+        win32Path.join(prefix, 'Library\\mingw-w64\\bin'),
+        win32Path.join(prefix, 'Library\\usr\\bin'),
+        win32Path.join(prefix, 'Library\\bin'),
+        win32Path.join(prefix, 'Scripts'),
+        win32Path.join(prefix, 'bin'),
+      ])
+    }
+  })
+
   describe('ordered source fallback', () => {
     const multiSource = parseEnvironmentDeclaration({ ...declaration, sources: [SOURCE_A, SOURCE_B, SOURCE_C] })
 
@@ -564,6 +604,47 @@ describe('buildProvisioningEnv', () => {
     expect(env.SystemRoot).toBeUndefined()
     expect(env.USERPROFILE).toBeUndefined()
   })
+
+  it('on win32, finds PATH under its real casing (Path) rather than discarding the system PATH entirely', () => {
+    // Node preserves whatever case a real Windows host's environment block
+    // used for each key; the system variable is conventionally `Path`, not
+    // POSIX's uniform `PATH`. An exact `key === 'PATH'` match against this
+    // finds nothing, which previously discarded System32 and everything
+    // else the host's own PATH carries.
+    const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
+    const env = buildProvisioningEnv({ platform: 'win32-x64', root }, { Path: 'C:\\Windows\\System32;C:\\Windows' })
+    expect(env.PATH).toBe(`${dirname(process.execPath)};C:\\Windows\\System32;C:\\Windows`)
+    // The output always normalizes to the single uppercase key, never the
+    // source's own casing — Windows treats an environment block
+    // case-insensitively, so a second `Path` entry would be redundant, not
+    // additive.
+    expect((env as Record<string, unknown>).Path).toBeUndefined()
+  })
+
+  it('for a health-check child, prepends the prefix\'s own win32 Conda subdirectories after execPath\'s directory and before the ambient PATH', () => {
+    const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
+    const prefix = 'C:\\Users\\test\\.papermachine\\desktop-environments\\environments\\general\\2026.09.1'
+    const env = buildProvisioningEnv(
+      { platform: 'win32-x64', root, win32HealthCheckPrefix: prefix },
+      { Path: 'C:\\Windows\\System32' },
+    )
+    expect(env.PATH).toBe([
+      dirname(process.execPath),
+      prefix,
+      `${prefix}\\Library\\mingw-w64\\bin`,
+      `${prefix}\\Library\\usr\\bin`,
+      `${prefix}\\Library\\bin`,
+      `${prefix}\\Scripts`,
+      `${prefix}\\bin`,
+      'C:\\Windows\\System32',
+    ].join(';'))
+  })
+
+  it('for the micromamba create child (no win32HealthCheckPrefix), PATH carries no prefix subdirectories', () => {
+    const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
+    const env = buildProvisioningEnv({ platform: 'win32-x64', root }, { Path: 'C:\\Windows\\System32' })
+    expect(env.PATH).toBe(`${dirname(process.execPath)};C:\\Windows\\System32`)
+  })
 })
 
 describe('runProvisioningProcess', () => {
@@ -689,5 +770,50 @@ describe('parseMicromambaProgressLine', () => {
 
     const linked = parseMicromambaProgressLine('Linking r-base-4.5.0-h456')
     expect(linked.currentPackage).toBe('r-base-4.5.0-h456')
+  })
+})
+
+/**
+ * Extract a `const NAME = [...] as const` array literal's string entries
+ * from raw TypeScript source text, without importing or evaluating the
+ * source — used to compare `provisioning.ts`'s two win32 constants against
+ * their science-runtime originals (see the source-text comparison suites
+ * below) without a cross-package import.
+ * @param source - the file's raw source text.
+ * @param constantName - the `const` identifier to find.
+ * @returns the array literal's entries, quotes stripped, in declared order.
+ */
+function extractConstArrayLiteral(source: string, constantName: string): readonly string[] {
+  const declaration = source.match(new RegExp(`const ${constantName} = \\[([\\s\\S]*?)\\] as const`))
+  const body = declaration?.[1]
+  if (body === undefined) throw new Error(`provisioning.spec: could not find "${constantName}" in the given source`)
+  return body
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0)
+    .map(entry => entry.replace(/^['"]|['"]$/g, ''))
+}
+
+const provisioningSource = readFileSync(fileURLToPath(new URL('../src/provisioning.ts', import.meta.url)), 'utf8')
+
+describe('WIN32_AMBIENT_ENVIRONMENT_KEYS matches science-runtime source text', () => {
+  it('names the exact same keys as kernel-process.ts\'s WIN32_AMBIENT_ENVIRONMENT_KEYS', () => {
+    const kernelProcessSource = readFileSync(
+      fileURLToPath(new URL('../../../packages/science/science-runtime/src/kernel-process.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(extractConstArrayLiteral(provisioningSource, 'WIN32_AMBIENT_ENVIRONMENT_KEYS'))
+      .toEqual(extractConstArrayLiteral(kernelProcessSource, 'WIN32_AMBIENT_ENVIRONMENT_KEYS'))
+  })
+})
+
+describe('WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES matches science-runtime source text', () => {
+  it('names the exact same ordered subdirectories as execution.ts\'s WINDOWS_PATH_SUBDIRECTORIES', () => {
+    const executionSource = readFileSync(
+      fileURLToPath(new URL('../../../packages/science/science-runtime/src/execution.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(extractConstArrayLiteral(provisioningSource, 'WIN32_HEALTH_CHECK_PATH_SUBDIRECTORIES'))
+      .toEqual(extractConstArrayLiteral(executionSource, 'WINDOWS_PATH_SUBDIRECTORIES'))
   })
 })

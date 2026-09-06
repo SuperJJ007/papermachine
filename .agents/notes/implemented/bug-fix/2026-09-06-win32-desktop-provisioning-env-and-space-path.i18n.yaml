@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-win32-desktop-provisioning-env-and-space-path.md
-2026-09-06-win32-desktop-provisioning-env-and-space-path.md: 9a8aba8d6c81e4a62fd50b5a7d2dafbf43bc9c63
-2026-09-06-win32-desktop-provisioning-env-and-space-path.zh.md: dee64b61cfbabc149d06f20f8123dd36761eea9a
+2026-09-06-win32-desktop-provisioning-env-and-space-path.md: 5e3540e95a62e6ffc83e73cd7685e5442038098e
+2026-09-06-win32-desktop-provisioning-env-and-space-path.zh.md: abd9a3b75feb88aed7f2d50ae0ad892ff2aeff81

@@ -390,11 +390,11 @@ describe('install location', () => {
 
   it('shows "Use default" only while an install-location pointer file is in effect', async () => {
     const { bridge } = installBridge({
-      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/PaperMachine', customized: true })),
     })
     await loadOnboarding(bridge)
 
-    expect(textOf('#install-location-path')).toBe('/Volumes/Data/.papermachine')
+    expect(textOf('#install-location-path')).toBe('/Volumes/Data/PaperMachine')
     expect(hiddenState('#reset-install-location')).toBe(false)
   })
 
@@ -427,7 +427,7 @@ describe('install location', () => {
   it('clears the pointer and reports restarting through "Use default"', async () => {
     const resetInstallLocation = vi.fn(async () => ({ status: 'restarting' as const }))
     const { bridge } = installBridge({
-      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/PaperMachine', customized: true })),
       resetInstallLocation,
     })
     await loadOnboarding(bridge)
@@ -453,7 +453,7 @@ describe('install location', () => {
 
   it('shows the reason and re-enables the controls when the main process rejects "Use default" for the same reason', async () => {
     const { bridge } = installBridge({
-      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/PaperMachine', customized: true })),
       resetInstallLocation: vi.fn(async (): Promise<ResetInstallLocationResult> => ({ status: 'rejected', reason: 'Installation is in progress; the install location cannot be changed right now.' })),
     })
     await loadOnboarding(bridge)
@@ -468,7 +468,7 @@ describe('install location', () => {
   it('disables "Change…"/"Use default" for the duration of a provisioning run and re-enables them if it fails', async () => {
     let rejectProvision: ((error: Error) => void) | undefined
     const { bridge } = installBridge({
-      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/PaperMachine', customized: true })),
       provision: vi.fn(() => new Promise<void>((_resolve, reject) => { rejectProvision = reject })),
     })
     await loadOnboarding(bridge)
@@ -504,7 +504,7 @@ describe('install location', () => {
 
   it('recovers from a resetInstallLocation() IPC rejection the same way', async () => {
     const { bridge } = installBridge({
-      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/.papermachine', customized: true })),
+      installLocation: vi.fn(async () => ({ path: '/Volumes/Data/PaperMachine', customized: true })),
       resetInstallLocation: vi.fn(async (): Promise<ResetInstallLocationResult> => { throw new Error('boom') }),
     })
     await loadOnboarding(bridge)

@@ -76,15 +76,15 @@ describe('harnessHomeSpaceErrorPage', () => {
 
 describe('installLocationUnavailableErrorPage', () => {
   it('names the pointer file, the unreachable target, and the underlying reason', () => {
-    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/.papermachine', 'ENOENT: no such file or directory'))
+    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/PaperMachine', 'ENOENT: no such file or directory'))
 
     expect(html).toContain('/Users/me/.papermachine-home')
-    expect(html).toContain('/Volumes/Data/.papermachine')
+    expect(html).toContain('/Volumes/Data/PaperMachine')
     expect(html).toContain('ENOENT: no such file or directory')
   })
 
   it('offers "Use default location" and "Quit" instead of Restart Host, and no Host log path', () => {
-    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/.papermachine', 'boom'))
+    const html = decode(installLocationUnavailableErrorPage('/Users/me/.papermachine-home', '/Volumes/Data/PaperMachine', 'boom'))
 
     expect(html).toContain(`href="${USE_DEFAULT_INSTALL_LOCATION_URL}"`)
     expect(html).toContain(`href="${QUIT_URL}"`)

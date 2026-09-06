@@ -5,10 +5,13 @@ import { describe, expect, it } from 'vitest'
 import { HarnessHomeSpaceError } from '../src/harness-home.ts'
 import {
   clearInstallLocationPointer,
+  confirmsInstallLocation,
   hasNonAsciiCharacters,
+  installLocationConfirmationDialog,
   installLocationPointerPath,
   isInstallLocationUnavailable,
   readInstallLocationPointer,
+  resolveChosenInstallLocationPath,
   writeInstallLocationPointer,
 } from '../src/install-location.ts'
 
@@ -123,13 +126,68 @@ describe('hasNonAsciiCharacters', () => {
   })
 })
 
+describe('resolveChosenInstallLocationPath', () => {
+  it('appends the PaperMachine subdirectory to a chosen directory', () => {
+    expect(resolveChosenInstallLocationPath('/Volumes/Data', 'darwin')).toBe('/Volumes/Data/PaperMachine')
+  })
+
+  it('does not duplicate the subdirectory when the chosen directory already ends in it', () => {
+    expect(resolveChosenInstallLocationPath('/Volumes/Data/PaperMachine', 'darwin')).toBe('/Volumes/Data/PaperMachine')
+  })
+
+  it('compares the basename case-insensitively on darwin', () => {
+    expect(resolveChosenInstallLocationPath('/Volumes/Data/papermachine', 'darwin')).toBe('/Volumes/Data/papermachine')
+  })
+
+  it('compares the basename case-insensitively on win32', () => {
+    expect(resolveChosenInstallLocationPath('D:\\papermachine', 'win32')).toBe('D:\\papermachine')
+  })
+
+  it('compares the basename case-sensitively on linux', () => {
+    expect(resolveChosenInstallLocationPath('/mnt/data/papermachine', 'linux')).toBe('/mnt/data/papermachine/PaperMachine')
+  })
+
+  it('is idempotent: calling it again on its own return value is a no-op', () => {
+    const once = resolveChosenInstallLocationPath('/Volumes/Data', 'darwin')
+
+    expect(resolveChosenInstallLocationPath(once, 'darwin')).toBe(once)
+  })
+
+  it('appends to a Windows drive root, parsed with the win32 path module regardless of the test host', () => {
+    expect(resolveChosenInstallLocationPath('D:\\', 'win32')).toBe('D:\\PaperMachine')
+  })
+})
+
+describe('installLocationConfirmationDialog', () => {
+  it('names the resolved target in bilingual message and detail text, with OK/Cancel buttons', () => {
+    const dialog = installLocationConfirmationDialog('/Volumes/Data/PaperMachine')
+
+    expect(dialog.message).toContain('确认安装位置')
+    expect(dialog.message).toContain('Confirm install location')
+    expect(dialog.detail).toContain('/Volumes/Data/PaperMachine')
+    expect(dialog.buttons).toEqual(['确定 · OK', '取消 · Cancel'])
+    expect(dialog.defaultId).toBe(0)
+    expect(dialog.cancelId).toBe(1)
+  })
+})
+
+describe('confirmsInstallLocation', () => {
+  it('is true only for the dialog\'s first ("确定 · OK") button', () => {
+    expect(confirmsInstallLocation(0)).toBe(true)
+  })
+
+  it('is false for the "取消 · Cancel" button', () => {
+    expect(confirmsInstallLocation(1)).toBe(false)
+  })
+})
+
 describe('isInstallLocationUnavailable', () => {
   it('is true when a pointer is set and its target does not exist', () => {
-    expect(isInstallLocationUnavailable('/Volumes/Data/.papermachine', new Error('ENOENT: no such file or directory, mkdir \'/Volumes/Data/.papermachine\''))).toBe(true)
+    expect(isInstallLocationUnavailable('/Volumes/Data/PaperMachine', new Error('ENOENT: no such file or directory, mkdir \'/Volumes/Data/PaperMachine\''))).toBe(true)
   })
 
   it('is true when a pointer is set and its target is not writable', () => {
-    expect(isInstallLocationUnavailable('/Volumes/Data/.papermachine', new Error('EPERM: operation not permitted, mkdir \'/Volumes/Data/.papermachine\''))).toBe(true)
+    expect(isInstallLocationUnavailable('/Volumes/Data/PaperMachine', new Error('EPERM: operation not permitted, mkdir \'/Volumes/Data/PaperMachine\''))).toBe(true)
   })
 
   it('is false for the ordinary case: no pointer in effect', () => {

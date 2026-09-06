@@ -15,7 +15,7 @@ import { qualifyingInterpreters } from './interpreter-presence.ts'
 import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
 import { launchHostOnRememberedPort } from './host-launch.ts'
 import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
-import { clearInstallLocationPointer, hasNonAsciiCharacters, installLocationPointerPath, isInstallLocationUnavailable, readInstallLocationPointer, writeInstallLocationPointer } from './install-location.ts'
+import { clearInstallLocationPointer, confirmsInstallLocation, hasNonAsciiCharacters, installLocationConfirmationDialog, installLocationPointerPath, isInstallLocationUnavailable, readInstallLocationPointer, resolveChosenInstallLocationPath, writeInstallLocationPointer } from './install-location.ts'
 import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
 import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
 import { getOrCreateAnonymousId } from './anonymous-id.ts'
@@ -566,25 +566,6 @@ function relaunchApplication(): void {
 }
 
 /**
- * Compute the Harness home path from a directory the install-location picker
- * returned. Returns `chosen` unchanged today — the picker's `defaultPath` is
- * the current Harness home's own parent directory, so confirming without
- * navigating anywhere reuses that parent directory itself as the new
- * Harness home, scattering `environments/`, `micromamba/`, and every
- * session file directly into it. Appending a fixed subdirectory segment
- * (e.g. `PaperMachine`) to `chosen` would need product sign-off on the
- * segment name and on whether the resulting path is shown to the user
- * before it is written; this function is the single place
- * `desktop:choose-install-location` computes that final path, so that
- * change touches only here.
- * @param chosen - the directory `dialog.showOpenDialog` returned.
- * @returns the path to validate and, if accepted, persist as the new Harness home.
- */
-function resolveChosenInstallLocationPath(chosen: string): string {
-  return chosen
-}
-
-/**
  * Send one progress update to the active window's renderer. The window may
  * already be destroyed by the time a queued micromamba stdout line reaches
  * this callback (the setup window can close mid-run), and `send` throws on a
@@ -727,7 +708,7 @@ async function boot(): Promise<void> {
     })
     const chosen = result.canceled ? undefined : result.filePaths[0]
     if (chosen === undefined) return { status: 'cancelled' } as const
-    const target = resolveChosenInstallLocationPath(chosen)
+    const target = resolveChosenInstallLocationPath(chosen, process.platform)
     try {
       await resolveHarnessHome(osHome, target)
     } catch (error) {
@@ -752,6 +733,16 @@ async function boot(): Promise<void> {
       })
       if (warning.response !== 0) return { status: 'cancelled' } as const
     }
+    const confirmation = installLocationConfirmationDialog(target)
+    const confirmed = await dialog.showMessageBox(window, {
+      type: 'question',
+      buttons: [...confirmation.buttons],
+      defaultId: confirmation.defaultId,
+      cancelId: confirmation.cancelId,
+      message: confirmation.message,
+      detail: confirmation.detail,
+    })
+    if (!confirmsInstallLocation(confirmed.response)) return { status: 'cancelled' } as const
     await writeInstallLocationPointer(osHome, target)
     relaunchApplication()
     return { status: 'restarting' } as const

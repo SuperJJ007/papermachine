@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-desktop-install-location.md
-2026-09-05-desktop-install-location.md: ea85f39c0a1538a74ac450ea9b6f2e961676c62c
-2026-09-05-desktop-install-location.zh.md: ed26df654a27f124043f538d31281d99b91dbd2b
+2026-09-05-desktop-install-location.md: 3407f2dd2b6ccff9893d4e1102adcc28ddd93fbc
+2026-09-05-desktop-install-location.zh.md: a16c180e94ec5eaac799929af994fe15397752d9

@@ -8,12 +8,19 @@
  */
 
 import { readFile, rm } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import { HarnessHomeSpaceError } from './harness-home.ts'
 
 /** ASCII-only filename so the pointer stays readable even when the OS home path itself is otherwise problematic. */
 const POINTER_FILE_NAME = '.papermachine-home'
+
+/**
+ * Fixed subdirectory name {@link resolveChosenInstallLocationPath} appends
+ * under a directory the install-location picker returns, rather than
+ * handing the chosen directory itself to `resolveHarnessHome`.
+ */
+const INSTALL_LOCATION_SUBDIRECTORY_NAME = 'PaperMachine'
 
 /**
  * Path to the install-location pointer file under `osHomeDir`.
@@ -82,6 +89,80 @@ export function hasNonAsciiCharacters(path: string): boolean {
     if (path.charCodeAt(index) > 0x7f) return true
   }
   return false
+}
+
+/**
+ * Compute the Harness home path from a directory the install-location
+ * picker returned. The picker's `defaultPath` is the current Harness home's
+ * own parent directory, so confirming it without navigating anywhere would
+ * otherwise reuse that parent directory itself — `~` by default, or a
+ * Windows drive root such as `D:\` — as the new Harness home outright,
+ * scattering `environments/`, `micromamba/`, and every session file
+ * directly into it. Appending {@link INSTALL_LOCATION_SUBDIRECTORY_NAME}
+ * turns every such choice into a dedicated subdirectory instead, skipped
+ * only when `chosen` already ends in one — an existing `PaperMachine`
+ * directory under the chosen location is reused as-is rather than
+ * duplicated — so this is idempotent: calling it again on its own return
+ * value returns that value unchanged.
+ * @param chosen - the directory `dialog.showOpenDialog` returned.
+ * @param platform - `process.platform`; darwin's and win32's default
+ *   filesystems are case-insensitive, so the basename comparison on those
+ *   platforms ignores case, and win32 paths are parsed with `node:path`'s
+ *   `win32` module regardless of the host this runs on.
+ * @returns the path to validate and, if accepted, persist as the new Harness home.
+ */
+export function resolveChosenInstallLocationPath(chosen: string, platform: NodeJS.Platform): string {
+  const isWindows = platform === 'win32'
+  const name = isWindows ? win32Path.basename(chosen) : basename(chosen)
+  const caseInsensitive = isWindows || platform === 'darwin'
+  const alreadyNamed = caseInsensitive
+    ? name.toLowerCase() === INSTALL_LOCATION_SUBDIRECTORY_NAME.toLowerCase()
+    : name === INSTALL_LOCATION_SUBDIRECTORY_NAME
+  if (alreadyNamed) return chosen
+  return isWindows ? win32Path.join(chosen, INSTALL_LOCATION_SUBDIRECTORY_NAME) : join(chosen, INSTALL_LOCATION_SUBDIRECTORY_NAME)
+}
+
+/** `dialog.showMessageBox` options built by {@link installLocationConfirmationDialog}. */
+export interface InstallLocationConfirmationDialog {
+  readonly message: string
+  readonly detail: string
+  readonly buttons: readonly [string, string]
+  readonly defaultId: 0
+  readonly cancelId: 1
+}
+
+/**
+ * Build the confirmation dialog `desktop:choose-install-location` shows
+ * after the picker and its validation, immediately before writing the
+ * pointer and relaunching: naming the exact resolved path (already
+ * including any subdirectory {@link resolveChosenInstallLocationPath}
+ * appended) so a user is shown, and can decline, what would otherwise
+ * become the new Harness home without further confirmation.
+ * @param target - the resolved Harness home path {@link resolveChosenInstallLocationPath} returned.
+ * @returns the `dialog.showMessageBox` options this confirmation renders.
+ */
+export function installLocationConfirmationDialog(target: string): InstallLocationConfirmationDialog {
+  return {
+    message: '确认安装位置 · Confirm install location',
+    detail: `PaperMachine 将安装到以下目录：\n${target}\n\n · PaperMachine will install to the following directory:\n${target}`,
+    buttons: ['确定 · OK', '取消 · Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  }
+}
+
+/**
+ * Whether a response index from {@link installLocationConfirmationDialog}'s
+ * dialog confirms writing the pointer and relaunching. Declining leaves the
+ * pointer file — and everything else — untouched, reported the same
+ * `cancelled` result a dismissed picker or a declined non-ASCII warning
+ * already report.
+ * @param response - `dialog.showMessageBox`'s `response` field: the index
+ *   of the button the user chose.
+ * @returns `true` only for the dialog's first ("确定 · OK") button.
+ */
+export function confirmsInstallLocation(response: number): boolean {
+  return response === 0
 }
 
 /**

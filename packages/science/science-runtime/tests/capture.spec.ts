@@ -423,6 +423,10 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     expect((await missingResult.done).capture?.chartUnavailablePaths).toEqual(['missing-result.png'])
   })
 
+  // This test does more real subprocess work than most in this file — spawn,
+  // crash-exit, retirement, and a second kernel's spawn and settlement, all
+  // in one body — so the file-wide 30s testTimeout above is not always
+  // enough under full-suite concurrency; doubled here, not the assertions.
   it('extracts every eligible PNG under the always policy and retires a kernel that exits during extraction', async () => {
     const root = tmp('.science-capture-chart-always-')
     const prefix = createFakePythonPrefix(root)
@@ -439,7 +443,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     await next.done
     const starts = session.events.filter(event => event.type === 'science/run-started')
     expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
-  })
+  }, 60_000)
 
   it('retires a kernel after chart extraction times out while preserving ordinary PNG capture', async () => {
     const root = tmp('.science-capture-chart-timeout-')

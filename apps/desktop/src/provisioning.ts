@@ -2,7 +2,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
-import { dirname, join, win32 as win32Path } from 'node:path'
+import { join, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import type { DesktopPlatform, EnvironmentDeclaration, EnvironmentSource } from './environment-declaration.ts'
 import { interpreterLayout } from './interpreter-presence.ts'
@@ -220,17 +220,55 @@ export async function stopProcessGroup(child: ChildProcess): Promise<void> {
   }
 }
 
+// Node's decimal report of Windows' STATUS_DLL_NOT_FOUND (0xC0000135): the
+// exit code a win32 provisioning child produces when a DLL its import table
+// names cannot be found — including micromamba.exe missing the app-local
+// MSVC CRT DLLs `fetch:micromamba` lands beside it (see the accompanying
+// Agent Note for the real-hardware evidence this exit code was diagnosed
+// from).
+const WIN32_MISSING_CRT_EXIT_CODE = 3221225781
+
+/**
+ * A user-facing message for a win32 provisioning child's `exitCode`, when it
+ * is {@link WIN32_MISSING_CRT_EXIT_CODE} — the one case this repository can
+ * name a specific, actionable cause for, rather than an opaque numeric exit
+ * code. Names `executableName`, states the missing dependency, keeps the
+ * original numeric and hexadecimal code for diagnosis, and links the
+ * official redistributable a user could install as a manual workaround (this
+ * application does not bundle or run it — see the accompanying Agent Note
+ * for why the fix is shipping the DLLs app-local instead).
+ * @param exitCode - the child's numeric exit code.
+ * @param executableName - the executable that exited; the caller passes a
+ * bare file name, not a full path, so the message names what a user
+ * recognizes rather than this machine's install layout.
+ * @returns the bilingual message, or `undefined` when `exitCode` is not
+ * {@link WIN32_MISSING_CRT_EXIT_CODE} — the caller falls back to the
+ * original `desktop provisioning: process stopped (<code>)` message.
+ */
+export function describeWin32MissingCrtExit(exitCode: number, executableName: string): string | undefined {
+  if (exitCode !== WIN32_MISSING_CRT_EXIT_CODE) return undefined
+  return `启动 ${executableName} 失败：缺少 Windows 系统运行库（Microsoft Visual C++ 2015-2022 Redistributable x64），原始错误码 ${String(exitCode)}（0xC0000135）。可手动下载安装：https://aka.ms/vc14/vc_redist.x64.exe`
+    + ` · Failed to start ${executableName}: missing Windows system runtime (Microsoft Visual C++ 2015-2022 Redistributable x64), raw error code ${String(exitCode)} (0xC0000135). Manual download: https://aka.ms/vc14/vc_redist.x64.exe`
+}
+
 /**
  * Run one cancellable child and reject on timeout, signal, or non-zero exit.
  * An ordinary exit settles the returned promise directly on the direct
- * child's own `exit` event. Cancellation and a timeout instead settle only
- * once {@link stopProcessGroup} settles — whether it resolves, having
- * confirmed the whole process group (not just the direct child) is gone, or
- * rejects because delivery failed or the group could not be confirmed dead —
- * so the returned promise always settles rather than hanging on
- * {@link stopProcessGroup}'s own bounded confirmation wait, and a caller
- * awaiting rejection before quitting Electron never leaves this escalation's
- * SIGKILL timer running past its own teardown.
+ * child's own `exit` event — translated through
+ * {@link describeWin32MissingCrtExit} on win32 (the platform this actually
+ * runs on, not a caller-declared target: {@link ProcessRequest} carries no
+ * platform field, and every real invocation of this process runner already
+ * executes on the platform it was built for) when the exit code matches, so
+ * a bare Windows host missing the app-local MSVC CRT rejects with an
+ * actionable message instead of an opaque numeric exit code; every other
+ * platform's rejection message is unchanged. Cancellation and a timeout
+ * instead settle only once {@link stopProcessGroup} settles — whether it
+ * resolves, having confirmed the whole process group (not just the direct
+ * child) is gone, or rejects because delivery failed or the group could not
+ * be confirmed dead — so the returned promise always settles rather than
+ * hanging on {@link stopProcessGroup}'s own bounded confirmation wait, and a
+ * caller awaiting rejection before quitting Electron never leaves this
+ * escalation's SIGKILL timer running past its own teardown.
  */
 export const runProvisioningProcess: ProcessRunner = async (request) => {
   await new Promise<void>((resolve, reject) => {
@@ -286,8 +324,11 @@ export const runProvisioningProcess: ProcessRunner = async (request) => {
       // own resolution above, once the whole group is confirmed gone; the
       // direct child's exit alone does not prove that.
       if (outcome === 'cancelled' || outcome === 'timed-out') return
-      if (code === 0) finish()
-      else finish(new Error(`desktop provisioning: process stopped (${String(code ?? signal)})`))
+      if (code === 0) { finish(); return }
+      const translated = process.platform === 'win32' && code !== null
+        ? describeWin32MissingCrtExit(code, win32Path.basename(request.executable))
+        : undefined
+      finish(new Error(translated ?? `desktop provisioning: process stopped (${String(code ?? signal)})`))
     })
     request.signal.addEventListener('abort', abort, { once: true })
     if (request.signal.aborted) abort()
@@ -409,14 +450,8 @@ function win32HealthCheckPathSegments(prefix: string): readonly string[] {
  * On win32, this also carries through {@link WIN32_AMBIENT_ENVIRONMENT_KEYS}
  * (without them the child cannot initialize Winsock at all), points
  * `TEMP`/`TMP` at {@link provisioningScratchTempDir} rather than the Host's
- * ambient temp directory, and rebuilds `PATH` from three parts, joined in
- * order: the Electron executable's own directory first (it ships
- * `vcruntime140.dll`/`msvcp140.dll` next to the application binary, and a
- * bare Windows host with no Visual C++ Runtime installed otherwise fails
- * the separately spawned `micromamba.exe` with `STATUS_DLL_NOT_FOUND`,
- * observed on real Windows Server hardware with no other Visual C++
- * Runtime installed; untested by this repository's own automation — see
- * the accompanying Agent Note); then `options.win32HealthCheckPrefix`'s own
+ * ambient temp directory, and rebuilds `PATH` from two parts, joined in
+ * order: `options.win32HealthCheckPrefix`'s own
  * {@link win32HealthCheckPathSegments}, when given, for a health-check
  * child only; then the ambient system `PATH` itself, found through
  * {@link findWin32PathValue} rather than an exact `key === 'PATH'` match —
@@ -426,7 +461,13 @@ function win32HealthCheckPathSegments(prefix: string): readonly string[] {
  * The output always writes the normalized key `PATH` regardless of the
  * source's own casing; Windows treats a process environment block
  * case-insensitively, so a single `PATH` entry is what every consumer,
- * including this application's own child process, needs.
+ * including this application's own child process, needs. This function does
+ * not put micromamba.exe's own directory on `PATH`: `micromambaPath()`
+ * (`main.ts`) always passes its absolute path as the child's executable, and
+ * Windows' DLL search order checks that executable's own directory before
+ * `PATH` regardless — the directory only needs to hold the DLLs
+ * `fetch:micromamba` lands there (see the accompanying Agent Note), not to
+ * appear on `PATH`.
  * @param options.platform - the platform the child will run on.
  * @param options.root - the provisioner root, {@link desktopEnvironmentsRoot};
  *   used on win32 to derive {@link provisioningScratchTempDir}.
@@ -457,11 +498,10 @@ export function buildProvisioningEnv(
   env.TEMP = scratchTemp
   env.TMP = scratchTemp
   const ambientPath = findWin32PathValue(source)
-  const prependedSegments = [
-    dirname(process.execPath),
-    ...(options.win32HealthCheckPrefix === undefined ? [] : win32HealthCheckPathSegments(options.win32HealthCheckPrefix)),
-  ]
-  env.PATH = ambientPath === undefined ? prependedSegments.join(';') : `${prependedSegments.join(';')};${ambientPath}`
+  const prependedSegments = options.win32HealthCheckPrefix === undefined
+    ? []
+    : win32HealthCheckPathSegments(options.win32HealthCheckPrefix)
+  env.PATH = ambientPath === undefined ? prependedSegments.join(';') : [...prependedSegments, ambientPath].join(';')
   return env
 }
 

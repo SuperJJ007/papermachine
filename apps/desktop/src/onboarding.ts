@@ -263,6 +263,25 @@ async function loadEnvironments(): Promise<void> {
   }
 }
 
+// Electron's ipcRenderer.invoke prepends this to a main-process handler's
+// thrown error message before it reaches the renderer (e.g.
+// `Error invoking remote method 'desktop:provision': Error: <message>`);
+// stripIpcErrorPrefix below removes it so the page shows the handler's own
+// message, not Electron's IPC-channel framing around it.
+const IPC_ERROR_PREFIX = /^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/u
+
+/**
+ * Remove Electron's `ipcRenderer.invoke` wrapping from an error message
+ * caught from a `desktopOnboarding` bridge call, if present, leaving the
+ * main-process handler's own message. The IPC channel itself is unaffected —
+ * this only reformats what the page displays.
+ * @param message - the error message as caught from a bridge call.
+ * @returns `message` with any IPC wrapping stripped from its start.
+ */
+function stripIpcErrorPrefix(message: string): string {
+  return message.replace(IPC_ERROR_PREFIX, '')
+}
+
 /**
  * Run the download the confirm panel is holding. The workspace opens from
  * the main process when the run succeeds, so this window is replaced rather
@@ -285,7 +304,7 @@ async function startConfirmed(): Promise<void> {
       ? window.desktopOnboarding.provision(standard?.id ?? '', sourceId ?? '')
       : window.desktopOnboarding.provisionCustom(approved.packages, sourceId ?? ''))
   } catch (error) {
-    const errorText = error instanceof Error ? error.message : String(error)
+    const errorText = stripIpcErrorPrefix(error instanceof Error ? error.message : String(error))
     statusNode.textContent = errorText
     progress.hidden = true
     setBusy(false)

@@ -99,6 +99,26 @@ jobs:
           pnpm --filter @deepseek-ai/dsh-desktop run fetch:micromamba win32-x64
           ./apps/desktop/resources/bin/win32-x64/micromamba.exe --version
 
+      # This runner's own System32 already carries the MSVC CRT, so the
+      # `--version` run above passing proves nothing about the app-local DLLs
+      # a bare end-user machine actually needs (see the accompanying Agent
+      # Note) — only a file-presence check catches a fetch that silently
+      # stopped landing them.
+      - name: App-local CRT DLLs present
+        run: |
+          mapfile -t files < <(jq -r '.["win32-x64"].runtime.files[]' apps/desktop/resources/micromamba.json)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "desktop CI: no runtime.files pinned for win32-x64 in resources/micromamba.json" >&2
+            exit 1
+          fi
+          for name in "${files[@]}"; do
+            if [ ! -f "apps/desktop/resources/bin/win32-x64/$name" ]; then
+              echo "desktop CI: missing app-local CRT DLL: $name" >&2
+              exit 1
+            fi
+          done
+          echo "app-local CRT DLLs present: ${files[*]}"
+
       - name: Package
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:win
 

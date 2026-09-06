@@ -1,13 +1,14 @@
 import type { ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, win32 as win32Path } from 'node:path'
+import { join, win32 as win32Path } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { parseEnvironmentDeclaration } from '../src/environment-declaration.ts'
 import {
   buildProvisioningEnv,
+  describeWin32MissingCrtExit,
   DesktopEnvironmentProvisioner,
   orderSourcesFrom,
   parseMicromambaProgressLine,
@@ -358,7 +359,7 @@ describe('DesktopEnvironmentProvisioner', () => {
       // production code itself uses to build a literal win32 PATH string
       // regardless of the host OS, and normalizes a POSIX-shaped test
       // prefix (this test runs cross-platform) the same way.
-      expect(segments.slice(1, 7)).toEqual([
+      expect(segments.slice(0, 6)).toEqual([
         prefix,
         win32Path.join(prefix, 'Library\\mingw-w64\\bin'),
         win32Path.join(prefix, 'Library\\usr\\bin'),
@@ -561,7 +562,7 @@ describe('buildProvisioningEnv', () => {
     })
   })
 
-  it('on win32, carries through the ambient system keys, points TEMP/TMP at its own scratch directory, and prepends execPath\'s directory to PATH', () => {
+  it('on win32, carries through the ambient system keys and points TEMP/TMP at its own scratch directory', () => {
     const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
     const env = buildProvisioningEnv({ platform: 'win32-x64', root }, {
       PATH: 'C:\\Windows\\System32',
@@ -595,7 +596,7 @@ describe('buildProvisioningEnv', () => {
     })
     expect(env.TEMP).toBe(provisioningScratchTempDir(root))
     expect(env.TMP).toBe(provisioningScratchTempDir(root))
-    expect(env.PATH?.split(';')[0]).toBe(dirname(process.execPath))
+    expect(env.PATH).toBe('C:\\Windows\\System32')
     expect(env.DEEPSEEK_API_KEY).toBeUndefined()
   })
 
@@ -613,7 +614,7 @@ describe('buildProvisioningEnv', () => {
     // else the host's own PATH carries.
     const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
     const env = buildProvisioningEnv({ platform: 'win32-x64', root }, { Path: 'C:\\Windows\\System32;C:\\Windows' })
-    expect(env.PATH).toBe(`${dirname(process.execPath)};C:\\Windows\\System32;C:\\Windows`)
+    expect(env.PATH).toBe('C:\\Windows\\System32;C:\\Windows')
     // The output always normalizes to the single uppercase key, never the
     // source's own casing — Windows treats an environment block
     // case-insensitively, so a second `Path` entry would be redundant, not
@@ -621,7 +622,7 @@ describe('buildProvisioningEnv', () => {
     expect((env as Record<string, unknown>).Path).toBeUndefined()
   })
 
-  it('for a health-check child, prepends the prefix\'s own win32 Conda subdirectories after execPath\'s directory and before the ambient PATH', () => {
+  it('for a health-check child, prepends the prefix\'s own win32 Conda subdirectories before the ambient PATH', () => {
     const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
     const prefix = 'C:\\Users\\test\\.papermachine\\desktop-environments\\environments\\general\\2026.09.1'
     const env = buildProvisioningEnv(
@@ -629,7 +630,6 @@ describe('buildProvisioningEnv', () => {
       { Path: 'C:\\Windows\\System32' },
     )
     expect(env.PATH).toBe([
-      dirname(process.execPath),
       prefix,
       `${prefix}\\Library\\mingw-w64\\bin`,
       `${prefix}\\Library\\usr\\bin`,
@@ -640,10 +640,10 @@ describe('buildProvisioningEnv', () => {
     ].join(';'))
   })
 
-  it('for the micromamba create child (no win32HealthCheckPrefix), PATH carries no prefix subdirectories', () => {
+  it('for the micromamba create child (no win32HealthCheckPrefix), PATH is the ambient PATH unchanged', () => {
     const root = 'C:\\Users\\test\\.papermachine\\desktop-environments'
     const env = buildProvisioningEnv({ platform: 'win32-x64', root }, { Path: 'C:\\Windows\\System32' })
-    expect(env.PATH).toBe(`${dirname(process.execPath)};C:\\Windows\\System32`)
+    expect(env.PATH).toBe('C:\\Windows\\System32')
   })
 })
 
@@ -726,6 +726,23 @@ describe('runProvisioningProcess', () => {
     // wait needed.
     expect(() => process.kill(grandchildPid, 0)).toThrow()
   }, 10_000)
+})
+
+describe('describeWin32MissingCrtExit', () => {
+  it('names STATUS_DLL_NOT_FOUND (3221225781 / 0xC0000135), the executable, the original code, and the redistributable download link, bilingually', () => {
+    const message = describeWin32MissingCrtExit(3221225781, 'micromamba.exe')
+    expect(message).toContain('micromamba.exe')
+    expect(message).toContain('3221225781')
+    expect(message).toContain('0xC0000135')
+    expect(message).toContain('https://aka.ms/vc14/vc_redist.x64.exe')
+    expect(message).toMatch(/Microsoft Visual C\+\+/u)
+    expect(message).toContain(' · ') // Chinese and English joined, matching this codebase's bilingual message convention.
+  })
+
+  it('returns undefined for any other exit code, leaving the caller\'s original message unchanged', () => {
+    expect(describeWin32MissingCrtExit(1, 'micromamba.exe')).toBeUndefined()
+    expect(describeWin32MissingCrtExit(0, 'micromamba.exe')).toBeUndefined()
+  })
 })
 
 describe('stopProcessGroup', () => {

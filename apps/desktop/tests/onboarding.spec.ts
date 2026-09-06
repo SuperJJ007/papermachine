@@ -345,6 +345,17 @@ describe('onboarding install route', () => {
     expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('strips Electron\'s ipcRenderer.invoke wrapping from a provisioning failure before displaying it', async () => {
+    const wrapped = "Error invoking remote method 'desktop:provision': Error: 启动 micromamba.exe 失败：缺少 Windows 系统运行库"
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error(wrapped) }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(textOf('#status')).toBe('启动 micromamba.exe 失败：缺少 Windows 系统运行库') })
+  })
+
   it('disables Install when the environment list cannot be read, and says why', async () => {
     const { bridge } = installBridge({ environments: vi.fn(async () => { throw new Error('no declarations') }) })
     await loadOnboarding(bridge)

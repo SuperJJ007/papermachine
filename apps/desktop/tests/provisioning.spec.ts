@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, win32 as win32Path } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -12,11 +12,13 @@ import {
   DesktopEnvironmentProvisioner,
   orderSourcesFrom,
   parseMicromambaProgressLine,
+  provisioningLogsDir,
   provisioningScratchTempDir,
   resolvePackageCacheDir,
   runProvisioningProcess,
   stopProcessGroup,
   type ProcessRequest,
+  type ProvisioningAttemptLog,
 } from '../src/provisioning.ts'
 import { resolveDisciplineStatus } from '../src/discipline-status.ts'
 
@@ -477,6 +479,114 @@ describe('DesktopEnvironmentProvisioner', () => {
 
       await expect(provisioner.provision(multiSource, new AbortController().signal, undefined, 'source-c')).rejects.toThrow()
       expect(attempts).toEqual(['source-c', 'source-a', 'source-b'])
+    })
+  })
+
+  describe('per-attempt logs on disk', () => {
+    const twoSource = parseEnvironmentDeclaration({ ...declaration, sources: [SOURCE_A, SOURCE_B] })
+    const threeSource = parseEnvironmentDeclaration({ ...declaration, sources: [SOURCE_A, SOURCE_B, SOURCE_C] })
+
+    it('writes the failed source\'s full log, and the next "Retrying via" message names the failure reason and that log\'s path', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-attempt-logs-'))
+      const solvingMessages: string[] = []
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          if (channelArgs[0] === SOURCE_A.channels[0]) {
+            request.onLine?.('Solving environment: failed')
+            request.onLine?.('remove_all: The directory is not empty')
+            throw new Error('desktop provisioning: process stopped (1)')
+          }
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+        },
+      })
+
+      await provisioner.provision(twoSource, new AbortController().signal, (update) => {
+        if (update.phase === 'solving') solvingMessages.push(update.message)
+      })
+
+      const logsDir = provisioningLogsDir(root)
+      const files = await readdir(logsDir)
+      const sourceALog = files.find(name => name.startsWith(`provision-${SOURCE_A.id}-`))
+      const sourceBLog = files.find(name => name.startsWith(`provision-${SOURCE_B.id}-`))
+      expect(sourceALog).toBeDefined()
+      expect(sourceBLog).toBeDefined()
+
+      const sourceAContent = await readFile(join(logsDir, sourceALog!), 'utf8')
+      const sourceALines = sourceAContent.trimEnd().split('\n')
+      expect(sourceALines).toContain('remove_all: The directory is not empty')
+      // The attempt's own last line is the error's first line — the crashed
+      // attempt's whole streamed output survives, plus a summary of why it
+      // stopped.
+      expect(sourceALines.at(-1)).toBe('desktop provisioning: process stopped (1)')
+
+      // The successful attempt gets a log too, ending in the success marker.
+      const sourceBContent = await readFile(join(logsDir, sourceBLog!), 'utf8')
+      expect(sourceBContent.trimEnd().split('\n').at(-1)).toBe('exit ok')
+
+      const retryMessage = solvingMessages.find(message => message.includes('Retrying via'))
+      expect(retryMessage).toBeDefined()
+      expect(retryMessage).toContain('desktop provisioning: process stopped (1)')
+      expect(retryMessage).toContain(join(logsDir, sourceALog!))
+    })
+
+    it('on total failure, throws attemptLogs naming every source\'s log path and recentLogs limited to the last attempt', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-attempt-logs-all-fail-'))
+      const sources = [SOURCE_A, SOURCE_B, SOURCE_C]
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async (request) => {
+          if (request.args[0] !== 'create') return
+          const channelArgs = request.args.filter((_, index) => request.args[index - 1] === '--channel')
+          const source = sources.find(candidate => candidate.channels[0] === channelArgs[0])!
+          request.onLine?.(`${source.id} line 1`)
+          request.onLine?.(`${source.id} line 2`)
+          throw new Error(`${source.id} failed`)
+        },
+      })
+
+      let caught: unknown
+      try {
+        await provisioner.provision(threeSource, new AbortController().signal)
+      } catch (error) {
+        caught = error
+      }
+      const error = caught as (Error & { attemptLogs?: readonly ProvisioningAttemptLog[]; recentLogs?: readonly string[] }) | undefined
+      expect(error).toBeInstanceOf(Error)
+      expect(error?.attemptLogs?.map(entry => entry.sourceId)).toEqual(['source-a', 'source-b', 'source-c'])
+      // recentLogs is rebuilt fresh per attempt: only the last attempt's
+      // (source-c's) lines survive, not source-a's or source-b's, which the
+      // prior shared 200-line ring buffer would have mixed together.
+      expect(error?.recentLogs).toEqual(['source-c line 1', 'source-c line 2'])
+      expect(error?.message).toContain('Attempt logs:')
+
+      for (const entry of error?.attemptLogs ?? []) {
+        const content = await readFile(entry.path, 'utf8')
+        expect(content).toContain(`${entry.sourceId} line 1`)
+        expect(content.trimEnd().split('\n').at(-1)).toBe(`${entry.sourceId} failed`)
+        expect(error?.message).toContain(entry.path)
+      }
+    })
+
+    it('clears the previous provision() call\'s attempt logs before the next call starts', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-attempt-logs-clear-'))
+      let now = 1_000
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        now: () => now,
+        run: createOnly,
+      })
+      const logsDir = provisioningLogsDir(root)
+
+      await provisioner.provision(declaration, new AbortController().signal)
+      expect(await readdir(logsDir)).toEqual([`provision-${SOURCE_A.id}-1000.log`])
+
+      now = 2_000
+      await provisioner.provision(declaration, new AbortController().signal)
+      expect(await readdir(logsDir)).toEqual([`provision-${SOURCE_A.id}-2000.log`])
     })
   })
 })

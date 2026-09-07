@@ -553,4 +553,57 @@ describe('install location', () => {
     expect(report).toContain(`Harness home: ${DEFAULT_LOCATION.path}`)
     expect(report).toContain('Last source attempted: tuna')
   })
+
+  it('appends every attempt\'s full log file path from the error text, when the failure named any', async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    // Shaped like `DesktopEnvironmentProvisioner.provision`'s total-failure
+    // message (`provisioning.ts`): the only channel this path list has,
+    // since `ipcMain.handle` strips every property but `message` off a
+    // thrown Error before it reaches this renderer.
+    const errorMessage = [
+      'tuna failed',
+      '',
+      'Last 2 log lines:',
+      'line one',
+      'line two',
+      '',
+      'Attempt logs:',
+      '  tuna: /Users/scientist/.papermachine/desktop-environments/logs/provision-tuna-1000.log',
+      '  ustc: /Users/scientist/.papermachine/desktop-environments/logs/provision-ustc-2000.log',
+    ].join('\n')
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error(errorMessage) }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    chooseSource('tuna')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(document.querySelector('#copy-diagnostics')).not.toBeNull() })
+    click('#copy-diagnostics')
+
+    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
+    const report = writeText.mock.calls[0]?.[0] ?? ''
+    expect(report).toContain('完整日志文件 · Full log files:')
+    expect(report).toContain('  - /Users/scientist/.papermachine/desktop-environments/logs/provision-tuna-1000.log')
+    expect(report).toContain('  - /Users/scientist/.papermachine/desktop-environments/logs/provision-ustc-2000.log')
+  })
+
+  it('adds no log-file section when the failure named none (a capacity or platform-support failure, say)', async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const { bridge } = installBridge({ provision: vi.fn(async () => { throw new Error('desktop provisioning: Test science needs 200 free bytes') }) })
+    await loadOnboarding(bridge)
+
+    click('#provision')
+    chooseSource('tuna')
+    click('#confirm-start')
+
+    await vi.waitFor(() => { expect(document.querySelector('#copy-diagnostics')).not.toBeNull() })
+    click('#copy-diagnostics')
+
+    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
+    const report = writeText.mock.calls[0]?.[0] ?? ''
+    expect(report).not.toContain('Full log files')
+  })
 })

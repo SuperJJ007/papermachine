@@ -1,7 +1,7 @@
 /** Transactional micromamba provisioning for desktop discipline environments. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, readFile, rm, statfs } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile, rm, statfs } from 'node:fs/promises'
 import { join, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import type { DesktopPlatform, EnvironmentDeclaration, EnvironmentSource } from './environment-declaration.ts'
@@ -118,6 +118,17 @@ export function parseMicromambaProgressLine(line: string): ParsedProgress {
     ...(currentPackage !== undefined && { currentPackage }),
     ...(percent !== undefined && { percent }),
   }
+}
+
+/**
+ * One source attempt's full-output log file, as recorded on a total
+ * `provision()` failure's thrown `attemptLogs` (see
+ * {@link DesktopEnvironmentProvisioner.provision}) — one entry per source
+ * attempted, in attempt order, regardless of which attempts failed.
+ */
+export interface ProvisioningAttemptLog {
+  readonly sourceId: string
+  readonly path: string
 }
 
 /** Published pointer to the only prefix desktop Runtime configuration may consume. */
@@ -529,6 +540,128 @@ export function provisionedEnvironmentsDirectory(root: string): string {
 }
 
 /**
+ * The directory under the provisioner root holding each `provision()` call's
+ * per-source-attempt logs (see {@link AttemptLog} and
+ * {@link clearStaleAttemptLogs}).
+ * @param root - the provisioner root, {@link desktopEnvironmentsRoot}.
+ */
+export function provisioningLogsDir(root: string): string {
+  return join(root, 'logs')
+}
+
+/**
+ * File-name prefix and suffix every per-attempt log under
+ * {@link provisioningLogsDir} carries, shared by the writer and the
+ * retention sweep below.
+ */
+const ATTEMPT_LOG_PREFIX = 'provision-'
+const ATTEMPT_LOG_SUFFIX = '.log'
+
+/**
+ * The path one source attempt's full `micromamba create` output is appended
+ * to, distinct per `(source, timestamp)` pair so two sources attempted in
+ * the same `provision()` call never collide even when {@link Date.now}'s
+ * millisecond resolution repeats between them.
+ * @param logsDir - {@link provisioningLogsDir}.
+ * @param sourceId - the attempted source's id.
+ * @param timestamp - the attempt's start time, from the provisioner's own
+ *   (possibly injected, for deterministic tests) clock.
+ */
+function attemptLogPath(logsDir: string, sourceId: string, timestamp: number): string {
+  return join(logsDir, `${ATTEMPT_LOG_PREFIX}${sourceId}-${String(timestamp)}${ATTEMPT_LOG_SUFFIX}`)
+}
+
+/**
+ * Remove every attempt log a prior `provision()` call left under `logsDir`,
+ * so this directory only ever holds the current call's attempts — an
+ * environment that is repeatedly retried or reinstalled would otherwise
+ * accumulate one log file per source per call forever. Tolerates `logsDir`
+ * not existing yet (the first `provision()` call on a fresh Harness home).
+ * @param logsDir - {@link provisioningLogsDir}, already created by the caller.
+ */
+async function clearStaleAttemptLogs(logsDir: string): Promise<void> {
+  let entries: readonly string[]
+  try {
+    entries = await readdir(logsDir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  await Promise.all(
+    entries
+      .filter(name => name.startsWith(ATTEMPT_LOG_PREFIX) && name.endsWith(ATTEMPT_LOG_SUFFIX))
+      .map(name => rm(join(logsDir, name), { force: true })),
+  )
+}
+
+/**
+ * One source attempt's append-only log file, written to as each output line
+ * arrives rather than assembled in memory and written once at the end — a
+ * crash mid-attempt (this process, or the whole machine) still leaves
+ * whatever `micromamba create` had already produced on disk. Writes are
+ * serialized through an internal chain so concurrent `append` calls (the
+ * child process streams stdout and stderr independently — see
+ * {@link runProvisioningProcess}) still land in the order they were queued,
+ * despite each call returning before its own write settles.
+ *
+ * A write failure (a full disk, a permissions problem on `logsDir`) is
+ * swallowed rather than rejecting: this log is a diagnostic side channel a
+ * user can consult after a failure, not part of the transaction
+ * {@link DesktopEnvironmentProvisioner.provision} is deciding pass or fail —
+ * whether `micromamba create` itself succeeds must never depend on whether
+ * writing its own log succeeded.
+ */
+class AttemptLog {
+  readonly path: string
+  #chain: Promise<void> = Promise.resolve()
+
+  constructor(path: string) {
+    this.path = path
+  }
+
+  /** Queue `line` to be appended, newline-terminated, once every previously queued write for this log has settled. */
+  append(line: string): void {
+    this.#chain = this.#chain
+      .then(() => appendFile(this.path, `${line}\n`, { mode: 0o600 }))
+      .catch(() => {})
+  }
+
+  /**
+   * Await every write queued so far, so a caller can rely on the file being
+   * complete before using its path (the next attempt's "Retrying via"
+   * message, or the final failure's `attemptLogs`).
+   */
+  async flush(): Promise<void> {
+    await this.#chain
+  }
+}
+
+/**
+ * The `phase: 'solving'` message for retrying via `sourceName` after a prior
+ * source failed — bilingual, appending the prior failure's first error line
+ * and its full log path to the plain retry statement (kept English-only,
+ * unchanged from before this attempt-log feature) so the UI names *why* it
+ * moved on and *where* to find the rest, not only that it did.
+ * @param sourceName - the source about to be retried.
+ * @param index - the retried source's zero-based position in the attempt order.
+ * @param total - the total number of sources being attempted this run.
+ * @param previousFailure - the immediately preceding attempt's first error
+ *   line and log path; always defined when `index > 0` (the loop only
+ *   reaches a later index after an earlier attempt has failed and recorded
+ *   one), `undefined` only for `index === 0`, which never calls this.
+ */
+function buildRetryMessage(
+  sourceName: string,
+  index: number,
+  total: number,
+  previousFailure: { readonly message: string; readonly path: string } | undefined,
+): string {
+  const base = `Retrying via ${sourceName} (source ${String(index + 1)} of ${String(total)})`
+  if (previousFailure === undefined) return base
+  return `${base} · 上一源失败：${previousFailure.message}（日志：${previousFailure.path}） · previous source failed: ${previousFailure.message} (log: ${previousFailure.path})`
+}
+
+/**
  * Resolve the micromamba package cache directory (`CONDA_PKGS_DIRS`)
  * explicitly, rather than letting micromamba derive it implicitly from
  * `MAMBA_ROOT_PREFIX` (`<MAMBA_ROOT_PREFIX>/pkgs`).
@@ -706,6 +839,9 @@ export class DesktopEnvironmentProvisioner {
         )
       }
     }
+    const logsDir = provisioningLogsDir(this.options.root)
+    await mkdir(logsDir, { recursive: true, mode: 0o700 })
+    await clearStaleAttemptLogs(logsDir)
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
@@ -713,19 +849,31 @@ export class DesktopEnvironmentProvisioner {
     const attempts = orderSourcesFrom(declaration.sources, preferredSourceId)
     let lastError: unknown
     let succeededSourceId: string | undefined
-    const logRingBuffer: string[] = []
-    const recordLog = (line: string): void => {
-      if (logRingBuffer.length >= 200) logRingBuffer.shift()
-      logRingBuffer.push(line)
-    }
+    // Every attempt's log path, in attempt order — surfaced in a total
+    // failure's thrown `attemptLogs` regardless of which attempts failed.
+    const attemptLogs: ProvisioningAttemptLog[] = []
+    // The most recently failed attempt's first error line and log path, read
+    // by the *next* attempt's "Retrying via" message (see
+    // `buildRetryMessage`) — `undefined` only before the first source has
+    // been tried.
+    let lastFailure: { readonly message: string; readonly path: string } | undefined
+    // The failed or succeeded attempt's own lines, rebuilt fresh per
+    // attempt: unlike the prior shared 200-line ring buffer, a source that
+    // fails and is followed by a later attempt no longer has its lines
+    // silently evicted by that later attempt's own output.
+    let lastAttemptLines: string[] = []
 
     for (const [index, source] of attempts.entries()) {
       await rm(prefix, { recursive: true, force: true })
+      const logPath = attemptLogPath(logsDir, source.id, this.#now())
+      attemptLogs.push({ sourceId: source.id, path: logPath })
+      const attemptLog = new AttemptLog(logPath)
+      const attemptLines: string[] = []
       onProgress({
         phase: 'solving',
         message: index === 0
           ? `Resolving ${declaration.name} packages via ${source.name}`
-          : `Retrying via ${source.name} (source ${String(index + 1)} of ${String(attempts.length)})`,
+          : buildRetryMessage(source.name, index, attempts.length, lastFailure),
         sourceId: source.id,
         retryAttempt: { index: index + 1, total: attempts.length },
       })
@@ -745,7 +893,8 @@ export class DesktopEnvironmentProvisioner {
           signal,
           timeoutMs: declaration.timeoutMs,
           onLine: (line) => {
-            recordLog(line)
+            attemptLines.push(line)
+            attemptLog.append(line)
             const parsed = parseMicromambaProgressLine(line)
             onProgress({
               phase: 'installing',
@@ -756,19 +905,31 @@ export class DesktopEnvironmentProvisioner {
             })
           },
         })
+        attemptLog.append('exit ok')
+        await attemptLog.flush()
         succeededSourceId = source.id
         break
       } catch (error) {
         lastError = error
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        const firstLine = (errorMessage.split('\n')[0] ?? errorMessage).trim()
+        attemptLog.append(firstLine)
+        await attemptLog.flush()
+        lastFailure = { message: firstLine, path: logPath }
+        lastAttemptLines = attemptLines
         if (signal.aborted) throw error
       }
     }
     if (succeededSourceId === undefined) {
-      const recentLogs = logRingBuffer.slice(-200)
+      const recentLogs = lastAttemptLines.slice(-200)
       const baseMessage = lastError instanceof Error ? lastError.message : String(lastError)
       const logSummary = recentLogs.length > 0 ? `\n\nLast ${String(recentLogs.length)} log lines:\n${recentLogs.join('\n')}` : ''
-      const failureError = new Error(`${baseMessage}${logSummary}`)
+      const attemptLogsSummary = attemptLogs.length > 0
+        ? `\n\nAttempt logs:\n${attemptLogs.map(entry => `  ${entry.sourceId}: ${entry.path}`).join('\n')}`
+        : ''
+      const failureError = new Error(`${baseMessage}${logSummary}${attemptLogsSummary}`)
       ;(failureError as unknown as { recentLogs: readonly string[] }).recentLogs = recentLogs
+      ;(failureError as unknown as { attemptLogs: readonly ProvisioningAttemptLog[] }).attemptLogs = attemptLogs
       throw failureError
     }
     onProgress({ phase: 'verifying', message: 'Verifying Python and R', sourceId: succeededSourceId })

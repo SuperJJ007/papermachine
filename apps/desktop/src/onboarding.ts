@@ -296,6 +296,36 @@ function bridgeErrorMessage(error: unknown): string {
   return stripIpcErrorPrefix(error instanceof Error ? error.message : String(error))
 }
 
+// Matches one "  <sourceId>: <path>" line from the "Attempt logs:" section
+// `DesktopEnvironmentProvisioner.provision` appends to a total-failure
+// Error's message (`provisioning.ts`) — capturing group 1 is the path.
+const ATTEMPT_LOG_LINE_PATTERN = /^ {2}[^:]+: (.+)$/u
+
+/**
+ * Extract each source attempt's full-log file path from a provisioning
+ * failure's error text. `attemptLogs` (`ProvisioningAttemptLog[]`,
+ * `provisioning.ts`) is set on the thrown Error object itself, but
+ * `ipcMain.handle` strips every property but `message` off a thrown Error
+ * before it reaches this renderer (Electron's own documented behavior) — so
+ * the only channel this path list has is the "Attempt logs:" section
+ * `provision()` appends into that same message text.
+ * @param errorText - the error text as caught from the
+ *   `provision`/`provisionCustom` bridge call.
+ * @returns each attempt's log path, in the order provisioning attempted
+ *   them; empty when the failure named no attempt logs (for example,
+ *   capacity or platform-support failures that never reach the source loop).
+ */
+function attemptLogPaths(errorText: string): readonly string[] {
+  const marker = 'Attempt logs:\n'
+  const start = errorText.indexOf(marker)
+  if (start === -1) return []
+  return errorText
+    .slice(start + marker.length)
+    .split('\n')
+    .map(line => ATTEMPT_LOG_LINE_PATTERN.exec(line)?.[1])
+    .filter((path): path is string => path !== undefined)
+}
+
 /**
  * Run the download the confirm panel is holding. The workspace opens from
  * the main process when the run succeeds, so this window is replaced rather
@@ -334,6 +364,7 @@ async function startConfirmed(): Promise<void> {
       copyBtn.textContent = '📋 一键复制报错诊断 · Copy Diagnostic Report'
       copyBtn.addEventListener('click', () => {
         const fence = '```'
+        const logPaths = attemptLogPaths(errorText)
         const report = [
           '## PaperMachine Environment Install Failure',
           `- App version: ${diagnostics?.appVersion ?? 'unknown'}`,
@@ -346,6 +377,9 @@ async function startConfirmed(): Promise<void> {
           fence,
           errorText,
           fence,
+          ...(logPaths.length > 0
+            ? ['- 完整日志文件 · Full log files:', ...logPaths.map(path => `  - ${path}`)]
+            : []),
           '',
         ].join('\n')
         void navigator.clipboard.writeText(report).then(() => {

@@ -19,6 +19,32 @@
 const NATIVE_MODULE_FAMILIES = Object.freeze(['sharp-libvips', 'sharp', 'koffi'])
 
 /**
+ * `(family, os)` pairs this carrier never ships as a separate package, so
+ * {@link selectNativeModuleTargets} must not require one. This is a fixed
+ * list, not inferred from which `os` values happen to appear in `entries`:
+ * inferring it from `entries` cannot tell "this family never ships for this
+ * os" apart from "every entry of this family for this os is missing", which
+ * is exactly the failure {@link selectNativeModuleTargets} exists to catch.
+ * sharp's win32 build folds libvips into the same `@img/sharp-win32-*`
+ * package; no separate `@img/sharp-libvips-win32-*` package exists at any
+ * version.
+ * @type {ReadonlyArray<{ readonly family: string, readonly os: string }>}
+ */
+const FAMILY_NOT_SHIPPED_FOR_OS = Object.freeze([
+  { family: 'sharp-libvips', os: 'win32' },
+])
+
+/**
+ * Whether `family` ships a separate package for `os` at all.
+ * @param {string} family - a {@link NATIVE_MODULE_FAMILIES} entry.
+ * @param {string} os - a platform segment (`darwin`, `win32`, `linux`, …).
+ * @returns {boolean} false only for a pair listed in {@link FAMILY_NOT_SHIPPED_FOR_OS}.
+ */
+function familyShipsForOs(family, os) {
+  return !FAMILY_NOT_SHIPPED_FOR_OS.some(exempt => exempt.family === family && exempt.os === os)
+}
+
+/**
  * @typedef {object} NativeModuleEntry
  * @property {string} name - the directory's basename, unchanged.
  * @property {string} family - which entry in {@link NATIVE_MODULE_FAMILIES} matched.
@@ -51,24 +77,27 @@ export function parseNativeModuleEntry(name) {
  *
  * A name that parses to no known family (`parseNativeModuleEntry` returns
  * `undefined`) is always kept. A name that parses to a known family but a
- * different `(os, arch)` than `target` is removed. A family that ships at
- * all for `target.os` — some entry of that family has that `os`, at any
- * arch — must have an entry matching `target` exactly, or this throws: a
- * missing target variant means the workspace was installed without
- * `supportedArchitectures` covering every desktop packaging target, and
- * packaging must fail loud rather than ship a Host that exits before
- * readiness on the missing import. A family that never ships for
- * `target.os` at all is not required — sharp's win32 build folds libvips in,
- * so `entries` can freely carry `sharp-libvips-darwin-*` alongside
- * `sharp-win32-x64` (staging keeps every desktop target's variants in the
- * same scope directory) without a win32 target ever being asked for a
- * `sharp-libvips-win32-*` entry that was never going to exist.
+ * different `(os, arch)` than `target` is removed. A family present in
+ * `entries` for ANY `os` (proving `entries` is a scope this family belongs
+ * to at all — `@img`'s entries never include `koffi`, `@koromix`'s never
+ * include `sharp`) must have an entry matching `target` exactly, unless
+ * {@link FAMILY_NOT_SHIPPED_FOR_OS} exempts it for `target.os`; otherwise
+ * this throws. A missing target variant means the workspace was installed
+ * without `supportedArchitectures` covering every desktop packaging target,
+ * and packaging must fail loud rather than ship a Host that exits before
+ * readiness on the missing import — including when EVERY entry of that
+ * family for `target.os` is missing, not only when some are: whether a
+ * family ships for `target.os` at all is fixed domain knowledge, never
+ * inferred from which `os` values happen to appear in `entries`, because
+ * that inference cannot tell "this family never ships for this os" apart
+ * from "every entry of this family for this os failed to install".
  * @param {{ readonly os: string, readonly arch: string }} target - the
  *   packaging target being built.
  * @param {readonly string[]} entries - directory basenames under one scope
  *   (`@img` or `@koromix`).
  * @returns {{ readonly keep: readonly string[], readonly remove: readonly string[] }}
- * @throws when a family that ships for `target.os` has no entry matching `target`.
+ * @throws when a family present in `entries` and not exempted for
+ *   `target.os` has no entry matching `target`.
  */
 export function selectNativeModuleTargets(target, entries) {
   const parsed = entries.map(name => ({ name, entry: parseNativeModuleEntry(name) }))
@@ -76,13 +105,15 @@ export function selectNativeModuleTargets(target, entries) {
     parsed.map(({ entry }) => entry?.family).filter(family => family !== undefined),
   )
   for (const family of familiesPresent) {
+    if (!familyShipsForOs(family, target.os)) continue
     const sameOs = parsed.filter(({ entry }) => entry?.family === family && entry.os === target.os)
-    if (sameOs.length === 0) continue
     const matchesTarget = sameOs.some(({ entry }) => entry?.arch === target.arch)
     if (matchesTarget) continue
     throw new Error(
       `no ${family}-${target.os}-${target.arch} entry for the ${target.os}-${target.arch} packaging target ` +
-      `(present for ${target.os}: ${sameOs.map(({ name }) => name).join(', ')})`,
+      (sameOs.length === 0
+        ? `(no ${family} entry for ${target.os} at all)`
+        : `(present for ${target.os}: ${sameOs.map(({ name }) => name).join(', ')})`),
     )
   }
   const keep = []

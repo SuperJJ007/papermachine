@@ -88,6 +88,13 @@ describe('selectNativeModuleTargets', () => {
       .toThrow(/no sharp-win32-x64 entry for the win32-x64 packaging target \(present for win32: sharp-win32-arm64\)/)
   })
 
+  it('throws when EVERY entry of a required family for the target os is missing, not only some (a totally failed target install must still fail loud, the same as a partially failed one)', () => {
+    expect(() => selectNativeModuleTargets(
+      { os: 'win32', arch: 'x64' },
+      ['sharp-darwin-arm64', 'sharp-darwin-x64', 'sharp-libvips-darwin-arm64', 'sharp-libvips-darwin-x64'],
+    )).toThrow(/no sharp-win32-x64 entry for the win32-x64 packaging target \(no sharp entry for win32 at all\)/)
+  })
+
   it('does not require a family that never ships for the target os at all (win32 never installs sharp-libvips)', () => {
     expect(() => selectNativeModuleTargets({ os: 'win32', arch: 'x64' }, ['sharp-win32-x64'])).not.toThrow()
   })

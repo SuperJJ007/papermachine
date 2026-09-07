@@ -518,11 +518,12 @@ export function buildProvisioningEnv(
 
 /**
  * The provisioner root under a Harness home: `applied.json`, the
- * micromamba package cache, and every provisioned environment prefix live
- * here. Shared with `environment-binding.ts`'s
- * {@link isWithinProvisionedRoot}, so a binding naming a prefix outside this
- * root — a foreign conda-family environment from before this application
- * owned its environment outright — is recognised as no longer valid.
+ * micromamba package cache, every provisioned environment prefix, and the
+ * per-attempt `logs/` directory ({@link provisioningLogsDir}) live here.
+ * Shared with `environment-binding.ts`'s {@link isWithinProvisionedRoot}, so
+ * a binding naming a prefix outside this root — a foreign conda-family
+ * environment from before this application owned its environment outright —
+ * is recognised as no longer valid.
  * @param dshHome - the Harness home directory.
  */
 export function desktopEnvironmentsRoot(dshHome: string): string {
@@ -575,8 +576,12 @@ function attemptLogPath(logsDir: string, sourceId: string, timestamp: number): s
  * Remove every attempt log a prior `provision()` call left under `logsDir`,
  * so this directory only ever holds the current call's attempts — an
  * environment that is repeatedly retried or reinstalled would otherwise
- * accumulate one log file per source per call forever. Tolerates `logsDir`
- * not existing yet (the first `provision()` call on a fresh Harness home).
+ * accumulate one log file per source per call forever. Files this leaves in
+ * place are therefore only ever readable until the *next* `provision()`
+ * call starts, including one triggered by the user retrying the same
+ * install after copying a diagnostic report that names them: save or copy
+ * them first. Tolerates `logsDir` not existing yet (the first `provision()`
+ * call on a fresh Harness home).
  * @param logsDir - {@link provisioningLogsDir}, already created by the caller.
  */
 async function clearStaleAttemptLogs(logsDir: string): Promise<void> {
@@ -639,26 +644,31 @@ class AttemptLog {
 /**
  * The `phase: 'solving'` message for retrying via `sourceName` after a prior
  * source failed — bilingual, appending the prior failure's first error line
- * and its full log path to the plain retry statement (kept English-only,
- * unchanged from before this attempt-log feature) so the UI names *why* it
- * moved on and *where* to find the rest, not only that it did.
+ * (and its full log path, when attempt logging is active) to the plain
+ * retry statement (kept English-only) so the UI names *why* it moved on
+ * and, when a log exists, *where* to find the rest, not only that it did.
  * @param sourceName - the source about to be retried.
  * @param index - the retried source's zero-based position in the attempt order.
  * @param total - the total number of sources being attempted this run.
  * @param previousFailure - the immediately preceding attempt's first error
- *   line and log path; always defined when `index > 0` (the loop only
- *   reaches a later index after an earlier attempt has failed and recorded
- *   one), `undefined` only for `index === 0`, which never calls this.
+ *   line, and its log path when attempt logging is active for this
+ *   `provision()` call (see {@link DesktopEnvironmentProvisioner.provision}'s
+ *   `attemptLoggingDisabled`); always defined when `index > 0` (the loop
+ *   only reaches a later index after an earlier attempt has failed and
+ *   recorded one), `undefined` only for `index === 0`, which never calls
+ *   this.
  */
 function buildRetryMessage(
   sourceName: string,
   index: number,
   total: number,
-  previousFailure: { readonly message: string; readonly path: string } | undefined,
+  previousFailure: { readonly message: string; readonly path?: string } | undefined,
 ): string {
   const base = `Retrying via ${sourceName} (source ${String(index + 1)} of ${String(total)})`
   if (previousFailure === undefined) return base
-  return `${base} · 上一源失败：${previousFailure.message}（日志：${previousFailure.path}） · previous source failed: ${previousFailure.message} (log: ${previousFailure.path})`
+  const logZh = previousFailure.path === undefined ? '' : `（日志：${previousFailure.path}）`
+  const logEn = previousFailure.path === undefined ? '' : ` (log: ${previousFailure.path})`
+  return `${base} · 上一源失败：${previousFailure.message}${logZh} · previous source failed: ${previousFailure.message}${logEn}`
 }
 
 /**
@@ -840,8 +850,24 @@ export class DesktopEnvironmentProvisioner {
       }
     }
     const logsDir = provisioningLogsDir(this.options.root)
-    await mkdir(logsDir, { recursive: true, mode: 0o700 })
-    await clearStaleAttemptLogs(logsDir)
+    let attemptLoggingDisabled = false
+    try {
+      await mkdir(logsDir, { recursive: true, mode: 0o700 })
+      await clearStaleAttemptLogs(logsDir)
+    } catch {
+      // Attempt logging is a diagnostic side channel, never part of the
+      // install transaction: swallows EEXIST (the root already has a
+      // non-directory entry named `logs`, so the recursive `mkdir` fails),
+      // ERR_FS_EISDIR (a stale entry matching `provision-*.log` is itself a
+      // directory, so `clearStaleAttemptLogs`'s `rm` fails), and on win32
+      // EPERM/EBUSY (a locked leftover log file that `rm`'s `force` option —
+      // which only suppresses ENOENT — does not retry past). This round
+      // proceeds with attempt logging disabled: no attempt log paths are
+      // recorded or written to, and `attemptLogs`/the retry message's
+      // log-path clause are both omitted rather than naming files that were
+      // never created.
+      attemptLoggingDisabled = true
+    }
     const applied = await this.applied()
     const alreadyPublished = applied !== undefined && applied.id === declaration.id
       && applied.revision === declaration.revision && applied.prefix === prefix
@@ -851,23 +877,23 @@ export class DesktopEnvironmentProvisioner {
     let succeededSourceId: string | undefined
     // Every attempt's log path, in attempt order — surfaced in a total
     // failure's thrown `attemptLogs` regardless of which attempts failed.
+    // Stays empty for the whole call when `attemptLoggingDisabled`.
     const attemptLogs: ProvisioningAttemptLog[] = []
-    // The most recently failed attempt's first error line and log path, read
-    // by the *next* attempt's "Retrying via" message (see
-    // `buildRetryMessage`) — `undefined` only before the first source has
-    // been tried.
-    let lastFailure: { readonly message: string; readonly path: string } | undefined
-    // The failed or succeeded attempt's own lines, rebuilt fresh per
-    // attempt: unlike the prior shared 200-line ring buffer, a source that
-    // fails and is followed by a later attempt no longer has its lines
-    // silently evicted by that later attempt's own output.
+    // The most recently failed attempt's first error line, and its log path
+    // when attempt logging is active, read by the *next* attempt's "Retrying
+    // via" message (see `buildRetryMessage`) — `undefined` only before the
+    // first source has been tried.
+    let lastFailure: { readonly message: string; readonly path?: string } | undefined
+    // The most recently failed attempt's own lines, rebuilt fresh per
+    // attempt; stays `[]` for the life of the call when the first source
+    // succeeds (see `recentLogs` below, read only on total failure).
     let lastAttemptLines: string[] = []
 
     for (const [index, source] of attempts.entries()) {
       await rm(prefix, { recursive: true, force: true })
-      const logPath = attemptLogPath(logsDir, source.id, this.#now())
-      attemptLogs.push({ sourceId: source.id, path: logPath })
-      const attemptLog = new AttemptLog(logPath)
+      const logPath = attemptLoggingDisabled ? undefined : attemptLogPath(logsDir, source.id, this.#now())
+      if (logPath !== undefined) attemptLogs.push({ sourceId: source.id, path: logPath })
+      const attemptLog = logPath === undefined ? undefined : new AttemptLog(logPath)
       const attemptLines: string[] = []
       onProgress({
         phase: 'solving',
@@ -894,7 +920,7 @@ export class DesktopEnvironmentProvisioner {
           timeoutMs: declaration.timeoutMs,
           onLine: (line) => {
             attemptLines.push(line)
-            attemptLog.append(line)
+            attemptLog?.append(line)
             const parsed = parseMicromambaProgressLine(line)
             onProgress({
               phase: 'installing',
@@ -905,17 +931,17 @@ export class DesktopEnvironmentProvisioner {
             })
           },
         })
-        attemptLog.append('exit ok')
-        await attemptLog.flush()
+        attemptLog?.append('exit ok')
+        await attemptLog?.flush()
         succeededSourceId = source.id
         break
       } catch (error) {
         lastError = error
         const errorMessage = error instanceof Error ? error.message : String(error)
         const firstLine = (errorMessage.split('\n')[0] ?? errorMessage).trim()
-        attemptLog.append(firstLine)
-        await attemptLog.flush()
-        lastFailure = { message: firstLine, path: logPath }
+        attemptLog?.append(firstLine)
+        await attemptLog?.flush()
+        lastFailure = logPath === undefined ? { message: firstLine } : { message: firstLine, path: logPath }
         lastAttemptLines = attemptLines
         if (signal.aborted) throw error
       }
@@ -929,7 +955,9 @@ export class DesktopEnvironmentProvisioner {
         : ''
       const failureError = new Error(`${baseMessage}${logSummary}${attemptLogsSummary}`)
       ;(failureError as unknown as { recentLogs: readonly string[] }).recentLogs = recentLogs
-      ;(failureError as unknown as { attemptLogs: readonly ProvisioningAttemptLog[] }).attemptLogs = attemptLogs
+      if (attemptLogs.length > 0) {
+        ;(failureError as unknown as { attemptLogs: readonly ProvisioningAttemptLog[] }).attemptLogs = attemptLogs
+      }
       throw failureError
     }
     onProgress({ phase: 'verifying', message: 'Verifying Python and R', sourceId: succeededSourceId })

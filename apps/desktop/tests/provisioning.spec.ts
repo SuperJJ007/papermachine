@@ -558,8 +558,7 @@ describe('DesktopEnvironmentProvisioner', () => {
       expect(error).toBeInstanceOf(Error)
       expect(error?.attemptLogs?.map(entry => entry.sourceId)).toEqual(['source-a', 'source-b', 'source-c'])
       // recentLogs is rebuilt fresh per attempt: only the last attempt's
-      // (source-c's) lines survive, not source-a's or source-b's, which the
-      // prior shared 200-line ring buffer would have mixed together.
+      // (source-c's) lines survive, not source-a's or source-b's.
       expect(error?.recentLogs).toEqual(['source-c line 1', 'source-c line 2'])
       expect(error?.message).toContain('Attempt logs:')
 
@@ -587,6 +586,42 @@ describe('DesktopEnvironmentProvisioner', () => {
       now = 2_000
       await provisioner.provision(declaration, new AbortController().signal)
       expect(await readdir(logsDir)).toEqual([`provision-${SOURCE_A.id}-2000.log`])
+    })
+
+    it('still installs, with attempt logging disabled, when a plain file already occupies the logs directory path', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-attempt-logs-blocked-'))
+      const logsDir = provisioningLogsDir(root)
+      await writeFile(logsDir, 'not a directory')
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: createOnly,
+      })
+
+      const published = await provisioner.provision(declaration, new AbortController().signal)
+
+      expect(published.sourceId).toBe(SOURCE_A.id)
+      // The blocking file is untouched: attempt logging never wrote anywhere.
+      expect(await readFile(logsDir, 'utf8')).toBe('not a directory')
+    })
+
+    it('omits attemptLogs from a total-failure Error when attempt logging is disabled', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-attempt-logs-blocked-fail-'))
+      await writeFile(provisioningLogsDir(root), 'not a directory')
+      const provisioner = new DesktopEnvironmentProvisioner({
+        root, micromambaPath: '/m', platform: 'darwin-arm64', freeBytes: async () => 1_000,
+        run: async () => { throw new Error('source-a failed') },
+      })
+
+      let caught: unknown
+      try {
+        await provisioner.provision(declaration, new AbortController().signal)
+      } catch (error) {
+        caught = error
+      }
+      const error = caught as (Error & { attemptLogs?: readonly ProvisioningAttemptLog[] }) | undefined
+      expect(error).toBeInstanceOf(Error)
+      expect(error?.attemptLogs).toBeUndefined()
+      expect(error?.message).not.toContain('Attempt logs:')
     })
   })
 })

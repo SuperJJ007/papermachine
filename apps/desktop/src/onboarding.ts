@@ -303,12 +303,18 @@ const ATTEMPT_LOG_LINE_PATTERN = /^ {2}[^:]+: (.+)$/u
 
 /**
  * Extract each source attempt's full-log file path from a provisioning
- * failure's error text. `attemptLogs` (`ProvisioningAttemptLog[]`,
+ * failure's error text, parsed from the thrown Error's own properties as
+ * they reach this renderer. `attemptLogs` (`ProvisioningAttemptLog[]`,
  * `provisioning.ts`) is set on the thrown Error object itself, but
  * `ipcMain.handle` strips every property but `message` off a thrown Error
- * before it reaches this renderer (Electron's own documented behavior) — so
- * the only channel this path list has is the "Attempt logs:" section
- * `provision()` appends into that same message text.
+ * before it reaches this renderer (Electron's own documented behavior), so
+ * this function reads the "Attempt logs:" section `provision()` appends
+ * into that same message text instead. `ProvisioningProgress`
+ * (`provisioning.ts`) is a separate, structured channel that does carry
+ * `sourceId` per update, but not this path list: the report is built from
+ * the caught error after the run has already ended, and a path list read
+ * from progress updates would need the renderer to accumulate one across
+ * every update rather than read it once at failure time.
  * @param errorText - the error text as caught from the
  *   `provision`/`provisionCustom` bridge call.
  * @returns each attempt's log path, in the order provisioning attempted
@@ -378,7 +384,7 @@ async function startConfirmed(): Promise<void> {
           errorText,
           fence,
           ...(logPaths.length > 0
-            ? ['- 完整日志文件 · Full log files:', ...logPaths.map(path => `  - ${path}`)]
+            ? ['- 完整日志文件（下次点击"下载并安装"会被清空，请先复制或另存）· Full log files (cleared the next time you click Download and install — copy or save them first):', ...logPaths.map(path => `  - ${path}`)]
             : []),
           '',
         ].join('\n')

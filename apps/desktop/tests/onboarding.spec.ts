@@ -584,7 +584,7 @@ describe('install location', () => {
 
     await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
     const report = writeText.mock.calls[0]?.[0] ?? ''
-    expect(report).toContain('完整日志文件 · Full log files:')
+    expect(report).toContain('完整日志文件（下次点击"下载并安装"会被清空，请先复制或另存）· Full log files (cleared the next time you click Download and install — copy or save them first):')
     expect(report).toContain('  - /Users/scientist/.papermachine/desktop-environments/logs/provision-tuna-1000.log')
     expect(report).toContain('  - /Users/scientist/.papermachine/desktop-environments/logs/provision-ustc-2000.log')
   })

@@ -76,6 +76,15 @@ export interface EnvironmentDeclaration {
   readonly packages: readonly string[]
   readonly estimatedDownloadBytes: number
   readonly requiredFreeBytes: number
+  /**
+   * Milliseconds `provisioning.ts` allows each `micromamba create` attempt
+   * and each health check to run before rejecting with a timeout. A cold
+   * disk, a Windows real-time scanner walking thousands of newly written
+   * `.pyd`/`.dll` files, or an x86_64 wheel's first import under Rosetta
+   * translation can each hold a health check far past two minutes, so this
+   * single field bounds both stages rather than a shorter constant applying
+   * only to health checks.
+   */
   readonly timeoutMs: number
   readonly healthChecks: readonly EnvironmentHealthCheck[]
 }

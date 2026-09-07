@@ -99,6 +99,31 @@ describe('DesktopEnvironmentProvisioner', () => {
     expect(phases).toEqual(['checking', 'solving', 'installing', 'verifying', 'publishing', 'ready'])
   })
 
+  it('gives each health check the declaration timeout, not a shorter fixed one', async () => {
+    // 3_600_000 ms is far past any fixed cap this code might reintroduce
+    // (120_000 ms); a health check that receives anything less proves the
+    // cap is back.
+    const longTimeout = parseEnvironmentDeclaration({ ...declaration, timeoutMs: 3_600_000 })
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-health-timeout-'))
+    const healthCheckTimeouts: number[] = []
+    const provisioner = new DesktopEnvironmentProvisioner({
+      root,
+      micromambaPath: '/bundled/micromamba',
+      platform: 'darwin-arm64',
+      freeBytes: async () => 1_000,
+      run: async (request) => {
+        if (request.args[0] === 'create') {
+          const prefix = request.args[request.args.indexOf('--prefix') + 1]!
+          await mkdir(join(prefix, 'bin'), { recursive: true })
+          return
+        }
+        healthCheckTimeouts.push(request.timeoutMs)
+      },
+    })
+    await provisioner.provision(longTimeout, new AbortController().signal)
+    expect(healthCheckTimeouts).toEqual([longTimeout.timeoutMs, longTimeout.timeoutMs])
+  })
+
   it('never hands a provisioning child a credential-shaped ambient variable, but keeps PATH and proxy vars', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-provision-env-'))
     const originalSecret = process.env.DSH_TEST_PROVISION_SECRET_KEY

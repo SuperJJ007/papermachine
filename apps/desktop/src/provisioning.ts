@@ -968,7 +968,7 @@ export class DesktopEnvironmentProvisioner {
         args: check.args,
         env: buildProvisioningEnv({ platform: this.options.platform, root: this.options.root, win32HealthCheckPrefix: prefix }),
         signal,
-        timeoutMs: Math.min(declaration.timeoutMs, 120_000),
+        timeoutMs: declaration.timeoutMs,
       })
     }
     onProgress({ phase: 'publishing', message: 'Publishing verified environment', sourceId: succeededSourceId })

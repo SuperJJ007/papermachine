@@ -33,7 +33,7 @@ export function signMacApp(appPath: string, execFile?: CodesignExecFile): Promis
  * invocation, doing nothing when `electronPlatformName` names a target
  * `codesign` does not apply to (win32, linux).
  * @param electronPlatformName - electron-builder's platform name for this
- *   build (`darwin`, `win32`, or `linux`).
+ *   build; this repository packages only `darwin` and `win32`.
  * @param appPath - absolute path to the packaged `.app` bundle; only read
  *   when `electronPlatformName` is `darwin`.
  * @param execFile - forwarded to {@link signMacApp}.

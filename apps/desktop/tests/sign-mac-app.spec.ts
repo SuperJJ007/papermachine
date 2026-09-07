@@ -45,6 +45,38 @@ describe('signMacApp', () => {
     await expect(signMacApp(APP_PATH, execFile)).rejects.toThrow(/no identity found/)
     expect(execFile).toHaveBeenCalledTimes(1)
   })
+
+  it('throws with the underlying error message when the sign invocation fails with no stderr, such as a missing codesign binary', async () => {
+    const execFile = vi.fn(async (_command: string, args: readonly string[]) => {
+      if (args[0] === '--force') {
+        throw Object.assign(new Error('spawn codesign ENOENT'), { code: 'ENOENT' })
+      }
+      return { stdout: '', stderr: '' }
+    })
+
+    await expect(signMacApp(APP_PATH, execFile)).rejects.toThrow(/codesign sign failed/)
+    await expect(signMacApp(APP_PATH, execFile)).rejects.toThrow(/ENOENT/)
+  })
+
+  it('forwards stdout and stderr from a successful invocation into the process streams', async () => {
+    const execFile = vi.fn(async (_command: string, args: readonly string[]) =>
+      args[0] === '--force'
+        ? { stdout: 'signing PaperMachine.app\n', stderr: '' }
+        : { stdout: '', stderr: 'PaperMachine.app: valid on disk\n' },
+    )
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    try {
+      await signMacApp(APP_PATH, execFile)
+
+      expect(stdoutWrite).toHaveBeenCalledWith('signing PaperMachine.app\n')
+      expect(stderrWrite).toHaveBeenCalledWith('PaperMachine.app: valid on disk\n')
+    } finally {
+      stdoutWrite.mockRestore()
+      stderrWrite.mockRestore()
+    }
+  })
 })
 
 describe('maybeSignMacApp', () => {

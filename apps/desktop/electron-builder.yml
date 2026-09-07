@@ -7,6 +7,20 @@ asar: true
 # behaviour the process model depends on instead of inheriting it.
 electronFuses:
   runAsNode: true
+  # `@electron/fuses` flips fuse bits by rewriting
+  # `Contents/Frameworks/Electron Framework.framework/…/Electron Framework`
+  # in place, and electron-builder runs that flip *after* the
+  # `scripts/sign-mac-app.mjs` afterPack signature (app-builder-lib
+  # 26.15.3's `platformPackager.js` calls `doAddElectronFuses` right before
+  # its own `doSignAfterPack`, itself skipped by `mac.identity: null`
+  # below) — so a fuse flip that changes any byte can invalidate that
+  # earlier signature. This option makes `@electron/fuses` re-run
+  # `codesign --sign - --force --preserve-metadata=… --deep` on the `.app`
+  # immediately after flipping (without a verify step of its own), so the
+  # signature the DMG ships always postdates the fuse write. The afterPack
+  # sign+verify in `scripts/sign-mac-app.mjs` stays: this later resign
+  # carries no verification of its own, so it cannot replace that check.
+  resetAdHocDarwinSignature: true
 afterPack: ./scripts/after-pack.mjs
 directories:
   output: release

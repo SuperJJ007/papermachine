@@ -133,7 +133,7 @@ export class ToolResultPruner extends Service {
   private indexCallNames(session: Session): ReadonlyMap<string, string> {
     const index = new Map<string, string>()
     for (const event of session.events) {
-      if (event?.type === 'tool/call') index.set(String(event.data.callId), event.data.name)
+      if (event.type === 'tool/call') index.set(String(event.data.callId), event.data.name)
     }
     return index
   }

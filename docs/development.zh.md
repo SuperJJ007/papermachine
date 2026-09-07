@@ -25,6 +25,8 @@ pnpm install
 
 安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子和 `dsh-translation-pairing` Git 合并驱动。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定；[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md) 负责合并驱动。
 
+`pnpm-workspace.yaml` 的 `supportedArchitectures` 会让每次安装都拉取每个桌面打包 target 的 `sharp`/`koffi` 原生模块变体，而不只是运行机器自己那一份，所以安装下载量会超过单台机器严格所需——这正是一台机器能为另一个平台的桌面安装包交叉打出可启动 Host closure 的前提；见[按目标平台携带原生模块的 Agent Note](../.agents/notes/implemented/bug-fix/2026-09-07-host-native-modules-per-target.zh.md)。
+
 如果依赖是从缓存恢复或 `postinstall` 被跳过而导致任一集成缺失，请手动安装：
 
 ```sh

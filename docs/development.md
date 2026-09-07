@@ -23,6 +23,8 @@ pnpm install
 
 The install also configures worktree-local Lefthook hooks and the `dsh-translation-pairing` Git merge driver through `scripts/install-lefthook.mjs`. The [worktree-local hooks Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.md) owns the hook-path safety contract; the [automatic pairing merges Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.md) owns the merge driver.
 
+`pnpm-workspace.yaml`'s `supportedArchitectures` fetches every desktop packaging target's `sharp`/`koffi` native module variant on every install, not just the running machine's own, so the install downloads more than a single machine strictly needs — that is what lets one machine cross-package a starting Host closure for another platform's desktop installer; see the [native-module-per-target Agent Note](../.agents/notes/implemented/bug-fix/2026-09-07-host-native-modules-per-target.md).
+
 If either integration is missing because dependencies were restored from cache or `postinstall` was skipped, install them manually:
 
 ```sh

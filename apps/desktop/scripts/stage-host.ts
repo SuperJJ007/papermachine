@@ -7,7 +7,7 @@ import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
 import { DESKTOP_PLATFORMS } from '../src/environment-declaration.ts'
-import { selectNativeModuleTargets } from './native-module-targets.mjs'
+import { NATIVE_MODULE_SCOPES, selectNativeModuleTargets } from './native-module-targets.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -174,9 +174,6 @@ while (link !== undefined) {
   await cp(source, link, { recursive: true, dereference: true })
   link = await firstLink(nodeModules)
 }
-
-/** `node_modules` scope directories that carry platform-specific sharp/koffi native modules. */
-const NATIVE_MODULE_SCOPES = Object.freeze(['@img', '@koromix'])
 
 await assertNativeModulesForEveryDesktopTarget(nodeModules)
 

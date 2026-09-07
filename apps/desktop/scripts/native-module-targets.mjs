@@ -12,23 +12,35 @@
 
 /**
  * The native module families each `node_modules` scope this carrier ships
- * always carries, longest-family-name first so
- * `sharp-libvips-darwin-arm64` parses as the `sharp-libvips` family rather
- * than truncating to `sharp`. This is fixed domain knowledge, not inferred
- * from which families happen to appear in a scope's own directory listing:
- * inferring it from the listing cannot tell "this scope never carries this
- * family" apart from "every entry of this family failed to install into
- * this scope", which is the same failure {@link selectNativeModuleTargets}
- * must catch one level down, at the `(family, os)` granularity — a scope
- * that lost every entry of its own required family (for example every
+ * always carries. This is fixed domain knowledge, not inferred from which
+ * families happen to appear in a scope's own directory listing: inferring
+ * it from the listing cannot tell "this scope never carries this family"
+ * apart from "every entry of this family failed to install into this
+ * scope", which is the same failure {@link selectNativeModuleTargets} must
+ * catch one level down, at the `(family, os)` granularity — a scope that
+ * lost every entry of its own required family (for example every
  * `@img/sharp-*` package failing to download) must fail exactly as loud as
- * a scope missing only one target's variant.
+ * a scope missing only one target's variant. A family's position within its
+ * scope's list only decides which missing family {@link selectNativeModuleTargets}
+ * reports first when more than one is missing at once; it plays no part in
+ * {@link parseNativeModuleEntry}'s own family match, which never confuses
+ * `sharp-libvips-darwin-arm64` for `sharp` regardless of order (see that
+ * function's own comment for why).
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 const SCOPE_FAMILIES = Object.freeze({
   '@img': Object.freeze(['sharp', 'sharp-libvips']),
   '@koromix': Object.freeze(['koffi']),
 })
+
+/**
+ * The `node_modules` scopes {@link SCOPE_FAMILIES} covers, derived from it
+ * rather than listed separately, so a scope added to `SCOPE_FAMILIES` is
+ * automatically required and pruned everywhere this runs without a second
+ * list to keep in sync.
+ * @type {readonly string[]}
+ */
+export const NATIVE_MODULE_SCOPES = Object.freeze(Object.keys(SCOPE_FAMILIES))
 
 /**
  * `(family, os)` pairs this carrier never ships as a separate package, so
@@ -72,10 +84,12 @@ function familyShipsForOs(family, os) {
  *   example `@img/colour`) — callers must leave those untouched.
  */
 export function parseNativeModuleEntry(name) {
-  // Longest family name first within each scope, same reasoning as
-  // SCOPE_FAMILIES' own ordering: this flattened list only needs the
-  // relative order between `sharp-libvips` and `sharp` preserved, since no
-  // family name is a prefix of a family from the other scope.
+  // Family order (SCOPE_FAMILIES' own order, not this loop) plays no part
+  // in matching `sharp-libvips-darwin-arm64` to `sharp-libvips` rather than
+  // `sharp`: a `sharp-` prefix match leaves the three-segment remainder
+  // `libvips-darwin-arm64`, which the strict two-segment `-<os>-<arch>`
+  // regex below rejects, so the loop falls through to try `sharp-libvips`
+  // regardless of which family it checked first.
   for (const families of Object.values(SCOPE_FAMILIES)) {
     for (const family of families) {
       if (!name.startsWith(`${family}-`)) continue
@@ -153,12 +167,12 @@ export function selectNativeModuleTargets(scope, target, entries) {
  * The suffix a per-platform-optionalDependency package name ends with,
  * outside the `@img`/`@koromix` families {@link selectNativeModuleTargets}
  * already handles precisely: `-<os>-<arch>`, optionally followed by a
- * toolchain/libc qualifier. This workspace's `pnpm-workspace.yaml` widens
- * `--os`/`--cpu`/`--libc` for desktop packaging's `pnpm install` step, and
- * every other native-binary package with per-platform variants (ripgrep,
- * `node-addon-require-builtin`, the Landlock launcher, and others) gets
- * every platform's variant staged into the Host closure alongside
- * sharp/koffi — not just those two families' own scopes.
+ * toolchain/libc qualifier. Desktop packaging's `pnpm install` step passes
+ * `--os`/`--cpu`/`--libc` per invocation (`.github/workflows/desktop-release.yml`,
+ * `apps/desktop/README.md`), and every other native-binary package with
+ * per-platform variants (ripgrep, `node-addon-require-builtin`, the Landlock
+ * launcher, and others) gets every platform's variant staged into the Host
+ * closure alongside sharp/koffi — not just those two families' own scopes.
  * @type {RegExp}
  */
 const PLATFORM_VARIANT_SUFFIX = /-(darwin|win32|linux|linuxmusl)-(x64|arm64|ia32)(?:-(?:msvc|gnu|eabi|elf|musl))?$/

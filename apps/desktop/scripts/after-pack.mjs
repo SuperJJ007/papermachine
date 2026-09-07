@@ -16,7 +16,8 @@
  * `pnpm deploy --prod --offline` (`stage-host.ts`) carries every desktop
  * packaging target's sharp/koffi native module variant — the `pnpm install`
  * step immediately before packaging widens `--os`/`--cpu`/`--libc` for
- * exactly this reason (`pnpm-workspace.yaml`) — because staging runs once
+ * exactly this reason (`.github/workflows/desktop-release.yml`,
+ * `apps/desktop/README.md`) — because staging runs once
  * per host machine, not once per packaging target, and `stage-host.ts`
  * itself asserts all three targets are present before packaging ever
  * reaches this hook. Left in place, an x64 DMG built on an arm64 mac (or a
@@ -41,12 +42,9 @@ import { cp, readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Arch } from 'electron-builder'
-import { selectForeignPlatformEntries, selectNativeModuleTargets } from './native-module-targets.mjs'
+import { NATIVE_MODULE_SCOPES, selectForeignPlatformEntries, selectNativeModuleTargets } from './native-module-targets.mjs'
 
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-
-/** `node_modules` scope directories that carry platform-specific sharp/koffi native modules. */
-const NATIVE_MODULE_SCOPES = Object.freeze(['@img', '@koromix'])
 
 /**
  * electron-builder `afterPack` hook.

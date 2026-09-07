@@ -8,6 +8,13 @@
  * one — `stage-host.ts` needs this file to typecheck its import.
  */
 
+/**
+ * The `node_modules` scopes this module's fixed family table covers
+ * (`@img`, `@koromix`) — the authoritative list of which scopes every
+ * packaging step must require and prune.
+ */
+export const NATIVE_MODULE_SCOPES: readonly string[]
+
 /** One parsed `node_modules/@img` or `node_modules/@koromix` directory name. */
 export interface NativeModuleEntry {
   /** The directory's basename, unchanged. */

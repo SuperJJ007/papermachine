@@ -40,7 +40,7 @@ PaperMachine 是给所有围绕数据工作的人做的桌面应用——科研�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/SuperJJ007/papermachine/releases/latest) 下载对应你机器的安装包:Apple 芯片用 `PaperMachine-<version>-arm64.dmg`,Intel Mac 用 `PaperMachine-<version>-x64.dmg`,Windows 用 `PaperMachine-<version>-x64.exe`。
+1. 从 [Releases](https://github.com/SuperJJ007/papermachine/releases/latest) 下载对应你机器的安装包:Apple 芯片用 `PaperMachine-<version>-arm64.dmg`,Intel Mac 用 `PaperMachine-<version>-x64.dmg`,Windows 用 `PaperMachine-<version>-x64.exe`(**实验性 / Beta**——见第 4 步下方的说明)。
 2. 打开应用,按下面的**首次运行**装好环境。
 3. 打开 **设置 → 模型**,填入你的 DeepSeek API key。应用不附带 key,默认调用 `deepseek-v4-flash`。
 4. 把 CSV、Excel、SPSS 或 Stata 文件拖进项目,问出第一个问题,例如:*画出 2007 年各国人均 GDP 与预期寿命的关系,按大洲着色。*
@@ -63,13 +63,15 @@ PaperMachine 不使用你机器上已有的 conda 环境,而是自带一份 micr
 | **高级:自定义包清单** | 在预填的清单上增删 conda 包,每行一个,支持 `名称=版本`。删掉 `python` 或 `r-base` 会导致装完的校验失败。 |
 | **保留当前环境** | 只在已经装过一次时才出现。重装会再下一遍 520 MB,所以除非要换包清单,保留即可。 |
 
-两个平台的安装包都未做代码签名。macOS 上如果提示应用已损坏或来自身份不明的开发者,右键点击应用选择**打开**,或运行一次下面的命令:
+两个平台的安装包都没有付费的 Apple/Microsoft 签名身份,macOS 与 Windows 各自弹出的提示不同,处理方式也不同。
+
+macOS 上,0.1.1 起应用在打包时做了 ad-hoc 签名,正常情况下你应该只会遇到**"来自身份不明的开发者"**这一种提示:右键点击应用,选择**打开**即可。如果 macOS 提示的是应用**"已损坏,无法打开"**,右键 → 打开对这种提示无效,改为运行一次下面的命令(`-r` 是因为 app 本身是一个目录):
 
 ```sh
-xattr -d com.apple.quarantine /Applications/PaperMachine.app
+xattr -dr com.apple.quarantine /Applications/PaperMachine.app
 ```
 
-Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再点**仍要运行**。安装包是 per-user 安装,不需要管理员权限。不要求机器上预装 Visual C++ 运行库。
+Windows 上 SmartScreen 会提示发布者无法识别:点**更多信息**,再点**仍要运行**。安装包是 per-user 安装,不需要管理员权限。不要求机器上预装 Visual C++ 运行库。**Windows 安装包是实验性 / Beta**:沙箱只做部分强制(不是 macOS 那种完整隔离),R 在非 ASCII 安装路径或用户名下有已知边角情况,需要 Windows 10 64 位及以上,遇到问题请附上 `%USERPROFILE%\.papermachine\logs` 提 issue。
 
 ## 里面有什么
 
@@ -108,7 +110,7 @@ PaperMachine 0.1 是早期版本。已知限制:
 
 - 分析运行支持 macOS(Apple 芯片与 Intel)与 Windows x64。两个平台的沙箱强制都仅限制文件写入——都不承诺文件读取、网络、系统调用或科学有效性隔离。Windows 报告的是较弱的 `partial` 而非 macOS 的 `full`,因为它的受限令牌后端补不上两个缺口(完全强制的后端能补上):外部对象若对 Everyone 开放写权限,经此后端仍可写入;NTFS 硬链接会把授权工作区文件的写权限别名到外部路径上(见 [`dsh-sandbox-windows-acl`](packages/sandbox/sandbox-windows-acl/README.zh.md) 的 "Verified boundaries" 一节)。在 Windows 上取消或超时一个运行,总会重启该运行所在的内核并丢失该内核持有的所有变量,而 macOS 上的中断通常能保住内核。Windows 内核执行的实机验证目前只有一次人工验证,尚无可重复的 CI 门禁。Windows 桌面端首次启动流程(onboarding、环境下载与安装)尚未在 Windows 实机验证,内核执行已验证。
 - 需要 DeepSeek API key;应用不附带 key。
-- 两个平台的安装包都未签名;见上文说明。
+- 两个平台的安装包都没有付费签名身份;macOS 包从 0.1.1 起做了 ad-hoc 签名。见上文说明。
 - 更新需手动:下载下一个安装包。
 - 暂无变量面板;内核状态栏显示每种语言的内核状态。
 

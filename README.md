@@ -38,7 +38,7 @@ You do not have to go back to the code to fix a figure. Change a matplotlib or g
 
 ## Quick start
 
-1. Download your installer from [Releases](https://github.com/SuperJJ007/papermachine/releases/latest): `PaperMachine-<version>-arm64.dmg` for Apple silicon, `PaperMachine-<version>-x64.dmg` for an Intel Mac, `PaperMachine-<version>-x64.exe` for Windows.
+1. Download your installer from [Releases](https://github.com/SuperJJ007/papermachine/releases/latest): `PaperMachine-<version>-arm64.dmg` for Apple silicon, `PaperMachine-<version>-x64.dmg` for an Intel Mac, `PaperMachine-<version>-x64.exe` for Windows (**experimental/beta** — see the note below step 4).
 2. Open the app and install the environment as described under **First run** below.
 3. Open **Settings → Models** and enter your DeepSeek API key. The app ships without one; it calls `deepseek-v4-flash` by default.
 4. Drop a CSV, Excel, SPSS, or Stata file into a project and ask your first question, for example: *Plot life expectancy against GDP per capita for 2007, colored by continent.*
@@ -63,13 +63,15 @@ The choices on this screen:
 
 The workspace opens when the install finishes, but you cannot ask anything yet — the model key is yours to enter, as in step 3 above.
 
-Neither installer is code-signed. On macOS, if the system reports the app is damaged or from an unidentified developer, right-click the app and choose **Open**, or run the following once:
+Neither installer carries a paid Apple/Microsoft signing identity, so macOS and Windows each show their own warning; the fix is different for each.
+
+On macOS, since 0.1.1 the app is ad-hoc signed at build time, so the prompt you should normally see is **"[App] is from an unidentified developer"**: right-click the app and choose **Open**. If instead macOS reports the app **"is damaged and can't be opened"**, right-click-**Open** does not fix that prompt — run the following once instead (`-r` because the app is a directory):
 
 ```sh
-xattr -d com.apple.quarantine /Applications/PaperMachine.app
+xattr -dr com.apple.quarantine /Applications/PaperMachine.app
 ```
 
-On Windows, SmartScreen warns about an unrecognized publisher: choose **More info**, then **Run anyway**. The installer is per-user and asks for no administrator rights. It does not require a Visual C++ Runtime already installed on the machine.
+On Windows, SmartScreen warns about an unrecognized publisher: choose **More info**, then **Run anyway**. The installer is per-user and asks for no administrator rights. It does not require a Visual C++ Runtime already installed on the machine. **The Windows installer is experimental/beta**: its sandbox only partially enforces (not the full isolation macOS gets), R has known edge cases under non-ASCII install paths or usernames, Windows 10 64-bit or later is required, and an issue report should attach `%USERPROFILE%\.papermachine\logs`.
 
 ## What is inside
 
@@ -112,7 +114,7 @@ PaperMachine 0.1 is an early release. Known limitations:
 
 - Analysis runs on macOS (Apple silicon and Intel) and Windows x64. Both platforms' sandbox enforcement is file-write confinement only — neither claims file-read, network, syscall, or scientific-validity isolation. Windows reports the weaker `partial` level, not macOS's `full`, because its restricted-token backend cannot close two gaps a full-enforcement backend does: an externally Everyone-writable object stays writable through it, and an NTFS hard link aliases a granted workspace file onto an external path (see [`dsh-sandbox-windows-acl`](packages/sandbox/sandbox-windows-acl/README.md), "Verified boundaries"). Cancelling or timing out a run on Windows always restarts its kernel and loses every variable that kernel held, where macOS usually survives an interrupt. Windows kernel execution's real-hardware evidence is one manual verification, not a repeatable CI gate. The Windows desktop first-launch flow (onboarding, environment download and install) has not yet been verified on Windows hardware; kernel execution has.
 - A DeepSeek API key is required; the app ships no key.
-- Neither installer is signed; see the notes above.
+- Neither installer carries a paid signing identity; the macOS package is ad-hoc signed since 0.1.1. See the notes above.
 - Updates are manual: download the next installer.
 - There is no variables panel yet; the kernel status bar shows each language's kernel state.
 

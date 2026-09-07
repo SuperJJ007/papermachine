@@ -287,6 +287,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/sandbox/sandbox-windows-acl": {
+      "ignoreBinaries": [
+        "pwsh"
+      ]
+    },
     "packages/science/tool-science": {
       "ignoreDependencies": [
         "zod"

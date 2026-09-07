@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.md
-2026-09-07-win32-micromamba-app-local-crt.md: 1e4c086357ebc0ac41ebeff32c67bfedb1f0b15e
-2026-09-07-win32-micromamba-app-local-crt.zh.md: 76a96381e55d198c2de60bea6cc0944f4ebc2325
+2026-09-07-win32-micromamba-app-local-crt.md: e0dfbe34cd89824e56bdf0023d3ddb40a91b7bcb
+2026-09-07-win32-micromamba-app-local-crt.zh.md: e33e132e2d18ddd7f5b3afba4551c6ef842d51ec

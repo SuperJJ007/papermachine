@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pnpmInvocation } from '../../../scripts/pnpm-invocation.ts'
+import { DESKTOP_PLATFORMS } from '../src/environment-declaration.ts'
+import { selectNativeModuleTargets } from './native-module-targets.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -160,6 +162,46 @@ while (link !== undefined) {
   link = await firstLink(nodeModules)
 }
 
+await assertNativeModulesForEveryDesktopTarget(nodeModules)
+
 await run(process.execPath, [
   join(staging, 'node_modules/@deepseek-ai/dsh-subprocess-local/scripts/ensure-spawn-helper.mjs'),
 ])
+
+/**
+ * Assert the staged closure carries every desktop packaging target's own
+ * sharp/koffi native module variant, not just the machine that ran `pnpm
+ * install`'s own. `after-pack.mjs` prunes this same closure down to one
+ * target per packaged build; a runner missing a target's variant here would
+ * silently produce a Host that exits before readiness on that target only,
+ * discovered on the packaged machine rather than at staging time.
+ * @param modules - the staged closure's `node_modules` directory.
+ * @throws when a desktop target's sharp or koffi native module variant is
+ *   missing, naming the fix: add `supportedArchitectures` covering every
+ *   desktop target to `pnpm-workspace.yaml`, then reinstall.
+ */
+async function assertNativeModulesForEveryDesktopTarget(modules: string): Promise<void> {
+  const scopes: Readonly<Record<string, readonly string[]>> = {
+    '@img': existsSync(join(modules, '@img')) ? await readdir(join(modules, '@img')) : [],
+    '@koromix': existsSync(join(modules, '@koromix')) ? await readdir(join(modules, '@koromix')) : [],
+  }
+  for (const platform of DESKTOP_PLATFORMS) {
+    // `platform.split('-')` types its elements `string | undefined` under
+    // `noUncheckedIndexedAccess`; `indexOf`/`slice` stay `string` throughout
+    // since every `DESKTOP_PLATFORMS` entry is a fixed `<os>-<arch>` pair.
+    const separator = platform.indexOf('-')
+    const os = platform.slice(0, separator)
+    const arch = platform.slice(separator + 1)
+    for (const [scope, entries] of Object.entries(scopes)) {
+      try {
+        selectNativeModuleTargets({ os, arch }, entries)
+      } catch (cause) {
+        throw new Error(
+          `desktop host staging: ${scope} is missing the ${platform} native module variant a packaged Host for ` +
+          `that target needs (${(cause as Error).message}). Add supportedArchitectures covering every desktop ` +
+          'packaging target to pnpm-workspace.yaml, then reinstall.',
+        )
+      }
+    }
+  }
+}

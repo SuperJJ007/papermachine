@@ -1,9 +1,10 @@
 /**
  * Copy the staged Host's `node_modules` into the packaged app, drop every
  * sharp/koffi native module variant that is not this build's own platform
- * and architecture, then assert the packaged output actually carries the
+ * and architecture, assert the packaged output actually carries the
  * bundled micromamba runtime `resources/bin` needs (win32's app-local MSVC
- * CRT DLLs included).
+ * CRT DLLs included), then (darwin only) ad-hoc deep-sign the packaged app —
+ * see `sign-mac-app.mjs` for why.
  *
  * `extraResources` carries `.stage/host` into `Contents/Resources/host`, but
  * electron-builder drops `node_modules` from that copy — an explicit
@@ -43,6 +44,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Arch } from 'electron-builder'
 import { NATIVE_MODULE_SCOPES, selectForeignPlatformEntries, selectNativeModuleTargets } from './native-module-targets.mjs'
+import { maybeSignMacApp } from './sign-mac-app.mjs'
 
 const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -53,11 +55,12 @@ const desktopRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
  * @param context.electronPlatformName - Electron's platform name for this build (`darwin`/`win32`/`linux`).
  * @param context.arch - this build's `Arch` enum value (`Arch.x64 === 1`, `Arch.arm64 === 3`).
  * @param context.packager - the platform packager, used for the product file name.
- * @returns nothing; pruning and verification are complete when the promise settles.
+ * @returns nothing; pruning, verification, and (darwin only) signing are complete when the promise settles.
  */
 export default async function afterPack({ appOutDir, electronPlatformName, arch, packager }) {
+  const appPath = join(appOutDir, `${packager.appInfo.productFilename}.app`)
   const resources = electronPlatformName === 'darwin'
-    ? join(appOutDir, `${packager.appInfo.productFilename}.app`, 'Contents', 'Resources')
+    ? join(appPath, 'Contents', 'Resources')
     : join(appOutDir, 'resources')
   const target = { os: electronPlatformName, arch: Arch[arch] }
   const hostModules = join(resources, 'host/node_modules')
@@ -65,6 +68,7 @@ export default async function afterPack({ appOutDir, electronPlatformName, arch,
   await pruneNativeModules(hostModules, target)
   await pruneForeignPlatformVariants(hostModules, target)
   await assertBundledRuntimePresent(resources, target)
+  await maybeSignMacApp(electronPlatformName, appPath)
 }
 
 /**

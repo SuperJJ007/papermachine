@@ -726,6 +726,35 @@ describe('runProvisioningProcess', () => {
     // wait needed.
     expect(() => process.kill(grandchildPid, 0)).toThrow()
   }, 10_000)
+
+  // `describeWin32MissingCrtExit` itself is unit-tested below; these two
+  // cover the wiring in `runProvisioningProcess`'s own `exit` handler
+  // (`process.platform === 'win32' && code !== null`) against a real child
+  // process's exit code, not just the pure translation function.
+  it.runIf(process.platform === 'win32')('translates a real STATUS_DLL_NOT_FOUND child exit into the actionable message, naming the executable', async () => {
+    const run = runProvisioningProcess({
+      executable: process.execPath,
+      args: ['--eval', 'process.exit(3221225781)'],
+      env: { ...process.env },
+      signal: new AbortController().signal,
+      timeoutMs: 5_000,
+      onLine: () => {},
+    })
+    await expect(run).rejects.toThrow('0xC0000135')
+    await expect(run).rejects.toThrow(win32Path.basename(process.execPath))
+  })
+
+  it.runIf(process.platform !== 'win32')('leaves a non-win32 child\'s exit code message untranslated', async () => {
+    const run = runProvisioningProcess({
+      executable: process.execPath,
+      args: ['--eval', 'process.exit(7)'],
+      env: { ...process.env },
+      signal: new AbortController().signal,
+      timeoutMs: 5_000,
+      onLine: () => {},
+    })
+    await expect(run).rejects.toThrow('desktop provisioning: process stopped (7)')
+  })
 })
 
 describe('describeWin32MissingCrtExit', () => {

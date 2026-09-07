@@ -364,6 +364,14 @@ describe('onboarding install route', () => {
     expect((requireElement('#provision') as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('strips Electron\'s ipcRenderer.invoke wrapping from an environment-list failure before displaying it', async () => {
+    const wrapped = "Error invoking remote method 'desktop:environments': Error: no declarations"
+    const { bridge } = installBridge({ environments: vi.fn(async () => { throw new Error(wrapped) }) })
+    await loadOnboarding(bridge)
+
+    expect(textOf('#install-summary')).toBe('no declarations')
+  })
+
   it('cancels an in-flight download through the bridge', async () => {
     const { bridge, cancelProvisioning } = installBridge()
     await loadOnboarding(bridge)

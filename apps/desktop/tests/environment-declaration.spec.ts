@@ -130,16 +130,39 @@ describe('desktop environment declarations', () => {
   })
 })
 
+/** `resources/micromamba.json`'s per-platform asset shape, `runtime` present only for win32 targets. */
+interface MicromambaAsset {
+  readonly url: string
+  readonly sha256: string
+  readonly runtime?: { readonly url: string; readonly sha256: string; readonly files: readonly string[] }
+}
+
 describe('bundled micromamba', () => {
   // `fetch:micromamba <target>` is the only source of the packaged binary, and
   // it fails on a target the manifest does not pin — a packaging run for a
   // platform added here without its asset would otherwise fail at build time.
   it('pins one checksummed asset for every shipped platform', async () => {
-    const manifest = JSON.parse(await readFile(join(desktopResources, 'micromamba.json'), 'utf8')) as Record<string, { url: string; sha256: string } | undefined>
+    const manifest = JSON.parse(await readFile(join(desktopResources, 'micromamba.json'), 'utf8')) as Record<string, MicromambaAsset | undefined>
     for (const platform of DESKTOP_PLATFORMS) {
       const asset = manifest[platform]
       expect(asset?.url ?? '').toMatch(/^https:\/\//)
       expect(asset?.sha256 ?? '').toMatch(/^[0-9a-f]{64}$/)
+    }
+  })
+
+  // win32 dynamically links the MSVC CRT and ships it app-local
+  // (`fetch-micromamba.ts` throws if a win32 target's manifest entry is
+  // missing this block) — a bare Windows host without it fails to start the
+  // packaged app with STATUS_DLL_NOT_FOUND, with no signal at fetch time.
+  it('pins a checksummed app-local CRT runtime for every win32 platform, with a non-empty file list', async () => {
+    const manifest = JSON.parse(await readFile(join(desktopResources, 'micromamba.json'), 'utf8')) as Record<string, MicromambaAsset | undefined>
+    const win32Platforms = DESKTOP_PLATFORMS.filter(platform => platform.startsWith('win32-'))
+    expect(win32Platforms.length).toBeGreaterThan(0)
+    for (const platform of win32Platforms) {
+      const runtime = manifest[platform]?.runtime
+      expect(runtime?.url ?? '').toMatch(/^https:\/\//)
+      expect(runtime?.sha256 ?? '').toMatch(/^[0-9a-f]{64}$/)
+      expect(runtime?.files.length ?? 0).toBeGreaterThan(0)
     }
   })
 

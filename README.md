@@ -65,7 +65,11 @@ The workspace opens when the install finishes, but you cannot ask anything yet �
 
 Neither installer carries a paid Apple/Microsoft signing identity, so macOS and Windows each show their own warning; the fix is different for each.
 
-On macOS, since 0.1.1 the app is ad-hoc signed at build time, so the prompt you should normally see is **"[App] is from an unidentified developer"**: right-click the app and choose **Open**. If instead macOS reports the app **"is damaged and can't be opened"**, right-click-**Open** does not fix that prompt — run the following once instead (`-r` because the app is a directory):
+On macOS, since 0.1.1 the app is ad-hoc signed at build time, so Gatekeeper should give a plain "unidentified developer" rejection rather than reporting the app damaged. Depending on which prompt you see, three fixes apply:
+
+- **macOS 15 (Sequoia) and later**: open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway**.
+- **Older macOS**: right-click the app and choose **Open**.
+- **If macOS instead reports the app "is damaged and can't be opened"**, neither of the above fixes that prompt — run the following once instead (`-r` because the app is a directory):
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/PaperMachine.app

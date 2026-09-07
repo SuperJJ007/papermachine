@@ -6,9 +6,10 @@
 # inspected, downloaded, and thrown away without leaving a public trace — which
 # is the whole point while the Windows build has no device acceptance behind it.
 #
-# Neither installer is code-signed: macOS shows the Gatekeeper warning the
-# README documents, and Windows shows SmartScreen. Signing is a separate change
-# that needs certificates in repository secrets.
+# No paid signing identity is configured: the macOS package is ad-hoc signed
+# (Gatekeeper still shows the warning the README documents), and the Windows
+# installer is unsigned and experimental/beta (SmartScreen warns). Paid
+# signing is a separate change that needs certificates in repository secrets.
 name: Desktop release
 
 on:
@@ -181,4 +182,4 @@ jobs:
             --draft \
             --target "$GITHUB_SHA" \
             --title "PaperMachine $TAG" \
-            --notes "Unsigned installers built by the Desktop release workflow from $GITHUB_SHA."
+            --notes "No paid signing identity: the macOS package is ad-hoc signed, the Windows installer is unsigned and experimental/beta. Built by the Desktop release workflow from $GITHUB_SHA."

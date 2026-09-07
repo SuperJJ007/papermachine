@@ -537,17 +537,29 @@ export function provisionedEnvironmentsDirectory(root: string): string {
  * (`<root>/micromamba/pkgs`), unchanged from prior behavior. On win32-x64 it
  * returns a short path directly under the system drive instead: micromamba
  * 2.x lays its package cache out per source host and channel
- * (`pkgs/https/<mirror host>/<channel path>/win-64/<package>/...`), and the
- * `general` declaration's longest such relative path is about 245
- * characters. Win32's `MAX_PATH` is 260 characters, and this application's
- * own default cache root under `<root>/micromamba/pkgs`
+ * (`pkgs/https/<mirror host>/<channel path>/win-64/<package>/...`), and this
+ * application's own default cache root under `<root>/micromamba/pkgs`
  * (`C:\Users\<user>\.papermachine\desktop-environments\micromamba\pkgs`) is
  * itself already 60-70 characters before the layered relative path is even
- * appended, so the combined path exceeds `MAX_PATH` and micromamba's package
- * extraction fails with `remove_all: The directory is not empty`
- * (reported: https://github.com/SuperJJ007/papermachine/issues/4). Keeping
- * the resolved cache root itself under about 14 characters, including the
- * drive, leaves the longest known relative path safely under `MAX_PATH`.
+ * appended, overrunning win32's 260-character `MAX_PATH` and making
+ * micromamba's package extraction fail with `remove_all: The directory is
+ * not empty` (reported: https://github.com/SuperJJ007/papermachine/issues/4).
+ * The 10-character `<SystemDrive>\pm\pkgs` this function returns clears that
+ * failure for the shipped `general` declaration's official channel (226
+ * relative characters, 236 total) and USTC mirror (242 relative, 252
+ * total) — but not for the TUNA mirror, whose longer hostname makes the
+ * identical relative path 251 characters (261 total), 1 character past
+ * `MAX_PATH`, for the single package this declaration pulls in
+ * transitively (`libstdcxx-devel_win-64`) with the deepest cache path;
+ * confirmed to fail deterministically on real Windows hardware and not
+ * fixable by shortening this cache root further, because a `\\?\`-prefixed
+ * root is rejected outright by micromamba's own `CONDA_PKGS_DIRS` parsing
+ * before any path length is even considered (see the Agent Note below).
+ * `general.json`'s source order and `source-selection.ts`'s
+ * `CHINA_MIRROR_SOURCE_ID` route around this by trying USTC, not TUNA,
+ * first; TUNA remains listed and still fails this way if a user manually
+ * selects it
+ * (`.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md`).
  * @param options.platform - the platform provisioning is running on.
  * @param options.root - the provisioner root ({@link desktopEnvironmentsRoot}), used on darwin.
  * @param options.systemDrive - `process.env.SystemDrive` on win32-x64; a

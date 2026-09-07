@@ -504,16 +504,27 @@ describe('resolvePackageCacheDir', () => {
     expect(resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\anything', systemDrive: '' })).toBe('C:\\pm\\pkgs')
   })
 
-  it('keeps the resolved win32 cache root short enough that the longest known layered relative path stays under MAX_PATH', () => {
-    // The longest relative path micromamba 2.x's layered package cache
-    // produces for the shipped `general` declaration's slowest mirror
-    // (TUNA) is about 245 characters
-    // (https://github.com/SuperJJ007/papermachine/issues/4); win32's
-    // MAX_PATH is 260.
+  it('keeps the resolved win32 cache root short enough that the USTC and official mirrors\' layered relative paths stay under MAX_PATH, but not TUNA\'s', () => {
+    // Measured directly (R2-report.md Q1, reproduced on real Windows
+    // hardware) for the shipped `general` declaration's deepest layered
+    // cache path — a header inside `libstdcxx-devel_win-64`, pulled in
+    // transitively by `r-base`/`r-rcpp` — under each mirror's hostname.
+    // win32's MAX_PATH is 260. USTC and the official channel clear it;
+    // TUNA's longer hostname does not, which is why `general.json` no
+    // longer tries TUNA first
+    // (.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md).
     const cacheDir = resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\Users\\test\\.papermachine\\desktop-environments' })
-    const LONGEST_KNOWN_RELATIVE_CACHE_PATH_LENGTH = 245
     const WIN32_MAX_PATH = 260
-    expect(cacheDir.length + LONGEST_KNOWN_RELATIVE_CACHE_PATH_LENGTH).toBeLessThan(WIN32_MAX_PATH)
+    const RELATIVE_CACHE_PATH_LENGTH = { ustc: 242, official: 226, tuna: 251 }
+    expect(cacheDir.length + RELATIVE_CACHE_PATH_LENGTH.ustc).toBeLessThan(WIN32_MAX_PATH)
+    expect(cacheDir.length + RELATIVE_CACHE_PATH_LENGTH.official).toBeLessThan(WIN32_MAX_PATH)
+    expect(cacheDir.length + RELATIVE_CACHE_PATH_LENGTH.tuna).toBeGreaterThanOrEqual(WIN32_MAX_PATH)
+  })
+
+  it('lists USTC, not TUNA, as the shipped general declaration\'s first source', async () => {
+    const resources = join(import.meta.dirname, '../resources/environments')
+    const general = JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')) as { sources: readonly { id: string }[] }
+    expect(general.sources[0]?.id).toBe('ustc')
   })
 })
 

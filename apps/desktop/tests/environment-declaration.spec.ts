@@ -34,14 +34,28 @@ describe('desktop environment declarations', () => {
     expect(parsed.healthChecks.map(check => check.language)).toEqual(['python', 'r'])
   })
 
-  it('ships three ordered mirror sources, tuna first, the official channel last', async () => {
+  // USTC, not TUNA, is first: TUNA's longer mirror hostname pushes this
+  // declaration's deepest transitive dependency 1 character past win32's
+  // `MAX_PATH` under the shipped package cache root, confirmed on real
+  // Windows hardware
+  // (.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md).
+  it('ships three ordered mirror sources, ustc first, the official channel last', async () => {
     const parsed = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')))
-    expect(parsed.sources.map(source => source.id)).toEqual(['tuna', 'ustc', 'official'])
+    expect(parsed.sources.map(source => source.id)).toEqual(['ustc', 'tuna', 'official'])
     expect(parsed.sources.map(source => source.channels)).toEqual([
-      ['https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge'],
       ['https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge'],
+      ['https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge'],
       ['https://conda.anaconda.org/conda-forge'],
     ])
+  })
+
+  // Real single-source `micromamba create` compressed package sizes, USTC
+  // mirror, cloud Windows box (R2-report.md Q3): ~0.80GB. The lower bound
+  // guards against a future edit shrinking the declared estimate back
+  // toward the previously shipped, under-measured 0.52GB.
+  it('estimates at least the real measured single-source download size', async () => {
+    const parsed = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'general.json'), 'utf8')))
+    expect(parsed.estimatedDownloadBytes).toBeGreaterThanOrEqual(800_000_000)
   })
 
   // The kernel's R chart capture calls ggplot2 directly

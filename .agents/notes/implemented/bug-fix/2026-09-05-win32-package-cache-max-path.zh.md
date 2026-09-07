@@ -28,3 +28,5 @@ health-check 步骤现在通过 `interpreterLayout(isWindows)` 解析每个 chec
 ## Consequences
 
 Windows 上的 package cache root 被固定为 `<SystemDrive>\pm\pkgs`，而不是像本应用其余每一份状态那样落在 `<dshHome>` 之下。目前在任一平台上都没有任何东西会清理它，这与既有行为一致，而不是一个新出现的缺口。`resolvePackageCacheDir` 与 win32 health-check 布局由 `apps/desktop/tests/provisioning.spec.ts` 中的单元测试覆盖（两个平台的纯函数解析与 `SystemDrive` 回退、解析结果抵达 `CONDA_PKGS_DIRS`、目录无法创建时的 loud 失败，以及 win32 health-check 可执行文件路径），使用一个 fake `ProcessRunner`，全部可在 macOS 上运行并通过。Windows 平台本身的行为——在新的 `CONDA_PKGS_DIRS` 下真实的 `micromamba create` 能否成功，以及 health check 能否针对真实的 win32 布局通过——自本次改动以来尚未在真实 Windows 硬件上重新验证；报告者最初的证据只单独覆盖了 `CONDA_PKGS_DIRS` 这个机制本身，并不覆盖这次改动的确切代码路径。
+
+这篇笔记"约 245 个字符"的最长分层相对 cache 路径估算,没有算上 `libstdcxx-devel_win-64` 内部的一个头文件——它是 `r-base`/`r-rcpp` 透传拉入的依赖,不是 `general.json` 声明的顶层包之一。真实数字是：TUNA 镜像下具体是 251 个字符——加上这篇笔记 10 字符的 cache root 后,比 `MAX_PATH` 多出 1 个字符——已在真实 Windows 硬件上证实。量测过程与由此对 `general.json` 默认源顺序做出的改动,见 `2026-09-07-win32-package-cache-tuna-max-path.zh.md`。

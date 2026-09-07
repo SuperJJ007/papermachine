@@ -10,8 +10,17 @@ export interface LocaleSignals {
   readonly languages: readonly string[]
 }
 
-/** The mirror preferred for a mainland-China system; must match the shipped `general.json`'s TUNA source id. */
-export const CHINA_MIRROR_SOURCE_ID = 'tuna'
+/**
+ * The mirror preferred for a mainland-China system; must match the shipped
+ * `general.json`'s USTC source id. Not the TUNA mirror: TUNA's longer
+ * hostname pushes micromamba 2.x's per-source cache path for this
+ * declaration's deepest transitive dependency 1 character past win32's
+ * `MAX_PATH`, a deterministic failure confirmed on real Windows hardware
+ * (`.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md`).
+ * TUNA stays listed in `general.json` for manual selection; it fails the
+ * same way whenever chosen.
+ */
+export const CHINA_MIRROR_SOURCE_ID = 'ustc'
 /** The non-mirrored upstream conda-forge channel; the default outside mainland China. */
 export const OFFICIAL_SOURCE_ID = 'official'
 

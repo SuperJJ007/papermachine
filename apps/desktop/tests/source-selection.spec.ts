@@ -9,12 +9,12 @@ const SOURCES: readonly EnvironmentSource[] = [
 ]
 
 describe('resolveDefaultSourceId', () => {
-  it('defaults to the TUNA mirror when the system timezone is Asia/Shanghai', () => {
+  it('defaults to the USTC mirror when the system timezone is Asia/Shanghai', () => {
     expect(resolveDefaultSourceId(SOURCES, { timeZone: 'Asia/Shanghai', languages: ['en-US'] }))
       .toBe(CHINA_MIRROR_SOURCE_ID)
   })
 
-  it('defaults to the TUNA mirror when a preferred language is Chinese, regardless of timezone', () => {
+  it('defaults to the USTC mirror when a preferred language is Chinese, regardless of timezone', () => {
     expect(resolveDefaultSourceId(SOURCES, { timeZone: 'America/New_York', languages: ['zh-CN', 'en-US'] }))
       .toBe(CHINA_MIRROR_SOURCE_ID)
     expect(resolveDefaultSourceId(SOURCES, { timeZone: 'America/New_York', languages: ['zh-TW'] }))
@@ -37,8 +37,8 @@ describe('resolveDefaultSourceId', () => {
   })
 
   it('falls back to the first listed source when the preferred id is absent from the declaration', () => {
-    const withoutTuna = SOURCES.filter(source => source.id !== 'tuna')
-    expect(resolveDefaultSourceId(withoutTuna, { timeZone: 'Asia/Shanghai', languages: [] })).toBe('ustc')
+    const withoutUstc = SOURCES.filter(source => source.id !== 'ustc')
+    expect(resolveDefaultSourceId(withoutUstc, { timeZone: 'Asia/Shanghai', languages: [] })).toBe('tuna')
   })
 
   it('throws rather than silently choosing when sources is empty', () => {

@@ -55,11 +55,11 @@ The choices on this screen:
 
 | Option | When to use it |
 |---|---|
-| **Download and install** | The default path. Installs the 22-package general science environment: about 520 MB to download, 6 GB of free disk needed. |
-| **Package source** | Where packages are pulled from. TUNA is preselected when your system language or timezone looks like mainland China, otherwise the official conda-forge channel; you can switch to USTC or either of the others. **Picking the wrong one is not fatal** — if the chosen source fails, the remaining sources are tried in order automatically. |
+| **Download and install** | The default path. Installs the 22-package general science environment: about 850 MB to download, 6 GB of free disk needed. |
+| **Package source** | Where packages are pulled from. USTC is preselected when your system language or timezone looks like mainland China, otherwise the official conda-forge channel; you can switch to either of the others, though on Windows TUNA fails every time from a path-length limit, which is why it is listed after USTC. **Picking the wrong one is not fatal** — if the chosen source fails, the remaining sources are tried in order automatically. |
 | **View the full package list** | Read exactly which 22 packages are about to be installed. |
 | **Advanced: edit the package list** | Add or remove conda packages in the prefilled list, one per line, `name=version` supported. Removing `python` or `r-base` fails the post-install check. |
-| **Keep current environment** | Only appears once an environment is already installed. Reinstalling downloads the 520 MB again, so keep it unless you want a different package list. |
+| **Keep current environment** | Only appears once an environment is already installed. Reinstalling downloads the 850 MB again, so keep it unless you want a different package list. |
 
 The workspace opens when the install finishes, but you cannot ask anything yet — the model key is yours to enter, as in step 3 above.
 

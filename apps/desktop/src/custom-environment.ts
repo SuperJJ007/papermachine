@@ -18,8 +18,12 @@ export const CUSTOM_ENVIRONMENT_ID = 'custom'
  */
 const REVISION_PREFIX = '2026.09'
 
-/** Advertised sizes for a custom set, which cannot be known before the solver runs. */
-const ESTIMATED_DOWNLOAD_BYTES = 520_000_000
+/**
+ * Advertised sizes for a custom set, which cannot be known before the
+ * solver runs. `ESTIMATED_DOWNLOAD_BYTES` mirrors the shipped `general`
+ * declaration's `estimatedDownloadBytes` field (`resources/environments/general.json`).
+ */
+const ESTIMATED_DOWNLOAD_BYTES = 850_000_000
 const REQUIRED_FREE_BYTES = 6_000_000_000
 const TIMEOUT_MS = 3_600_000
 

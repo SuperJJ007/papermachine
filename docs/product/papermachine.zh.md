@@ -6,7 +6,7 @@ PaperMachine 是基于 DeepSeek Harness 构建的 Science 桌面产品:一个 ma
 
 ## 环境安装与镜像
 
-PaperMachine 完全自有其 Python/R 环境:首次启动会打开 onboarding,把随包的 `general` 环境(NumPy、SciPy、pandas、Matplotlib、seaborn、statsmodels、scikit-learn、openpyxl、pyreadstat、PyArrow,以及 R 的 tidyverse 系列)安装进应用自己置备的前缀——它绝不会绑定机器上已有的 conda 系环境。确认面板提供三个包来源,依次作为独立尝试:TUNA 镜像、USTC 镜像、官方 `conda.anaconda.org` 频道;系统时区为 `Asia/Shanghai` 或系统语言为中文时默认选 TUNA,否则默认官方频道,用户可以从三者中任意一个开始。运行中的工作台对 `install_science_packages` 保持同样的有序回退。参见 [apps/desktop/README.md](../../apps/desktop/README.zh.md)("Onboarding 与 environment binding"和"环境声明"两节)。
+PaperMachine 完全自有其 Python/R 环境:首次启动会打开 onboarding,把随包的 `general` 环境(NumPy、SciPy、pandas、Matplotlib、seaborn、statsmodels、scikit-learn、openpyxl、pyreadstat、PyArrow,以及 R 的 tidyverse 系列)安装进应用自己置备的前缀——它绝不会绑定机器上已有的 conda 系环境。确认面板提供三个包来源,依次作为独立尝试:USTC 镜像、TUNA 镜像、官方 `conda.anaconda.org` 频道;系统时区为 `Asia/Shanghai` 或系统语言为中文时默认选 USTC,否则默认官方频道,用户可以从三者中任意一个开始。运行中的工作台对 `install_science_packages` 保持同样的有序回退。参见 [apps/desktop/README.md](../../apps/desktop/README.zh.md)("Onboarding 与 environment binding"和"环境声明"两节)。
 
 ## Python 与 R 持久内核
 

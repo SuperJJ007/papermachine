@@ -11,9 +11,9 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 0.1 | 换装 | 退出旧版 PaperMachine,把新构建的 `PaperMachine.app` 拖到 `/Applications` 覆盖,再启动。 | Finder 简介里显示新版本号;启动直接进工作台,不出现 "Science Host needs attention"。 | rc.3 |
 | 0.2 | 换装 | 可选,通常跳过——用于复现纯首装:退出应用,把 `~/.papermachine` 挪走,再启动;测完把它挪回来。 | 启动进入 onboarding 安装页而不是工作台(跳过这一步会保留现有环境、API key 和会话)。 | rc.3 |
 | 1.1 | 启动与环境 | 正常启动。 | 直接进工作台;侧栏显示已有的工作区和历史会话;左上角是鲸鱼标志加 PaperMachine 字标。 | rc.3 |
-| 1.2 | 启动与环境 | 可选——纯首装流程(见 0.2)。 | 确认面板注明约 494 MB、磁盘需求,默认选 TUNA、可切换 USTC/官方,安装中显示阶段文字,完成后进入工作台。 | rc.3 |
+| 1.2 | 启动与环境 | 可选——纯首装流程(见 0.2)。 | 确认面板注明约 850 MB、磁盘需求,默认选 USTC、可切换 TUNA/官方,安装中显示阶段文字,完成后进入工作台。 | rc.3 |
 | 1.3 | 启动与环境 | 退出再启动。 | 侧栏展开/收起状态和详情面板的开合状态与上次一致(端口记忆);会话列表完整。 | rc.3 |
-| 1.4 | 启动与环境 | 打开应用菜单的 Change Environment…。 | onboarding 页面顶部显示当前已应用环境的 id、版本号、applied/stale 状态和路径;当已应用版本与标准声明一致时,主按钮是 "Reinstall"(注明约 520 MB 的下载量);"Keep current environment" 能在此期间不停 Host 的前提下直接回到工作台。 | rc.3 |
+| 1.4 | 启动与环境 | 打开应用菜单的 Change Environment…。 | onboarding 页面顶部显示当前已应用环境的 id、版本号、applied/stale 状态和路径;当已应用版本与标准声明一致时,主按钮是 "Reinstall"(注明约 850 MB 的下载量);"Keep current environment" 能在此期间不停 Host 的前提下直接回到工作台。 | rc.3 |
 | 1.5 | 启动与环境 | 启动后查看 `~/.papermachine/logs/` 目录。 | 存在 `host.log` 文件;打开能看到 Host 启动输出,形似 API key 的值已脱敏。 | rc.4 |
 | 2.1 | 品牌与外壳 | 看左上角;点击侧栏的收起按钮。 | 展开态:鲸鱼标志加常规体 "Paper" 和加粗 "Machine";收起态只剩鲸鱼标志。 | rc.3 |
 | 2.2 | 品牌与外壳 | 看窗口标题栏。 | 显示 "\<会话标题\> — PaperMachine";新会话页显示 "PaperMachine"(首次绘制时闪一下旧名字属已知的外观小问题)。 | rc.3 |
@@ -51,7 +51,7 @@ PaperMachine 桌面 DMG 的主实机验收清单。每一项都带一个稳定�
 | 7.7 | 联网、文献、Plan、Skill | "这两组数据该用什么检验,写一段结果。" | 模型依次用 `statistical-analysis` 和 `scientific-writing` 两个 skill;不应在未经确认的情况下装包。 | rc.3 |
 | 7.8 | 联网、文献、Plan、Skill | "派一个子 agent 用 Python 算 1 到 100 的平方和并报告。" | 出现 subagent 工具步和 "1 subagent" 标记;子 agent 用自己的内核算出 338350 并报告;父 agent 复核。 | rc.3 |
 | 7.9 | 联网、文献、Plan、Skill | "派一个子 agent,让它把自己的全部工具名原样列出来。" | 十来个工具:`run_python`/`run_r`/`get_science_state`/`annotate_artifact`/`read`/`glob`/`grep`/`skill`/`todo_write`/`web_search`/`web_fetch`/`report`;没有 shell、写文件、装包或 `subagent` 工具。 | rc.3 |
-| 8.1 | 装包 | "安装 pingouin。" | `install_science_packages` 在它一小时的 `installTimeoutMs` 内成功(走 TUNA 镜像);一次真正的新安装会追加一条新的环境版本,结果说明下次运行会重启内核,那次运行之后 Kernel # 增加,`import pingouin` 可用。如果更早一次尝试超时(网络状况可能超出这个一小时上限),那次尝试即使 micromamba 已经把文件写进了 prefix,也不会追加版本;随后一次成功的安装——哪怕 micromamba 报告"已经装过了"——会去对账持久化的清单并追加版本;只有当已记录的清单已经包含全部请求的包时,结果才是 `unchanged`。 | rc.3 |
+| 8.1 | 装包 | "安装 pingouin。" | `install_science_packages` 在它一小时的 `installTimeoutMs` 内成功(走已绑定的源,默认 USTC);一次真正的新安装会追加一条新的环境版本,结果说明下次运行会重启内核,那次运行之后 Kernel # 增加,`import pingouin` 可用。如果更早一次尝试超时(网络状况可能超出这个一小时上限),那次尝试即使 micromamba 已经把文件写进了 prefix,也不会追加版本;随后一次成功的安装——哪怕 micromamba 报告"已经装过了"——会去对账持久化的清单并追加版本;只有当已记录的清单已经包含全部请求的包时,结果才是 `unchanged`。 | rc.3 |
 | 8.2 | 装包 | "安装 pip-nonexistent-xyz。" | 失败信息明确说明环境未改动、模型不应回退到 `pip install`;一个真正不存在的包应当尽快失败,而不是被镜像的 TLS 握手超时盖住。 | rc.3 |
 | 8.3 | 装包 | "安装 R 包 ggrepel。" | micromamba 安装 `r-ggrepel`;成功后 R 能 `library(ggrepel)`。 | rc.3 |
 | 9.1 | 设置与恢复 | Settings → Models:在 V4-Flash 和 V4-Flash-Vision-Exp 之间切换。 | 切换即刻生效;输入框旁边的模型名随之变化(这个控件刻意放在composer旁边,不在 Settings 页面里)。 | rc.3 |

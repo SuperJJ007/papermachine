@@ -235,7 +235,7 @@ async function loadInstallLocation(): Promise<void> {
     installLocationPath.textContent = location.path
     resetInstallLocation.hidden = !location.customized
   } catch (error) {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    statusNode.textContent = bridgeErrorMessage(error)
   }
 }
 
@@ -259,7 +259,7 @@ async function loadEnvironments(): Promise<void> {
     renderStandard(shipped)
     provision.disabled = false
   } catch (error) {
-    installSummary.textContent = error instanceof Error ? error.message : String(error)
+    installSummary.textContent = bridgeErrorMessage(error)
   }
 }
 
@@ -280,6 +280,20 @@ const IPC_ERROR_PREFIX = /^Error invoking remote method '[^']*':\s*(?:Error:\s*)
  */
 function stripIpcErrorPrefix(message: string): string {
   return message.replace(IPC_ERROR_PREFIX, '')
+}
+
+/**
+ * Render a value caught from a `desktopOnboarding` bridge call as display
+ * text, with Electron's `ipcRenderer.invoke` wrapping stripped. Every
+ * `catch` in this file that displays a bridge failure uses this, not
+ * `error instanceof Error ? error.message : String(error)` directly, so a
+ * real Electron IPC failure never reaches the page with its channel framing
+ * still attached, on any of this page's bridge calls.
+ * @param error - the value caught from a bridge call.
+ * @returns display text with any IPC wrapping stripped from its start.
+ */
+function bridgeErrorMessage(error: unknown): string {
+  return stripIpcErrorPrefix(error instanceof Error ? error.message : String(error))
 }
 
 /**
@@ -304,7 +318,7 @@ async function startConfirmed(): Promise<void> {
       ? window.desktopOnboarding.provision(standard?.id ?? '', sourceId ?? '')
       : window.desktopOnboarding.provisionCustom(approved.packages, sourceId ?? ''))
   } catch (error) {
-    const errorText = stripIpcErrorPrefix(error instanceof Error ? error.message : String(error))
+    const errorText = bridgeErrorMessage(error)
     statusNode.textContent = errorText
     progress.hidden = true
     setBusy(false)
@@ -361,7 +375,7 @@ changeInstallLocation.addEventListener('click', () => {
     if (result.status === 'rejected') statusNode.textContent = result.reason
     finishInstallLocationAction()
   }).catch((error: unknown) => {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    statusNode.textContent = bridgeErrorMessage(error)
     finishInstallLocationAction()
   })
 })
@@ -376,7 +390,7 @@ resetInstallLocation.addEventListener('click', () => {
     statusNode.textContent = result.reason
     finishInstallLocationAction()
   }).catch((error: unknown) => {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    statusNode.textContent = bridgeErrorMessage(error)
     finishInstallLocationAction()
   })
 })
@@ -404,7 +418,7 @@ keepCurrent.addEventListener('click', () => {
   keepCurrent.disabled = true
   statusNode.textContent = ''
   void window.desktopOnboarding.keepCurrentEnvironment().catch((error: unknown) => {
-    statusNode.textContent = error instanceof Error ? error.message : String(error)
+    statusNode.textContent = bridgeErrorMessage(error)
     keepCurrent.disabled = false
   })
 })

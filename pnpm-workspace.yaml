@@ -25,21 +25,18 @@ packages:
 linkWorkspacePackages: true
 
 # sharp and koffi ship their native modules as platform-specific
-# optionalDependencies (@img/sharp-<os>-<arch>, @koromix/koffi-<os>-<arch>);
-# pnpm otherwise installs only the running machine's own variant. Desktop
-# packaging deploys the Host closure with `pnpm deploy --prod --offline` from
-# this workspace's own node_modules (apps/desktop/scripts/stage-host.ts), so a
-# runner can only produce a starting Host for another target's architecture
-# (an Intel DMG built on an arm64 mac, or a Windows package cross-built on a
-# mac) when every desktop packaging target's variant is present at install
-# time, not just the host machine's. `linux` is required by CI and by Linux
-# development machines, independent of desktop packaging; `musl` is not a
-# packaging target and is left out.
-supportedArchitectures:
-  os: [darwin, win32, linux]
-  cpu: [x64, arm64]
-  libc: [glibc]
-
+# optionalDependencies (@img/sharp-<os>-<arch>, @koromix/koffi-<os>-<arch>), and
+# so does nearly every other native-binary package in this workspace (esbuild,
+# oxlint, rolldown, the Claude/Codex agent SDKs, workerd, ripgrep, and more).
+# A permanent `supportedArchitectures` override here widens every one of
+# those, on every `pnpm install` this workspace ever runs, in exchange for
+# desktop packaging's much narrower need — the desktop packaging targets'
+# sharp/koffi variants only. Desktop packaging instead passes the widened
+# `--os`/`--cpu`/`--libc` flags directly to the `pnpm install` step that
+# precedes it (`.github/workflows/desktop-release.yml`, and
+# `apps/desktop/README.md` for local packaging), so the cost of fetching
+# every platform's native binaries is paid only by that install, not by every
+# CI job and every developer machine's every install.
 overrides:
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'

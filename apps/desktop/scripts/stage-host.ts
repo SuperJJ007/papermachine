@@ -38,12 +38,25 @@ async function firstLink(directory: string): Promise<string | undefined> {
 
 if (!staging.startsWith(join(desktopRoot, '.stage') + sep)) throw new Error('desktop host staging escaped its owned directory')
 await rm(staging, { recursive: true, force: true })
+// `pnpm deploy` resolves its own closure independently of whatever this
+// workspace's own `node_modules` already has linked — it re-derives which
+// optional native-module variant to include per family from the *current*
+// `supportedArchitectures` config, the same as a fresh `pnpm install` would.
+// So this deploy call needs the same `--os`/`--cpu`/`--libc` widening the
+// install step before it used (`apps/desktop/README.md`,
+// `.github/workflows/desktop-release.yml`) to pull every desktop target's
+// sharp/koffi variant into the deployed closure, not just this deploy
+// call's own machine's — that install step only guarantees the content is
+// in the local store for this `--offline` deploy to find, not which
+// variant deploy's own resolution picks.
 // Resolved through `npm_execpath` rather than spawned by name: on Windows
 // pnpm is a `.cmd` shim, which a shell-free `spawn` cannot execute.
 const deploy = pnpmInvocation([
   '--offline', '--ignore-scripts', '--filter', '@deepseek-ai/dsh', 'deploy', '--prod',
   '--config.node-linker=hoisted',
-  '--config.inject-workspace-packages=true', '--config.link-workspace-packages=true', staging,
+  '--config.inject-workspace-packages=true', '--config.link-workspace-packages=true',
+  '--os=darwin', '--os=win32', '--os=linux', '--cpu=x64', '--cpu=arm64', '--libc=glibc',
+  staging,
 ])
 await run(deploy.command, deploy.args)
 
@@ -162,6 +175,9 @@ while (link !== undefined) {
   link = await firstLink(nodeModules)
 }
 
+/** `node_modules` scope directories that carry platform-specific sharp/koffi native modules. */
+const NATIVE_MODULE_SCOPES = Object.freeze(['@img', '@koromix'])
+
 await assertNativeModulesForEveryDesktopTarget(nodeModules)
 
 await run(process.execPath, [
@@ -174,16 +190,30 @@ await run(process.execPath, [
  * install`'s own. `after-pack.mjs` prunes this same closure down to one
  * target per packaged build; a runner missing a target's variant here would
  * silently produce a Host that exits before readiness on that target only,
- * discovered on the packaged machine rather than at staging time.
+ * discovered on the packaged machine rather than at staging time. A scope
+ * directory missing entirely (every package under it failed to install) is
+ * an error here rather than an empty entry list: reading it as `[]` would
+ * let `selectNativeModuleTargets` reject the case it exists to catch, and
+ * the scope directory's own absence is itself the most direct signal of
+ * what went wrong.
  * @param modules - the staged closure's `node_modules` directory.
- * @throws when a desktop target's sharp or koffi native module variant is
- *   missing, naming the fix: add `supportedArchitectures` covering every
- *   desktop target to `pnpm-workspace.yaml`, then reinstall.
+ * @throws when a `NATIVE_MODULE_SCOPES` directory does not exist, or a
+ *   desktop target's sharp or koffi native module variant is missing,
+ *   naming the fix: `pnpm install --os=darwin --os=win32 --os=linux --cpu=x64
+ *   --cpu=arm64 --libc=glibc` (see `apps/desktop/README.md`).
  */
 async function assertNativeModulesForEveryDesktopTarget(modules: string): Promise<void> {
-  const scopes: Readonly<Record<string, readonly string[]>> = {
-    '@img': existsSync(join(modules, '@img')) ? await readdir(join(modules, '@img')) : [],
-    '@koromix': existsSync(join(modules, '@koromix')) ? await readdir(join(modules, '@koromix')) : [],
+  const scopes = new Map<string, readonly string[]>()
+  for (const scope of NATIVE_MODULE_SCOPES) {
+    const scopeDir = join(modules, scope)
+    if (!existsSync(scopeDir)) {
+      throw new Error(
+        `desktop host staging: ${scopeDir} does not exist — the staged closure never installed ${scope}'s native ` +
+        'module packages. Run `pnpm install --os=darwin --os=win32 --os=linux --cpu=x64 --cpu=arm64 ' +
+        '--libc=glibc` (see apps/desktop/README.md), then reinstall.',
+      )
+    }
+    scopes.set(scope, await readdir(scopeDir))
   }
   for (const platform of DESKTOP_PLATFORMS) {
     // `platform.split('-')` types its elements `string | undefined` under
@@ -192,14 +222,14 @@ async function assertNativeModulesForEveryDesktopTarget(modules: string): Promis
     const separator = platform.indexOf('-')
     const os = platform.slice(0, separator)
     const arch = platform.slice(separator + 1)
-    for (const [scope, entries] of Object.entries(scopes)) {
+    for (const [scope, entries] of scopes) {
       try {
-        selectNativeModuleTargets({ os, arch }, entries)
+        selectNativeModuleTargets(scope, { os, arch }, entries)
       } catch (cause) {
         throw new Error(
           `desktop host staging: ${scope} is missing the ${platform} native module variant a packaged Host for ` +
-          `that target needs (${(cause as Error).message}). Add supportedArchitectures covering every desktop ` +
-          'packaging target to pnpm-workspace.yaml, then reinstall.',
+          `that target needs (${(cause as Error).message}). Run \`pnpm install --os=darwin --os=win32 --os=linux ` +
+          '--cpu=x64 --cpu=arm64 --libc=glibc\` (see apps/desktop/README.md).',
         )
       }
     }

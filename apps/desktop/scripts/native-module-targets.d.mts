@@ -31,12 +31,54 @@ export function parseNativeModuleEntry(name: string): NativeModuleEntry | undefi
 /**
  * Split one scope directory's entries into what a packaging target keeps and
  * what it can discard.
+ * @param scope - the `node_modules` scope `entries` was read from (`@img`
+ *   or `@koromix`); selects which native module families are required.
  * @param target - the packaging target being built.
- * @param entries - directory basenames under one scope (`@img` or `@koromix`).
+ * @param entries - directory basenames under `scope`.
  * @returns the entries to keep and the entries to remove.
- * @throws when a family present in `entries` has no entry matching `target`.
+ * @throws when `scope` names no known scope, or when a family required for
+ *   `scope` and not exempted for `target.os` has no entry matching `target`
+ *   — including when `entries` contains no entry of that family at all.
  */
 export function selectNativeModuleTargets(
+  scope: string,
   target: { readonly os: string, readonly arch: string },
   entries: readonly string[],
 ): { readonly keep: readonly string[], readonly remove: readonly string[] }
+
+/** One parsed per-platform-optionalDependency package variant outside `@img`/`@koromix`. */
+export interface PlatformVariantEntry {
+  /** The entry as given, unchanged (a bare name or a `@scope/package-name` alias). */
+  readonly name: string
+  /** `name` with its platform-variant suffix removed. */
+  readonly family: string
+  /** The platform segment (`darwin`, `win32`, `linux`, `linuxmusl`). */
+  readonly os: string
+  /** The architecture segment (`x64`, `arm64`, `ia32`). */
+  readonly arch: string
+}
+
+/**
+ * Recognize `name` as a per-platform-optionalDependency package variant
+ * outside `@img`/`@koromix` (ripgrep, `node-addon-require-builtin`, and others).
+ * @param name - a `node_modules` entry, either a bare package name or a
+ *   scoped alias (`@scope/package-name`).
+ * @returns the parsed family/os/arch, or `undefined` when `name` does not
+ *   end in a recognized platform-variant suffix.
+ */
+export function parsePlatformVariantEntry(name: string): PlatformVariantEntry | undefined
+
+/**
+ * Select every per-platform-optionalDependency entry in `entries` that does
+ * not belong to `target`, for families outside `@img`/`@koromix`. A family
+ * with no entry matching `target` is left untouched entirely, rather than
+ * guessed at.
+ * @param target - the packaging target being built.
+ * @param entries - `node_modules` entries (bare names or `@scope/package-name`
+ *   aliases) to consider, excluding `@img`/`@koromix`.
+ * @returns the subset of `entries` to remove.
+ */
+export function selectForeignPlatformEntries(
+  target: { readonly os: string, readonly arch: string },
+  entries: readonly string[],
+): readonly string[]

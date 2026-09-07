@@ -48,8 +48,14 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - name: Install (immutable)
-        run: pnpm install --frozen-lockfile
+      # --os/--cpu/--libc widen this one install call to fetch every desktop
+      # packaging target's sharp/koffi native module variant (see
+      # pnpm-workspace.yaml and apps/desktop/README.md), not just this
+      # runner's own platform. `stage:host` (invoked by the Package step
+      # below) asserts all three desktop targets' variants are present
+      # regardless of which target electron-builder packages in this job.
+      - name: Install (immutable, every desktop packaging target's native module variant)
+        run: pnpm install --frozen-lockfile --os=darwin --os=win32 --os=linux --cpu=x64 --cpu=arm64 --libc=glibc
 
       - name: Package
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:mac
@@ -83,8 +89,14 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - name: Install (immutable)
-        run: pnpm install --frozen-lockfile
+      # --os/--cpu/--libc widen this one install call to fetch every desktop
+      # packaging target's sharp/koffi native module variant (see
+      # pnpm-workspace.yaml and apps/desktop/README.md), not just this
+      # runner's own platform. `stage:host` (invoked by the Package step
+      # below) asserts all three desktop targets' variants are present
+      # regardless of which target electron-builder packages in this job.
+      - name: Install (immutable, every desktop packaging target's native module variant)
+        run: pnpm install --frozen-lockfile --os=darwin --os=win32 --os=linux --cpu=x64 --cpu=arm64 --libc=glibc
 
       # The only Windows execution this repository can reach without a Windows
       # device: the carrier's own unit tests decide platform-dependent paths at
@@ -103,8 +115,14 @@ jobs:
       # `--version` run above passing proves nothing about the app-local DLLs
       # a bare end-user machine actually needs (see the accompanying Agent
       # Note) — only a file-presence check catches a fetch that silently
-      # stopped landing them.
-      - name: App-local CRT DLLs present
+      # stopped landing them. This checks the source tree `fetch:micromamba`
+      # wrote into, before the slower Package step runs; it does not prove
+      # electron-builder actually copied these files into the packaged
+      # output — `after-pack.mjs`'s `assertBundledRuntimePresent` is the
+      # gate that checks the packaged `release/win-unpacked/resources/bin`
+      # itself, and runs inside the Package step below on every packaging
+      # invocation, not only in this workflow.
+      - name: App-local CRT DLLs fetched (source tree, pre-package)
         run: |
           mapfile -t files < <(jq -r '.["win32-x64"].runtime.files[]' apps/desktop/resources/micromamba.json)
           if [ "${#files[@]}" -eq 0 ]; then

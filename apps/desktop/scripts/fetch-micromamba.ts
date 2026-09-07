@@ -59,6 +59,14 @@ const target = process.argv[2] ?? `${process.platform}-${process.arch}`
 if (!isDesktopPlatform(target)) throw new Error(`micromamba: ${target} is not a shipped desktop platform`)
 const asset = manifest[target]
 if (typeof asset !== 'object') throw new Error(`micromamba: no pinned asset for ${target}`)
+// win32 dynamically links the MSVC CRT and ships it app-local (see the
+// accompanying Agent Note); a manifest entry for a win32 target missing its
+// `runtime` block would otherwise fetch micromamba.exe alone and produce a
+// package that fails to start with STATUS_DLL_NOT_FOUND on a bare host, with
+// no signal at fetch time.
+if (target.startsWith('win32-') && asset.runtime === undefined) {
+  throw new Error(`micromamba: ${target} manifest entry in resources/micromamba.json is missing its runtime (app-local CRT) block`)
+}
 
 const binDir = join(desktopRoot, 'resources/bin', target)
 const executableBytes = await downloadVerified(`micromamba (${target})`, asset.url, asset.sha256)

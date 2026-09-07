@@ -504,14 +504,14 @@ describe('resolvePackageCacheDir', () => {
     expect(resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\anything', systemDrive: '' })).toBe('C:\\pm\\pkgs')
   })
 
-  it('keeps the resolved win32 cache root short enough that the USTC and official mirrors\' layered relative paths stay under MAX_PATH, but not TUNA\'s', () => {
-    // Measured directly (R2-report.md Q1, reproduced on real Windows
-    // hardware) for the shipped `general` declaration's deepest layered
-    // cache path — a header inside `libstdcxx-devel_win-64`, pulled in
-    // transitively by `r-base`/`r-rcpp` — under each mirror's hostname.
-    // win32's MAX_PATH is 260. USTC and the official channel clear it;
-    // TUNA's longer hostname does not, which is why `general.json` no
-    // longer tries TUNA first
+  it('records that at the current 10-character win32 cache root, the USTC and official mirrors\' layered relative paths stay under MAX_PATH but TUNA\'s does not', () => {
+    // Records the current win32 root's relative position to MAX_PATH for
+    // the shipped `general` declaration's deepest layered cache path — a
+    // header inside `libstdcxx-devel_win-64`, pulled in transitively by
+    // `r-base`/`r-rcpp` — under each mirror's hostname (win32's MAX_PATH is
+    // 260). If the resolved root length ever changes, re-derive these
+    // relative-path lengths and re-evaluate `general.json`'s source order
+    // together
     // (.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md).
     const cacheDir = resolvePackageCacheDir({ platform: 'win32-x64', root: 'C:\\Users\\test\\.papermachine\\desktop-environments' })
     const WIN32_MAX_PATH = 260

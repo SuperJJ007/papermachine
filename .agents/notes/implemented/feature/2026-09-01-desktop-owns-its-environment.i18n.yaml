@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-desktop-owns-its-environment.md
-2026-09-01-desktop-owns-its-environment.md: 921fceb82cd1f0dccb89d33e33372f5ae79a1aa4
-2026-09-01-desktop-owns-its-environment.zh.md: fbf6ee42bd00635fb8cb927516f31ad1e0472584
+2026-09-01-desktop-owns-its-environment.md: 10b73357147706d5430b59745856b34252997b0b
+2026-09-01-desktop-owns-its-environment.zh.md: 4da727ef01dec7f1d0493b439e7eb6fda9d0f8f8

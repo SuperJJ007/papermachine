@@ -20,11 +20,13 @@ Onboarding 现在只有一条路径：安装。绑定已有环境被完全移除
 
 随应用发布的 `general` declaration 中原本单一的 `channels` 字段，被替换为一个有序的 `sources` 数组（`EnvironmentSource`：`id`、`name`、`channels`）。`general.json` 发布了三个源，按顺序作为完整且相互独立的 `micromamba create` 尝试执行——绝不会合并成一份 channel 清单，因为那样会让一次 solve 从不同镜像混合安装包，得到一个前后不一致的环境：
 
-1. `tuna` —— `https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge`
-2. `ustc` —— `https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge`
+1. `ustc` —— `https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge`
+2. `tuna` —— `https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge`
 3. `official` —— `https://conda.anaconda.org/conda-forge`
 
-`DesktopEnvironmentProvisioner.provision`（`provisioning.ts`）先运行 `orderSourcesFrom(declaration.sources, preferredSourceId)` 决定尝试顺序，然后循环：清空 prefix、只针对该源的 channel 运行一次 `create`，任何失败都会转到下一个源并重新清空 prefix，并通过既有的 `ProvisioningProgress` 通道汇报每一次尝试（`"Retrying via <source name> (source N of M)"`）。重试之前不会先把失败归类为网络问题还是 solve 问题——一个真正错误的包规格会在 solve 阶段、也就是下载之前就快速失败，因此把它跨三个源重试的代价只是几秒钟；这种一致的处理方式更简单，也同样诚实。取消操作若发生在某次尝试进行中会立即向外传播，而不会去尝试下一个源。micromamba 的包缓存通过同一个 `MAMBA_ROOT_PREFIX` 在每次尝试之间共享，因此某次失败的尝试已下载的包不会被下一次重新下载。全部尝试都失败时，报出的是最后一个源的错误。
+USTC 而非 TUNA 排在第一位的原因，见[2026-09-07 的笔记](../bug-fix/2026-09-07-win32-package-cache-tuna-max-path.zh.md)。
+
+`DesktopEnvironmentProvisioner.provision`（`provisioning.ts`）先运行 `orderSourcesFrom(declaration.sources, preferredSourceId)` 决定尝试顺序，然后循环：清空 prefix、只针对该源的 channel 运行一次 `create`，任何失败都会转到下一个源并重新清空 prefix，并通过既有的 `ProvisioningProgress` 通道汇报每一次尝试（`"Retrying via <source name> (source N of M)"`）。重试之前不会先把失败归类为网络问题还是 solve 问题——一个真正错误的包规格会在 solve 阶段、也就是下载之前就快速失败，因此把它跨三个源重试的代价只是几秒钟；这种一致的处理方式更简单，也同样诚实。取消操作若发生在某次尝试进行中会立即向外传播，而不会去尝试下一个源。包缓存目录由 `CONDA_PKGS_DIRS` 指定并在每次尝试之间共享，但 micromamba 按源主机分层排布这个 cache，因此换源会在新镜像的子树下把同一批包重新下载一遍。全部尝试都失败时，报出的是最后一个源的错误。
 
 `resources/environments/general.json` 中的 channel URL 现在由 `parseEnvironmentDeclaration`（`environment-declaration.ts`）按照严格的白名单（`https://` 加上 `[A-Za-z0-9._~/-]`）解析，而不是旧的裸 channel 名称正则，因为一个 channel URL 会未经转义地进入 `micromamba` 的 argv，这正是该值的 parser boundary——任何位置都不接受空白字符、控制字符或 shell 元字符。
 

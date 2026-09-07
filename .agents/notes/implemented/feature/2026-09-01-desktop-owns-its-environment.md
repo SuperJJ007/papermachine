@@ -20,11 +20,13 @@ Onboarding has exactly one route: install. Bind-an-existing-environment is remov
 
 The shipped `general` declaration's single `channels` field is replaced with an ordered `sources` array (`EnvironmentSource`: `id`, `name`, `channels`). `general.json` ships three, tried as whole, independent `micromamba create` attempts in order — never merged into one channel list, which would let a single solve mix packages from different mirrors into one inconsistent environment:
 
-1. `tuna` — `https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge`
-2. `ustc` — `https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge`
+1. `ustc` — `https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge`
+2. `tuna` — `https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge`
 3. `official` — `https://conda.anaconda.org/conda-forge`
 
-`DesktopEnvironmentProvisioner.provision` (`provisioning.ts`) runs `orderSourcesFrom(declaration.sources, preferredSourceId)` to decide attempt order, then loops: clear the prefix, run `create` against that source's channel(s) alone, and on any failure move to the next source with a freshly cleared prefix, reporting each attempt through the existing `ProvisioningProgress` channel (`"Retrying via <source name> (source N of M)"`). No attempt is classified network-vs-solve before retrying — a bad package spec fails fast during solve, so retrying it across sources costs seconds, and that uniformity is simpler and equally honest. Cancellation during an attempt propagates immediately rather than trying the next source. micromamba's package cache is shared via one `MAMBA_ROOT_PREFIX` across every attempt, so packages a failed attempt already downloaded are not re-fetched by the next one. The last source's error is what a total failure surfaces.
+See [the 2026-09-07 note](../bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md) for why USTC, not TUNA, is first.
+
+`DesktopEnvironmentProvisioner.provision` (`provisioning.ts`) runs `orderSourcesFrom(declaration.sources, preferredSourceId)` to decide attempt order, then loops: clear the prefix, run `create` against that source's channel(s) alone, and on any failure move to the next source with a freshly cleared prefix, reporting each attempt through the existing `ProvisioningProgress` channel (`"Retrying via <source name> (source N of M)"`). No attempt is classified network-vs-solve before retrying — a bad package spec fails fast during solve, so retrying it across sources costs seconds, and that uniformity is simpler and equally honest. Cancellation during an attempt propagates immediately rather than trying the next source. The package cache directory is set by `CONDA_PKGS_DIRS` and shared across every attempt, but micromamba layers it by source host, so switching sources re-downloads the same packages under the new mirror's subtree. The last source's error is what a total failure surfaces.
 
 `resources/environments/general.json`'s channel URLs are now parsed by `parseEnvironmentDeclaration` (`environment-declaration.ts`) against a strict allowlist (`https://` plus `[A-Za-z0-9._~/-]`) rather than the old bare-channel-name pattern, since a channel URL reaches `micromamba`'s argv unescaped and this is that value's parser boundary — no whitespace, control character, or shell metacharacter is accepted at any position.
 

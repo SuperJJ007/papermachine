@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-win32-package-cache-max-path.md
-2026-09-05-win32-package-cache-max-path.md: 13661953105577be5b0e6621dbaa2306489a03e5
-2026-09-05-win32-package-cache-max-path.zh.md: 8419e5747c98bc2c62fadd97bd0f96edf26fb257
+2026-09-05-win32-package-cache-max-path.md: 1fbe37515ac29891a5078d5f3d68c70db631e2cc
+2026-09-05-win32-package-cache-max-path.zh.md: c19efaa0f20d18e48002faab4bd91632da148a64

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.md
-2026-09-07-win32-package-cache-tuna-max-path.md: dc5571f6ebdbf658410efc16b68dd5abd590f50b
-2026-09-07-win32-package-cache-tuna-max-path.zh.md: ee82960ba088dfdc5cc5039b75c36d4a09e404d8
+2026-09-07-win32-package-cache-tuna-max-path.md: dc1b0652cc6f0d630230befa328a97bcc77d4ed4
+2026-09-07-win32-package-cache-tuna-max-path.zh.md: 1fceeeaf4bb5185c2e796d3b39631bb60c6b4798

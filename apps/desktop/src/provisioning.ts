@@ -551,9 +551,11 @@ export function provisionedEnvironmentsDirectory(root: string): string {
  * identical relative path 251 characters (261 total), 1 character past
  * `MAX_PATH`, for the single package this declaration pulls in
  * transitively (`libstdcxx-devel_win-64`) with the deepest cache path;
- * confirmed to fail deterministically on real Windows hardware and not
- * fixable by shortening this cache root further, because a `\\?\`-prefixed
- * root is rejected outright by micromamba's own `CONDA_PKGS_DIRS` parsing
+ * confirmed to fail deterministically on real Windows hardware. Shortening
+ * this cache root further does not fix it durably: `C:\pkgs` (7 characters)
+ * leaves only 2 characters of margin, and would orphan every user's
+ * existing `C:\pm\pkgs` cache outright. Separately, a `\\?\`-prefixed root
+ * is rejected outright by micromamba's own `CONDA_PKGS_DIRS` parsing,
  * before any path length is even considered (see the Agent Note below).
  * `general.json`'s source order and `source-selection.ts`'s
  * `CHINA_MIRROR_SOURCE_ID` route around this by trying USTC, not TUNA,

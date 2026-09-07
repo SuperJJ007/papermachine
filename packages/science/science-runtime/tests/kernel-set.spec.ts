@@ -197,6 +197,10 @@ function wrapTrackingKernelSpawns(inner: SubprocessRuntime): {
       spawns += 1
       const realStdin = handle.stdin
       const trackedStdin = {
+        // KernelProcess's constructor attaches its own 'error' listener to
+        // this handle's stdin for its whole lifetime (kernel-process.ts);
+        // forwarded untouched, since this wrapper only tracks writes.
+        on: (event: string, listener: (...args: unknown[]) => void) => realStdin.on(event, listener),
         write: (chunk: string) => {
           if (chunk.startsWith('EXIT')) exitWrites += 1
           return realStdin.write(chunk)

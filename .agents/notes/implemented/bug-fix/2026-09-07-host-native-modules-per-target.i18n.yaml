@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-host-native-modules-per-target.md
-2026-09-07-host-native-modules-per-target.md: 3bb4c527e7d68d978cae931a0013ca62bf8f80a7
-2026-09-07-host-native-modules-per-target.zh.md: 6912b14f06037d36d74d7a1a77b939b99eb92676
+2026-09-07-host-native-modules-per-target.md: 27ca096ee3e5d0c90fd7d795723d90c13f0d72bc
+2026-09-07-host-native-modules-per-target.zh.md: d57fd7f08a988e3ddaba1e5881c621434e86fc40

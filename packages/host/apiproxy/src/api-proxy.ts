@@ -3926,6 +3926,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }),
           ctx.on('session/created', (session: Session) => {
             subscribeSession(queue, session)
+            // Constructor seed events are not published, so an earlier cold
+            // history response cannot learn their derived values from changes.
+            const baseline = projectionsFor(ctx, session)
+            if (baseline !== undefined) {
+              for (const [key, value] of Object.entries(baseline.values)) {
+                queue.push(frame({ type: 'session/projection', sessionId: session.id, key, value, seq: baseline.asOfSeq }))
+              }
+            }
             // The subscribe frame clears the client's task mirror, and a
             // session born after the stream opened missed the baseline loop.
             // Unowned tasks are visible to it from birth, so without this it

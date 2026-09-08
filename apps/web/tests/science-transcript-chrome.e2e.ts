@@ -111,6 +111,7 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
+  const allowResume = Promise.withResolvers<undefined>()
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
@@ -120,6 +121,11 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     expect(cold.values.science).toMatchObject({ kernels: [{ state: 'started' }] })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.route('**/api/**', async (route) => {
+      const request = route.request()
+      if (!request.url().endsWith('/session.history') && request.postData()?.includes(SEED_ID)) await allowResume.promise
+      await route.continue()
+    })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -139,6 +145,8 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await expect.poll(() => page.getByText('python · epoch 1 · started', { exact: true }).count()).toBe(1)
+    allowResume.resolve(undefined)
     await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
 
     const centerCol = page.locator('[class*="centerCol"]')

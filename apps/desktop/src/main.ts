@@ -705,6 +705,29 @@ function refreshApplicationMenu(): void {
 app.setName('PaperMachine')
 
 /**
+ * Single-instance lock: defense in depth against a second full app instance
+ * running alongside the first. `ELECTRON_RUN_AS_NODE=1` on the win32 ACL
+ * sandbox's runner invocation (see `dsh-sandbox-local`'s `windowsAclRunnerInvocation`)
+ * keeps that re-exec of `process.execPath` from ever reaching this file's app
+ * code — Node runs the runner script directly — so this guards only a
+ * genuine second user launch or a future `process.execPath` re-exec that
+ * forgets the env variable.
+ */
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (window === undefined) return
+    if (window.isMinimized()) window.restore()
+    window.focus()
+  })
+  app.whenReady().then(boot).catch((error: unknown) => {
+    console.error('desktop: boot failed', error)
+    app.exit(1)
+  })
+}
+
+/**
  * Opens the dedicated recovery window {@link installLocationUnavailableErrorPage}
  * renders, in place of the app's normal windows and IPC handlers, when
  * {@link boot}'s own first Harness-home resolution cannot proceed because of
@@ -940,8 +963,3 @@ async function handleActivate(): Promise<void> {
     if (BrowserWindow.getAllWindows().length === 0) await openInitialSurface()
   })
 }
-
-app.whenReady().then(boot).catch((error: unknown) => {
-  console.error('desktop: boot failed', error)
-  app.exit(1)
-})

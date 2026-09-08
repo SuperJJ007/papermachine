@@ -59,7 +59,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const entry = await original.lstat(path, options as never)
       if (fsFault.emulatePosixModes) {
         const mode = path === fsFault.modePath ? fsFault.mode : entry.isDirectory() ? 0o700 : 0o600
-        Object.defineProperty(entry, 'mode', { value: (Number(entry.mode) & ~0o777) | mode })
+        Object.defineProperty(entry, 'mode', { value: (entry.mode & ~0o777) | mode })
       }
       return entry
     },

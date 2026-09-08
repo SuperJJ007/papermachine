@@ -324,6 +324,7 @@ async function prepareChartApplyRequest(
 describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] as const)('KernelProcess (%s)', (transport) => {
   beforeEach(() => {
     vi.mocked(selectKernelTransportKind).mockReturnValue(transport)
+    // oxlint-disable-next-line typescript/unbound-method -- The replacement supplies its actual receiver through call/apply.
     const connect = LoopbackTcpTransport.prototype.connect
     vi.spyOn(LoopbackTcpTransport.prototype, 'connect').mockImplementation(async function (this: LoopbackTcpTransport, ...args) {
       const stream = await connect.apply(this, args)
@@ -333,7 +334,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
   })
   it.skipIf(transport !== 'tcp')('classifies a carrier failure independently of its readable stream', async () => {
     const carrier = Promise.withResolvers<never>()
-    const create = LoopbackTcpTransport.create
+    const create = LoopbackTcpTransport.create.bind(LoopbackTcpTransport)
     vi.spyOn(LoopbackTcpTransport, 'create').mockImplementation(async () => {
       const response = await create()
       Object.defineProperty(response, 'faulted', { value: carrier.promise })
@@ -347,6 +348,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
 
   it.skipIf(transport !== 'tcp').each([true, false])('retains carrier cleanup evidence independently of interpreter exit: %s', async (proven) => {
     const proof = Promise.withResolvers<boolean>()
+    // oxlint-disable-next-line typescript/unbound-method -- The replacement supplies its actual receiver through call/apply.
     const end = LoopbackTcpTransport.prototype.end
     vi.spyOn(LoopbackTcpTransport.prototype, 'end').mockImplementation(async function (this: LoopbackTcpTransport) {
       await end.call(this)

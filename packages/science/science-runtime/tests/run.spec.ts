@@ -52,6 +52,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 /** Retain real kernel teardown before injecting a provider cleanup failure. */
 function rejectKernelEndAfterQuiescence(): void {
+  // oxlint-disable-next-line typescript/unbound-method -- The replacement supplies the exact kernel receiver through call.
   const end = KernelProcess.prototype.end
   vi.spyOn(KernelProcess.prototype, 'end').mockImplementation(async function (this: KernelProcess, reason) {
     await end.call(this, reason)

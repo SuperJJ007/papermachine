@@ -920,7 +920,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
         sessionScratch: scratch, sessionId: session.id, signal: new AbortController().signal,
         packagesMaxEntries: 2_000, packagesMaxBytes: 65_536, minimumEnforcement: 'full',
       }, { id: ScienceEnvironmentProfileId('fake'), pythonPrefix: prefix })).resolves.toMatchObject({
-        python: { binding: { capability: 'invalid', reason: expect.stringContaining('regular executable') } },
+        python: { binding: { capability: 'invalid', reason: expect.stringContaining('regular executable') as unknown } },
       })
       expect(harness.subprocess.specs).toEqual([])
     } finally { platform.mockRestore() }

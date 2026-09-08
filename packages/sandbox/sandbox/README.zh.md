@@ -4,7 +4,7 @@
 
 进程沙箱 Service Definition。负责定义 `ctx.sandbox` 服务约定（[`SandboxProvider`](src/index.ts)）与 harness 共享的限制词汇：`SandboxMode`（`read-only`／`workspace-write`／`danger-full-access`，仅限文件操作）、`SandboxEnforcement`（`full`／`partial`，针对每种内核 ABI）、`SandboxExecutionPolicy`（每次调用的完整模式及工作区根目录）、`SandboxPolicy`（其中受限制的子集），以及故障时拒绝放行的 `SANDBOX_UNAVAILABLE` 错误。作为[能力 seam 拆分](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)中的 Service Definition 角色，它只依赖 cordis（及 harness 错误基类），绝不依赖后端。
 
-用一句话概括约定：`ctx.sandbox.confine(argv, policy)` 返回用于 spawn、应当取代调用方原始 argv 的 argv。返回值经过包装，使进程及其派生的所有进程都在限制下运行；还会附带所选后端达到的强制执行完整度、拒绝方言（`denialSignatures`）和结构化 runner 失败证据（`runnerFailureRules`）。没有可用后端时，它会抛出异常，绝不会原样传递 argv 使其不受限制地运行。[核心类型目录](../../../docs/subsystems/sandbox.zh.md#wrapped-argv-and-classification-dialects)负责定义分类器的精确结构。
+用一句话概括约定：`ctx.sandbox.confine(argv, policy)` 返回用于 spawn、应当取代调用方原始 argv 的 argv。返回值经过包装，使进程及其派生的所有进程都在限制下运行；还会附带调用方在 spawn 前必须并入自身基础环境之上的环境变量条目（`env`；win32 ACL 后端用它要求其 runner 调用——重新 exec `process.execPath`——带上 `ELECTRON_RUN_AS_NODE=1`）、所选后端达到的强制执行完整度、拒绝方言（`denialSignatures`）和结构化 runner 失败证据（`runnerFailureRules`）。没有可用后端时，它会抛出异常，绝不会原样传递 argv 使其不受限制地运行。[核心类型目录](../../../docs/subsystems/sandbox.zh.md#wrapped-argv-and-classification-dialects)负责定义分类器的精确结构。
 
 策略随调用传递，而不属于提供方：两个消费方可以同时按不同策略施加限制（bash 使用 `read-only`，而受限制的子 agent（智能体）保持其状态目录可写）；获批的升权重试只是使用更宽策略发起的新调用。
 

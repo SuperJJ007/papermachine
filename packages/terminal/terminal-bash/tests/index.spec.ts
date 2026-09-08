@@ -25,7 +25,7 @@ import type {
 
 class EmptySandbox extends SandboxProvider {
   confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
-    return { argv: [], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { argv: [], enforcement: 'full', denialSignatures: [], runnerFailureRules: [], env: {} }
   }
 }
 
@@ -34,7 +34,20 @@ class RecordingSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.calls.push({ argv, policy })
-    return { argv: ['/sandbox', '--', ...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { argv: ['/sandbox', '--', ...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [], env: {} }
+  }
+}
+
+/** A backend requiring an env entry (e.g. the win32 ACL rung's ELECTRON_RUN_AS_NODE), one colliding with a terminal-owned key. */
+class EnvRequiringSandbox extends SandboxProvider {
+  confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    return {
+      argv: ['/sandbox', '--', ...argv],
+      enforcement: 'full',
+      denialSignatures: [],
+      runnerFailureRules: [],
+      env: { ELECTRON_RUN_AS_NODE: '1', DSH_SHELL: 'from-provider' },
+    }
   }
 }
 
@@ -222,6 +235,26 @@ describe('BashTerminalBackend startup rollback', () => {
       argv: ['/bin/bash', '-i'],
       policy: { mode: 'workspace-write', sessionId: 'agent', workspaceRoot: resolve('/workspace') },
     }])
+  })
+
+  it('merges the backend\'s required env over the terminal-owned env, the backend winning on overlap', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EnvRequiringSandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/workspace' })
+    const terminal = terminalHandle()
+    let spawned: SubprocessTerminalSpawnSpec | undefined
+    const spawnTerminal = async (spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> => {
+      spawned = spec
+      return terminal
+    }
+    const initialized = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+    const session = { initialize: initialized } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(ctx, config(), spawnTerminal, () => session)
+    expect(await backend.spawn({ ...spec(agent(ctx)), cwd: '/work' })).toBe(session)
+    // DSH_SHELL is a terminal-owned key (childEnvironment sets it to '1');
+    // the backend's confined.env collides with it and must win.
+    expect(spawned?.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(spawned?.env?.DSH_SHELL).toBe('from-provider')
   })
 
   it('resolves session mode and root together before wrapping the shell', async () => {

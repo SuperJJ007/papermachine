@@ -386,7 +386,10 @@ export class KernelProcess {
         },
         graceMs: DESCENDANT_GRACE_MS,
         environmentBase: 'empty',
-        env: kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch),
+        // confined.env carries entries the selected sandbox backend's runner
+        // invocation itself requires (e.g. the win32 ACL rung's
+        // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+        env: { ...kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch), ...confined.env },
       })
       const readStream = await transport.connect(handle, kernelStartTimeoutMs, signal)
       const kernel = new KernelProcess(handle, transport, readStream)

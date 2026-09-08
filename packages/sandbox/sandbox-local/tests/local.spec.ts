@@ -123,6 +123,7 @@ describe('runnerCommand config', () => {
       // file-denial dialects, never bare EPERM.
       denialSignatures: ['read-only file system', 'permission denied'],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: profile rejected'] }],
+      env: {},
     })
     expect(probeBwrap).not.toHaveBeenCalled()
     expect(probeLandlock).not.toHaveBeenCalled()
@@ -169,6 +170,7 @@ describe('the platform chains', () => {
       enforcement: 'full',
       denialSignatures: ['read-only file system'],
       runnerFailureRules: [{ fatalSignatures: ['bwrap: '] }],
+      env: {},
     })
     expect(probeLandlock).not.toHaveBeenCalled()
   })
@@ -188,6 +190,7 @@ describe('the platform chains', () => {
         fatalSignatures: ['landlock-run: '],
         informationalLines: ['landlock-run: partial enforcement (older Landlock ABI)'],
       }],
+      env: {},
     })
     expect(probeLandlock).toHaveBeenCalledWith(launcher)
   })
@@ -204,6 +207,7 @@ describe('the platform chains', () => {
       enforcement: 'full',
       denialSignatures: ['operation not permitted'],
       runnerFailureRules: [{ fatalSignatures: ['sandbox-exec: '] }],
+      env: {},
     })
     expect(probeSeatbelt).not.toHaveBeenCalled()
   })
@@ -367,6 +371,7 @@ describe('the default seatbelt probe (sandbox-exec contract)', () => {
       enforcement: 'full',
       denialSignatures: ['operation not permitted'],
       runnerFailureRules: [{ fatalSignatures: ['sandbox-exec: '] }],
+      env: {},
     })
   })
 

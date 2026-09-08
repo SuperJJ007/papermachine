@@ -42,7 +42,7 @@ interface ConfineCall {
 
 /** A passthrough wrap: the caller's argv unchanged, asserted full — commands run unconfined, deterministically. */
 const passthrough = (argv: readonly string[]): ConfinedArgv =>
-  ({ argv: [...argv], enforcement: 'full', denialSignatures: ['access is denied', 'access to the path'], runnerFailureRules: [] })
+  ({ argv: [...argv], enforcement: 'full', denialSignatures: ['access is denied', 'access to the path'], runnerFailureRules: [], env: {} })
 
 /** A subprocess service whose spawn() throws SYNCHRONOUSLY — the paths the async service never produces. */
 function throwingSubprocessRuntime(error: unknown): new (ctx: Context) => Service {
@@ -186,6 +186,33 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
   }, 30_000)
 
+  it('merges the provider\'s required env over the caller env, the provider winning on overlap, for both run() and start()', async () => {
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a caller-supplied env entry it
+    // collides with, so DSH_WRAP here proves override order rather than mere presence.
+    const { executor } = await setup(argv => ({
+      argv: [...argv],
+      enforcement: 'full',
+      denialSignatures: ['access is denied', 'access to the path'],
+      runnerFailureRules: [],
+      env: { DSH_WRAP: 'from-provider' },
+    }))
+    const foreground = await executor.run(executor.resolve({
+      command: 'Write-Output $env:DSH_WRAP',
+      sandboxPolicy: RO,
+      env: { DSH_WRAP: 'from-caller' },
+    }))
+    expect(foreground.stdout.text.trim()).toBe('from-provider')
+
+    const task = executor.start(executor.resolve({
+      command: 'Write-Output $env:DSH_WRAP',
+      sandboxPolicy: RO,
+      env: { DSH_WRAP: 'from-caller' },
+    }))
+    await task.done
+    expect(task.readOutput().delta.trim()).toBe('from-provider')
+  }, 30_000)
+
   it('advertises the deployment default mode and stamps the deployment policy when none rides the request', async () => {
     const { executor, calls } = await setup()
     expect(executor.sandboxMode).toBe('workspace-write')
@@ -210,6 +237,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [],
+      env: {},
     }))
     await expect(executor.run(executor.resolve({ command: 'echo never', sandboxPolicy: RO, signal: controller.signal })))
       .rejects.toThrow('caller-cancel')
@@ -234,6 +262,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
+      env: {},
     }))
     await expect(executor.run(executor.resolve({ command: 'echo never-runs', sandboxPolicy: RO })))
       .rejects.toThrow(SandboxUnavailableError)
@@ -246,6 +275,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
+      env: {},
     }), throwingSubprocessRuntime(attributable))
     await expect(closed.run(closed.resolve({ command: 'echo never', sandboxPolicy: RO })))
       .rejects.toThrow(SandboxUnavailableError)
@@ -263,6 +293,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
+      env: {},
     }), throwingSubprocessRuntime(attributable))
     expect(() => closed.start(closed.resolve({ command: 'echo never', sandboxPolicy: RO })))
       .toThrow(SandboxUnavailableError)
@@ -279,6 +310,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
+      env: {},
     }))
     await expect(executor.run(executor.resolve({ command: 'echo never-runs', sandboxPolicy: RO })))
       .rejects.toThrow(SandboxUnavailableError)
@@ -309,6 +341,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       enforcement: 'full',
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
+      env: {},
     }))
     const proc = executor.start(executor.resolve({ command: 'echo never', sandboxPolicy: RO }))
     await proc.done

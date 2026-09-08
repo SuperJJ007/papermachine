@@ -212,6 +212,23 @@ const DENIAL_SIGNATURES = {
   runnerCommand: ['read-only file system', 'permission denied'],
 } as const satisfies Record<SelectedRunner['runner'] | 'runnerCommand', readonly string[]>
 
+/**
+ * Environment entries each runner's invocation requires, carried on every wrap
+ * (the seam's `ConfinedArgv.env`). The windows-acl rung re-execs
+ * `process.execPath` — an Electron binary in a packaged desktop app, or a
+ * plain Node binary in development — to run its runner as a subprocess; a
+ * plain Node binary ignores `ELECTRON_RUN_AS_NODE`, but a packaged Electron
+ * binary needs it to run the runner as Node instead of booting a second app
+ * instance. The POSIX rungs exec their own dedicated runner binaries, which
+ * need no such variable.
+ */
+const RUNNER_ENV = {
+  bwrap: {},
+  landlock: {},
+  seatbelt: {},
+  'windows-acl': { ELECTRON_RUN_AS_NODE: '1' },
+} as const satisfies Record<SelectedRunner['runner'], Readonly<Record<string, string>>>
+
 /** The windows-acl runner's documented failure exit (its own RUNNER_FAILURE_EXIT contract, distinct from Landlock's 125). */
 const WINDOWS_ACL_RUNNER_FAILURE_EXIT = 127
 
@@ -320,6 +337,9 @@ export class LocalSandboxProvider extends SandboxProvider {
         enforcement: 'full',
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
         runnerFailureRules: [{ fatalSignatures: this.configuredRunnerFailureSignatures }],
+        // An operator-configured runnerCommand is a bwrap-compatible profile
+        // invocation, never a re-exec of process.execPath, so it needs none.
+        env: {},
       }
     }
     const selected = this.selectRunner(policy.mode)
@@ -329,6 +349,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       enforcement: selected.enforcement,
       denialSignatures: DENIAL_SIGNATURES[selected.runner],
       runnerFailureRules: RUNNER_FAILURE_RULES[selected.runner],
+      env: RUNNER_ENV[selected.runner],
     }
   }
 
@@ -552,7 +573,12 @@ export class LocalSandboxProvider extends SandboxProvider {
    * The windows-acl runner argv prefix: the built lib/runner.js entry when
    * present (production), else the package source through tsx (development).
    * The prefix stays `[node, runner, ...]` — a future native-exe runner keeps
-   * the same argv contract and only swaps these entries.
+   * the same argv contract and only swaps these entries. Both branches re-exec
+   * `process.execPath`, which in a packaged desktop app IS the Electron
+   * binary — without `ELECTRON_RUN_AS_NODE=1` (carried on `RUNNER_ENV`,
+   * `ConfinedArgv.env`) it boots a second app instance instead of running the
+   * runner as Node; a plain Node `process.execPath` (CLI, tests) ignores the
+   * variable, so setting it unconditionally is harmless there.
    */
   private windowsAclRunnerInvocation(): string[] {
     const override = this.internals.windowsAclRunnerArgs

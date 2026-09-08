@@ -49,7 +49,7 @@ const RUNNER_FORMS = [
 
 /** A passthrough wrap: the caller's argv unchanged, asserted full — commands run unconfined, deterministically. */
 const passthrough = (argv: readonly string[]): ConfinedArgv =>
-  ({ argv: [...argv], enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE })
+  ({ argv: [...argv], enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE, env: {} })
 
 /**
  * Boot a context with a recording fake `ctx.sandbox` (behavior injectable
@@ -106,13 +106,32 @@ describe('the provider hand-off', () => {
 
   it('hands the provider\'s returned argv directly to ctx.subprocess.spawn', async () => {
     const returnedArgv = ['env', 'DSH_WRAP=1', 'bash', '-c', 'printf "%s" "$DSH_WRAP"']
-    const { ctx, bash } = await setup({}, () => ({ argv: returnedArgv, enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
+    const { ctx, bash } = await setup({}, () => ({ argv: returnedArgv, enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE, env: {} }))
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
     const result = await bash.run(bash.resolve({ command: 'printf "%s" "$DSH_WRAP"' }))
     expect(result.stdout.text).toBe('1')
     expect(spawn).toHaveBeenCalledTimes(1)
     expect(spawn.mock.calls[0]?.[0].argv).toEqual(returnedArgv)
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+  })
+
+  it('merges the provider\'s required env over the caller env, the provider winning on overlap, for both run() and start()', async () => {
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a caller-supplied env entry it
+    // collides with, so DSH_WRAP here proves override order rather than mere presence.
+    const { bash } = await setup({}, argv => ({
+      argv: [...argv],
+      enforcement: 'full',
+      denialSignatures: UNIX_SIGNATURES,
+      runnerFailureRules: RUNNER_FAILURE,
+      env: { DSH_WRAP: 'from-provider' },
+    }))
+    const foreground = await bash.run(bash.resolve({ command: 'printf "%s" "$DSH_WRAP"', env: { DSH_WRAP: 'from-caller' } }))
+    expect(foreground.stdout.text).toBe('from-provider')
+
+    const task = bash.start(bash.resolve({ command: 'printf "%s" "$DSH_WRAP"', env: { DSH_WRAP: 'from-caller' } }))
+    await task.done
+    expect(task.readOutput().delta).toBe('from-provider')
   })
 
   it('starts a non-Bash runner before the confined inner Bash evaluates BASH_ENV', async () => {
@@ -132,6 +151,7 @@ describe('the provider hand-off', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
 
     try {
@@ -194,6 +214,7 @@ describe('fail closed', () => {
         enforcement: 'full',
         denialSignatures: UNIX_SIGNATURES,
         runnerFailureRules: RUNNER_FAILURE,
+        env: {},
       }))
       const parent = mkdtempSync(join(tmpdir(), 'dsh-sandbox-missing-cwd-'))
       try {
@@ -227,6 +248,7 @@ describe('fail closed', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
     vi.spyOn(ctx.subprocess, 'spawn').mockImplementation(() => {
       throw Object.assign(new Error('spawn ENOEXEC'), { code: 'ENOEXEC', syscall: 'spawn' })
@@ -253,6 +275,7 @@ describe('fail closed', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
     // This pins an alternative SubprocessRuntime's synchronous seam, not the
     // shipped local behavior.
@@ -273,6 +296,7 @@ describe('fail closed', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
     const parent = mkdtempSync(join(tmpdir(), 'dsh-sandbox-missing-cwd-'))
     const workdir = join(parent, 'missing')
@@ -517,6 +541,7 @@ describe('result facts', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
     const result = await bash.run(bash.resolve({ command: `exit ${exitCode}` }))
     expect(result.exitCode).toBe(exitCode)
@@ -534,7 +559,7 @@ describe('result facts', () => {
   })
 
   it('carries the provider\'s partial-enforcement fact through unchanged', async () => {
-    const { bash } = await setup({}, argv => ({ argv: [...argv], enforcement: 'partial', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
+    const { bash } = await setup({}, argv => ({ argv: [...argv], enforcement: 'partial', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE, env: {} }))
     const result = await bash.run(bash.resolve({ command: 'true' }))
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'partial' })
   })
@@ -547,6 +572,7 @@ describe('background sandbox facts', () => {
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
       runnerFailureRules: RUNNER_FAILURE,
+      env: {},
     }))
     const parent = mkdtempSync(join(tmpdir(), 'dsh-sandbox-missing-cwd-'))
     try {
@@ -638,7 +664,7 @@ describe('background sandbox facts', () => {
     let call = 0
     const { bash } = await setup({}, (argv) => {
       const wrap = wraps[Math.min(call++, wraps.length - 1)] as Pick<ConfinedArgv, 'enforcement' | 'denialSignatures'>
-      return { argv: [...argv], ...wrap, runnerFailureRules: RUNNER_FAILURE }
+      return { argv: [...argv], ...wrap, runnerFailureRules: RUNNER_FAILURE, env: {} }
     })
     const slow = bash.start(bash.resolve({ command: 'sleep 0.4; echo "x: Permission denied" >&2; exit 1' }))
     const quick = bash.start(bash.resolve({ command: 'true' }))

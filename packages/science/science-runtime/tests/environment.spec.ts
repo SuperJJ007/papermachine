@@ -416,6 +416,30 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(sandbox.policies.every(policy => policy.workspaceRoot.includes('/probes/'))).toBe(true)
   })
 
+  it.skipIf(process.platform === 'win32')('merges the sandbox backend\'s required env over the probe base env, the backend winning on overlap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science runtime-environment-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const { ctx, runtime, sandbox, subprocess } = harness
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a probe base env entry it collides
+    // with, so PATH here proves override order rather than mere presence.
+    sandbox.env = { ELECTRON_RUN_AS_NODE: '1', PATH: '/backend-required-path' }
+    const session = createScienceSession(ctx, 'science-bind-fake-env')
+    await runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    expect(subprocess.specs).toHaveLength(3)
+    for (const spec of subprocess.specs) {
+      expect(spec.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+      expect(spec.env?.PATH).toBe('/backend-required-path')
+    }
+  })
+
   // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
   // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
   // test depends on can never actually run there.

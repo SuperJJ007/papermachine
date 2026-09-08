@@ -120,6 +120,15 @@ export interface ConfinedArgv {
    * command never ran, while denial means confinement worked and blocked it.
    */
   runnerFailureRules: readonly RunnerFailureRule[]
+  /**
+   * Environment entries this backend's runner invocation requires, merged by
+   * the caller OVER its own base env before spawning `argv`. The win32 ACL
+   * backend re-execs `process.execPath` (an Electron binary in a packaged
+   * desktop app) to run its Node runner and sets `ELECTRON_RUN_AS_NODE=1` so
+   * that binary runs the runner as Node instead of booting a second app
+   * instance; POSIX backends need none and return an empty object.
+   */
+  readonly env: Readonly<Record<string, string>>
 }
 
 /**
@@ -176,8 +185,9 @@ export abstract class SandboxProvider extends Service {
    *   `['bash', '-c', command]`.
    * @param policy - the file-effect policy this execution runs under,
    *   carried per call (see {@link SandboxPolicy}).
-   * @returns the argv to spawn instead, plus the enforcement completeness
-   *   the selected backend achieves for it.
+   * @returns the argv to spawn instead, the environment entries the caller
+   *   must merge over its own base env before spawning it, plus the
+   *   enforcement completeness the selected backend achieves for it.
    */
   abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 }

@@ -320,7 +320,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('immediate', { stdout: 'installed numpy-1.26.4\n', stderr: '' })
     run.complete({ exitCode: 0, signal: null })
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const outcome = await runMicromambaInstall(subprocess, confined, {}, root, control)
     expect(outcome).toEqual({
       status: 'success',
@@ -330,12 +330,32 @@ describe('runMicromambaInstall', () => {
     control.dispose()
   })
 
+  it('merges the confined argv\'s required env over the caller base env, the confined value winning on overlap', async () => {
+    const { subprocess, root } = await harness()
+    const run = subprocess.queueRun('immediate', { stdout: '', stderr: '' })
+    run.complete({ exitCode: 0, signal: null })
+    const control = new OperationControl(new AbortController().signal, 10_000)
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a caller base env entry it collides
+    // with, so PATH here proves override order rather than mere presence.
+    const confined = {
+      argv: ['/fake/micromamba', 'install'],
+      enforcement: 'full' as const,
+      denialSignatures: [],
+      runnerFailureRules: [],
+      env: { ELECTRON_RUN_AS_NODE: '1', PATH: '/backend-required-path' },
+    }
+    await runMicromambaInstall(subprocess, confined, { PATH: '/caller-path' }, root, control)
+    expect(subprocess.specs[0]?.env).toEqual({ ELECTRON_RUN_AS_NODE: '1', PATH: '/backend-required-path' })
+    control.dispose()
+  })
+
   it('classifies a non-zero exit as failed', async () => {
     const { subprocess, root } = await harness()
     const run = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
     run.complete({ exitCode: 1, signal: null })
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const outcome = await runMicromambaInstall(subprocess, confined, {}, root, control)
     expect(outcome.status).toBe('failed')
     expect(outcome.stderr.text).toBe('PackagesNotFoundError\n')
@@ -347,7 +367,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('immediate')
     run.complete({ exitCode: null, signal: 'SIGKILL' })
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const outcome = await runMicromambaInstall(subprocess, confined, {}, root, control)
     expect(outcome.status).toBe('failed')
     control.dispose()
@@ -358,7 +378,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('deferred')
     const controller = new AbortController()
     const control = new OperationControl(controller.signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const pending = runMicromambaInstall(subprocess, confined, {}, root, control)
     controller.abort()
     // A real subprocess provider reacts to the fused signal by terminating
@@ -375,7 +395,7 @@ describe('runMicromambaInstall', () => {
     const { subprocess, root } = await harness()
     const run = subprocess.queueRun('deferred')
     const control = new OperationControl(new AbortController().signal, 1)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const pending = runMicromambaInstall(subprocess, confined, {}, root, control)
     await new Promise(resolve => setTimeout(resolve, 20))
     run.complete({ exitCode: null, signal: 'SIGTERM' })
@@ -396,7 +416,7 @@ describe('runMicromambaInstall', () => {
     // for a reason unrelated to what this test targets.
     const run = subprocess.queueRun('immediate', { stdout: 'installed numpy-1.26.4\n', stderr: '' })
     const control = new OperationControl(new AbortController().signal, 1)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const pending = runMicromambaInstall(subprocess, confined, {}, root, control)
     await new Promise(resolve => setTimeout(resolve, 20))
     // control.cause has already latched 'timeout' by the time the process
@@ -415,7 +435,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('deferred', { stdout: '', stderr: '' })
     run.complete({ exitCode: 0, signal: null })
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     await expect(runMicromambaInstall(subprocess, confined, {}, root, control)).rejects.toMatchObject({ code: 'QUIESCENCE_UNPROVEN' })
     control.dispose()
   })
@@ -425,7 +445,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('immediate')
     run.rejectCompletion(new Error('injected completion failure'))
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     await expect(runMicromambaInstall(subprocess, confined, {}, root, control)).rejects.toThrow(/injected completion failure/)
     control.dispose()
   })
@@ -435,7 +455,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('immediate')
     run.rejectCompletion('non-error rejection')
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     await expect(runMicromambaInstall(subprocess, confined, {}, root, control)).rejects.toThrow(/without an Error object/)
     control.dispose()
   })
@@ -445,7 +465,7 @@ describe('runMicromambaInstall', () => {
     const run = subprocess.queueRun('immediate')
     run.resolveMalformedOutcome()
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     await expect(runMicromambaInstall(subprocess, confined, {}, root, control)).rejects.toThrow(/settled without a subprocess outcome/)
     control.dispose()
   })
@@ -456,7 +476,7 @@ describe('runMicromambaInstall', () => {
     run.omitStdout()
     run.complete({ exitCode: 0, signal: null })
     const control = new OperationControl(new AbortController().signal, 10_000)
-    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [] }
+    const confined = { argv: ['/fake/micromamba', 'install'], enforcement: 'full' as const, denialSignatures: [], runnerFailureRules: [], env: {} }
     const outcome = await runMicromambaInstall(subprocess, confined, {}, root, control)
     expect(outcome.stdout).toEqual({ text: '', bytes: 0, truncated: false })
     control.dispose()

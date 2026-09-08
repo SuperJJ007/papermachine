@@ -117,7 +117,7 @@ interface RunnerFailureRule {
 }
 ```
 
-`ConfinedArgv` 是消费方实际 spawn 的内容。除了替换后的 argv，它还携带后端的强制执行事实和两种正交的 stderr 分类器。`denialSignatures` 用于识别沙箱正常工作时受限命令被阻止的情况。`runnerFailureRules` 用于识别沙箱 runner 在执行命令之前拒绝或失败的情况；消费方应先检查后者，将其作为沙箱基础设施故障上报，而非普通任务失败。
+`ConfinedArgv` 是消费方实际 spawn 的内容。除了替换后的 argv，它还携带后端的强制执行事实、两种正交的 stderr 分类器，以及其 runner 调用所需的环境变量条目。`denialSignatures` 用于识别沙箱正常工作时受限命令被阻止的情况。`runnerFailureRules` 用于识别沙箱 runner 在执行命令之前拒绝或失败的情况；消费方应先检查后者，将其作为沙箱基础设施故障上报，而非普通任务失败。`env` 在每个后端上都是必填字段：POSIX 后端返回空对象，而 win32 ACL 后端要求 `ELECTRON_RUN_AS_NODE: '1'`，因为它的 runner 调用会重新 exec `process.execPath`——桌面打包版中的 Electron 二进制；消费方在 spawn 前把 `env` 并入自身基础环境之上，后端条目在冲突时胜出。
 
 ```ts type-equiv
 /**
@@ -146,6 +146,15 @@ interface ConfinedArgv {
    * command never ran, while denial means confinement worked and blocked it.
    */
   runnerFailureRules: readonly RunnerFailureRule[]
+  /**
+   * Environment entries this backend's runner invocation requires, merged by
+   * the caller OVER its own base env before spawning `argv`. The win32 ACL
+   * backend re-execs `process.execPath` (an Electron binary in a packaged
+   * desktop app) to run its Node runner and sets `ELECTRON_RUN_AS_NODE=1` so
+   * that binary runs the runner as Node instead of booting a second app
+   * instance; POSIX backends need none and return an empty object.
+   */
+  readonly env: Readonly<Record<string, string>>
 }
 ```
 
@@ -180,8 +189,9 @@ Abstract process-sandbox service. confine must return enforcing argv or fail clo
  *   `['bash', '-c', command]`.
  * @param policy - the file-effect policy this execution runs under,
  *   carried per call (see {@link SandboxPolicy}).
- * @returns the argv to spawn instead, plus the enforcement completeness
- *   the selected backend achieves for it.
+ * @returns the argv to spawn instead, the environment entries the caller
+ *   must merge over its own base env before spawning it, plus the
+ *   enforcement completeness the selected backend achieves for it.
  */
 abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 ```

@@ -98,9 +98,13 @@ export class SandboxBashExecutor extends LocalBashExecutor {
       return { ...result, sandbox: { mode, denied: false } }
     }
     const confined = this.confine(spec.command, { ...policy, mode })
+    // confined.env carries entries the selected sandbox backend's runner
+    // invocation itself requires (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let result: ShellRunResult
     try {
-      result = await this.runArgv(spec, confined.argv)
+      result = await this.runArgv(confinedSpec, confined.argv)
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
@@ -132,9 +136,13 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     // Once startArgv returns, install facts synchronously; promise settlement
     // cannot run before start() returns.
     const confined = this.confine(spec.command, { ...policy, mode })
+    // confined.env carries entries the selected sandbox backend's runner
+    // invocation itself requires (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let proc: ShellProcess
     try {
-      proc = this.startArgv(spec, confined.argv)
+      proc = this.startArgv(confinedSpec, confined.argv)
     } catch (error) {
       // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
       // `done` rejection; this covers alternatives that throw the same error synchronously.

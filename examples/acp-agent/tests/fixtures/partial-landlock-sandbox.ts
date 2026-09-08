@@ -19,6 +19,7 @@ export default class PartialLandlockSandboxProvider extends SandboxProvider {
         enforcement: 'full',
         denialSignatures: ['permission denied'],
         runnerFailureRules: [{ fatalSignatures: ['snapshot-runner: '] }],
+        env: {},
       }
     }
     return {
@@ -36,6 +37,7 @@ export default class PartialLandlockSandboxProvider extends SandboxProvider {
         fatalSignatures: ['landlock-run: '],
         informationalLines: [NOTICE],
       }],
+      env: {},
     }
   }
 }

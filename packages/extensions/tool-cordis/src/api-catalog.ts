@@ -1167,7 +1167,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv',
         description: 'Wrap `argv` so it executes confined under `policy` on this host; the caller spawns the returned argv in place of its own.',
         parameters: [{ name: 'argv', description: 'the exact argv the caller is about to spawn (program plus arguments), NOT a shell string — a shell-shaped consumer passes `[\'bash\', \'-c\', command]`.' }, { name: 'policy', description: 'the file-effect policy this execution runs under, carried per call (see {@link SandboxPolicy}).' }],
-        returns: 'the argv to spawn instead, plus the enforcement completeness the selected backend achieves for it.',
+        returns: 'the argv to spawn instead, the environment entries the caller must merge over its own base env before spawning it, plus the enforcement completeness the selected backend achieves for it.',
       },
     ],
   },
@@ -3430,7 +3430,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfinedArgv',
-    declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
+    declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n    readonly env: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'ConfinedSandboxMode',

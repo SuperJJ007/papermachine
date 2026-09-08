@@ -115,7 +115,7 @@ interface RunnerFailureRule {
 }
 ```
 
-`ConfinedArgv` is what the consumer spawns. Besides the replacement argv, it carries the backend's enforcement fact and two orthogonal stderr classifiers. `denialSignatures` identify the confined command being blocked while the sandbox works correctly. `runnerFailureRules` identify the sandbox runner refusing or failing before it executes the command; consumers check these first and surface a sandbox infrastructure failure, never an ordinary task failure.
+`ConfinedArgv` is what the consumer spawns. Besides the replacement argv, it carries the backend's enforcement fact, two orthogonal stderr classifiers, and the environment entries its runner invocation requires. `denialSignatures` identify the confined command being blocked while the sandbox works correctly. `runnerFailureRules` identify the sandbox runner refusing or failing before it executes the command; consumers check these first and surface a sandbox infrastructure failure, never an ordinary task failure. `env` is required on every backend: POSIX backends return an empty object, while the win32 ACL backend requires `ELECTRON_RUN_AS_NODE: '1'` because its runner invocation re-execs `process.execPath`, an Electron binary in a packaged desktop app; the consumer merges `env` over its own base env, the backend's entries winning on overlap.
 
 ```ts type-equiv
 /**
@@ -144,6 +144,15 @@ interface ConfinedArgv {
    * command never ran, while denial means confinement worked and blocked it.
    */
   runnerFailureRules: readonly RunnerFailureRule[]
+  /**
+   * Environment entries this backend's runner invocation requires, merged by
+   * the caller OVER its own base env before spawning `argv`. The win32 ACL
+   * backend re-execs `process.execPath` (an Electron binary in a packaged
+   * desktop app) to run its Node runner and sets `ELECTRON_RUN_AS_NODE=1` so
+   * that binary runs the runner as Node instead of booting a second app
+   * instance; POSIX backends need none and return an empty object.
+   */
+  readonly env: Readonly<Record<string, string>>
 }
 ```
 
@@ -178,8 +187,9 @@ Abstract process-sandbox service. confine must return enforcing argv or fail clo
  *   `['bash', '-c', command]`.
  * @param policy - the file-effect policy this execution runs under,
  *   carried per call (see {@link SandboxPolicy}).
- * @returns the argv to spawn instead, plus the enforcement completeness
- *   the selected backend achieves for it.
+ * @returns the argv to spawn instead, the environment entries the caller
+ *   must merge over its own base env before spawning it, plus the
+ *   enforcement completeness the selected backend achieves for it.
  */
 abstract confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv
 ```

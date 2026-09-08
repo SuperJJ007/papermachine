@@ -39,7 +39,7 @@ class FakeSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
     if (this.unavailable) throw new SandboxUnavailableError('workspace-write')
-    return { argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [] }
+    return { argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [], env: {} }
   }
 }
 

@@ -204,7 +204,7 @@ function enablePresetTool(composition: string, id: string): string {
 /** Full-enforcement test double that preserves direct argv. */
 class DirectSandbox extends SandboxProvider {
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
-    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [], env: {} }
   }
 }
 

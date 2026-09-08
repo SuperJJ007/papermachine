@@ -20,7 +20,7 @@ const KERNEL_ASSETS = fileURLToPath(new URL('../../../packages/science/science-r
 /** Full-enforcement test double that preserves direct argv for the fake interpreter. */
 export class DirectSandbox extends SandboxProvider {
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
-    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [], env: {} }
   }
 }
 

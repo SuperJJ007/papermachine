@@ -736,6 +736,38 @@ describe('KernelProcess', () => {
   })
 
   // POSIX-only fixture: createFakeInterpreterPrefix lays down
+  // `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('merges the confined argv\'s required env over the kernel base env, the confined value winning on overlap', async () => {
+    const harness = await createHarness('kernel-confined-env')
+    // Spying again wraps the harness's own recording spy (call-through, no
+    // new mockImplementation), giving a bound reference this test can read
+    // without the unbound-method lint on `harness.services.subprocess.spawn`.
+    const spawnSpy = vi.spyOn(harness.services.subprocess, 'spawn')
+    const sandbox = await createDirectSandbox()
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a kernel base env entry it collides
+    // with, so PATH here proves override order rather than mere presence.
+    sandbox.env = { ELECTRON_RUN_AS_NODE: '1', PATH: '/backend-required-path' }
+    const prefix = createFakeInterpreterPrefix(harness.root, 'python')
+    const kernel = await KernelProcess.start({
+      services: { ...harness.services, sandbox },
+      binding: fakeBinding('python', prefix),
+      driverPath: DRIVER_PATH,
+      index: 0,
+      kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
+      minimumEnforcement: 'full',
+    })
+    // The kernel spawn is the only spawn on this harness that carries an env
+    // map: the transport's `mkfifo`/`cat` spawns stay ambient-scrubbed and unconfined.
+    const kernelSpec = spawnSpy.mock.calls
+      .map(call => call[0])
+      .find(spec => spec.env !== undefined)
+    expect(kernelSpec?.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(kernelSpec?.env?.PATH).toBe('/backend-required-path')
+    await kernel.end('test-teardown')
+  })
+
+  // POSIX-only fixture: createFakeInterpreterPrefix lays down
   // `<prefix>/bin/python` (or `Rscript`), a shape win32's
   // executable-layout lookup never finds.
   it.skipIf(process.platform === 'win32')('treats a malformed line before READY as a fatal handshake failure', async () => {

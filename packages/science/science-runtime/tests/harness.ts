@@ -68,6 +68,8 @@ export class DirectSandbox extends SandboxProvider {
   runnerFailureRules: readonly import('@deepseek-ai/dsh-sandbox').RunnerFailureRule[] = []
   /** Test-selected complete or partial enforcement result. */
   enforcement: 'full' | 'partial' = 'full'
+  /** Backend-required env entries a focused merge-order test sets to a non-empty map. */
+  env: Readonly<Record<string, string>> = {}
 
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.policies.push(policy)
@@ -76,6 +78,7 @@ export class DirectSandbox extends SandboxProvider {
       enforcement: this.enforcement,
       denialSignatures: this.denialSignatures,
       runnerFailureRules: this.runnerFailureRules,
+      env: this.env,
     }
   }
 }

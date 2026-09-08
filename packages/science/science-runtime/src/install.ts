@@ -288,7 +288,10 @@ export async function runMicromambaInstall(
     },
     graceMs: DESCENDANT_GRACE_MS,
     environmentBase: 'empty',
-    env,
+    // confined.env carries entries the selected sandbox backend's runner
+    // invocation itself requires (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+    env: { ...env, ...confined.env },
     signal: control.signal,
   })
   let outcome: Awaited<typeof handle.done> | undefined

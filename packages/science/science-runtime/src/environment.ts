@@ -314,7 +314,10 @@ async function runProbe(
     },
     graceMs: 3_000,
     environmentBase: 'empty',
-    env: probeEnvironment(prefix, scratch),
+    // confined.env carries entries the selected sandbox backend's runner
+    // invocation itself requires (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+    env: { ...probeEnvironment(prefix, scratch), ...confined.env },
     signal: services.signal,
   })
   let outcome: Awaited<typeof handle.done> | undefined

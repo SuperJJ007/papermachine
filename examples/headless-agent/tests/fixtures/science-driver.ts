@@ -234,6 +234,16 @@ try {
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
   const resumedProjection = foldScience(resumed.agent.session.events)
+  const coldScience = ctx.sessionProjections.snapshot(resumed.agent.session).values.science
+  if (coldScience?.environment?.sandboxEnforcement !== 'full'
+    || coldScience.metrics.runCount !== resumedProjection.runs.length
+    || coldScience.metrics.artifactVersionCount !== resumedProjection.artifacts.length) {
+    throw new Error(`${NAME}: cold Science wire projection lost its environment, runs, or artifacts`)
+  }
+  await writeFile(join(process.cwd(), 'science-cold-history.json'), JSON.stringify({
+    sandboxEnforcement: coldScience.environment.sandboxEnforcement,
+    metrics: coldScience.metrics,
+  }, undefined, 2))
   for (const [label, before] of [
     ['plot.png v1', chart], ['plot.png (continued)', continued],
     ['directly edited chart', directChart], ['saved-as copy', savedAs],

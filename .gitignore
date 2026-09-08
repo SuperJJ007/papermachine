@@ -13,6 +13,7 @@ examples/*/.sessions/
 coverage/
 .doc-typecheck-*/
 .node-next-types-*/
+.dsh-built-invariant-*/
 .oxlint-contract-*/
 .oxlintrc.contract-*.json
 oxlint-contract-*.ts

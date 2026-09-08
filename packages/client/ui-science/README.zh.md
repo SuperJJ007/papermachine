@@ -113,7 +113,7 @@ Host 半侧在每个插件包之前（`webserver/index-inject`，仿照 `@deepse
 - **`sidebar.destinations`**（`ScienceDestinations`） — 在当前 Science Session 的侧边栏中贡献一个产物行；没有当前 Science Session 时不渲染。成果库的 Artifacts 页已选中时，点击会切换 Details 列；该列关闭时会打开该页；已打开产物标签或 Project files 页时则返回该页而不关闭列。已挂载的 Details 条目发布按会话划分的文件库判断与返回操作，因为根作用域的侧栏注册不能声明该条目按会话作用域的 selection store；感知所选项的面板切换仍由 `ctx.conversation.toggleDetailsView` 负责。
 - **`conversation.page.utilities`** — 文件 toggle 在 `session` 模式下的欢迎页交接注册（`ScienceHeroAction`），或在 `global` 模式下的唯一注册（`ScienceGlobalToggle`）；见[文件 toggle](#files-toggle)。
 - **`conversation.input.accessory`**（`ScienceComposerChips`） — 主 composer 上方以可移除 chip 形式展示的暂存 target，读取本包私有的、按会话划分的 `ScienceComposerSelections` 存储——artifact viewer 的 `+`/`−` 控件写入的正是同一个存储。一个注册的 `registerSubmissionHandler` 会在有任意 target 暂存时抢先认领一次普通发送，调用 `remote.scienceEdits.submit` 提交暂存的 target 与作为指令的 composer 文本，并只在 Host 接受后才清空暂存的 target；携带普通图片的提交会在触达 Remote 之前就被拒绝。
-- **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示的、来自 `science` 投影 `kernels` 列表的逐语言最新生命周期状态（`live`/`exited`/`interrupted`）；没有投影或没有存活内核时不渲染任何内容。
+- **`conversation.composer.dock`**（`ScienceKernelStatus`） — composer 下方展示来自 `science` 投影 `kernels` 列表的逐语言最近生命周期记录（`started`/`exited`/`interrupted`）。这些历史记录不能证明进程当前存活；没有投影或没有内核记录时不渲染任何内容。
 - **`details.files`**（`ScienceEmptyDetails`） — 真正的欢迎页（完全没有当前 Session）时 Details 列的占位内容——`ui-layout` 的 `AppFrame` 只在这一态渲染这个 slot；只要有当前 Session（含空白、含 Science 未绑定）都改为在普通的 `details` slot 里渲染共享产物库（见 [Artifact viewer](#artifact-viewer-details-entry)）。说明打开一个会话后这里会显示项目产物，并通过宿主提供的 `closeDetails` 关闭该列。
 
 ## 组装

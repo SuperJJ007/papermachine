@@ -121,7 +121,9 @@ describe('ScienceKernelStatus', () => {
     expect(screen.getByText('r · epoch 1 · interrupted')).toBeTruthy()
     cleanup()
     view({ kernels: [{ language: 'python', kernelEpoch: 3, state: 'started' }] } as unknown as ScienceClientProjection)
-    expect(screen.getByText('python · epoch 3 · live')).toBeTruthy()
+    expect(screen.getByText('Latest kernel records')).toBeTruthy()
+    expect(screen.getByText('python · epoch 3 · started')).toBeTruthy()
+    expect(screen.queryByText(/live/)).toBeNull()
   })
 })
 

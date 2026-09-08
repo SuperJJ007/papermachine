@@ -6,9 +6,9 @@ export const NS = 'science'
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'nav.files': '成果',
-  'kernel.status': 'Science 内核状态',
+  'kernel.status': '内核最近记录',
   'kernel.item': '{language} · epoch {epoch} · {state}',
-  'kernel.started': '存活',
+  'kernel.started': '已启动',
   'kernel.exited': '已退出',
   'kernel.interrupted': '已中断',
   'trace.view': '过程',
@@ -314,9 +314,9 @@ export type ScienceKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'nav.files': 'Artifacts',
-  'kernel.status': 'Science kernel status',
+  'kernel.status': 'Latest kernel records',
   'kernel.item': '{language} · epoch {epoch} · {state}',
-  'kernel.started': 'live',
+  'kernel.started': 'started',
   'kernel.exited': 'exited',
   'kernel.interrupted': 'interrupted',
   'trace.view': 'Process',

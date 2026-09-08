@@ -59,12 +59,26 @@ try {
     meta: { agentPreset: 'science', cwd: process.cwd() },
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
+  const artifactStore = ctx.scienceArtifactStore
+  const annotateVersion = artifactStore.annotateVersion.bind(artifactStore)
+  let renamedDuringCapture = false
+  artifactStore.annotateVersion = async (...args) => {
+    const version = await annotateVersion(...args)
+    if (!renamedDuringCapture) {
+      renamedDuringCapture = true
+      const session = ctx!.sessions.get(sessionId)
+      if (session === undefined) throw new Error(`${NAME}: capture session detached`)
+      session.append('session/title', { title: 'Science capture in progress', messageSeqs: [], source: { kind: 'user' } })
+    }
+    return version
+  }
   const result = await runFixtureTurn(ctx, {
     task: taskParts.join(' '),
     onEvent: (sessionId: string, event: SessionEvent) => {
       process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
     },
   })
+  artifactStore.annotateVersion = annotateVersion
   const agent = ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
   const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'plot.png')

@@ -216,10 +216,8 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   let skippedOversizedCount = 0
   let truncatedPerSession = false
   let appendFailed = false
-  // Folded once from the complete log, then advanced incrementally per
-  // appended `science/artifact-saved` below — replaying the whole log on
-  // every one of up to `captureMaxFilesPerRun` iterations would be
-  // quadratic in the session's total event count.
+  // Advance from the complete log incrementally, including events appended
+  // by kernel teardown while the artifact store performs asynchronous I/O.
   const state: ScienceFoldState = foldScience(session.events)
   // The authorizing run's own turn number, read once from this same fold's
   // tool-call index (`tool/call` facts are unaffected by the Science
@@ -406,11 +404,9 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       }
       break
     }
-    // Advances `state` for the next iteration's `projectScienceFold` read;
-    // `append()`'s own returned event is exactly the next contiguous
-    // `nextSeq` this fold needs, since nothing else appends to this Session
-    // between iterations of one synchronous walk.
-    applyScienceEvent(state, appended)
+    for (const event of session.events.slice(state.nextSeq, appended.seq + 1)) {
+      applyScienceEvent(state, event)
+    }
     captured.push(artifact)
     if (mediaType === 'image/png' && figureState === undefined) chartUnavailablePaths.push(relativePath)
   }

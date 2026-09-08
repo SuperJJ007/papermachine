@@ -17,6 +17,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { StartScienceRunRequest } from '../src/types.ts'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
+import { KernelProcess } from '../src/kernel-process.ts'
 import {
   authorizePythonRun,
   createKernelRuntimeHarness,
@@ -445,9 +446,36 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-chart-always')
-    const exited = await startHeldRun(harness, root, session, 'ok', false, undefined, undefined, 'crash')
-    await writeArtifact(root, session, exited.runId, 'plot.png', PNG)
-    expect((await exited.done).capture?.chartUnavailablePaths).toEqual(['plot.png'])
+    const teardown = Promise.withResolvers<undefined>()
+    // oxlint-disable-next-line typescript/unbound-method -- call() supplies the real kernel process.
+    const end = KernelProcess.prototype.end
+    const heldEnd = vi.spyOn(KernelProcess.prototype, 'end').mockImplementation(async function (this: KernelProcess, reason) {
+      const result = await end.call(this, reason)
+      await teardown.promise
+      return result
+    })
+    const store = harness.ctx.scienceArtifactStore
+    // oxlint-disable-next-line typescript/unbound-method -- call() supplies the owning store.
+    const annotate = store.annotateVersion
+    const delayedAnnotate = vi.spyOn(store, 'annotateVersion').mockImplementation(async function (this: typeof store, ...args) {
+      const result = await annotate.call(this, ...args)
+      teardown.resolve(undefined)
+      await vi.waitFor(() => {
+        expect(session.events.some(event => event.type === 'science/kernel-state' && event.data.kernel.state === 'exited')).toBe(true)
+      })
+      return result
+    })
+    try {
+      const exited = await startHeldRun(harness, root, session, 'ok', false, undefined, undefined, 'crash')
+      await writeArtifact(root, session, exited.runId, 'plot.png', PNG)
+      const result = await exited.done
+      expect(result.capture?.chartUnavailablePaths).toEqual(['plot.png'])
+      expect(result.capture?.captured).toHaveLength(1)
+    } finally {
+      teardown.resolve(undefined)
+      heldEnd.mockRestore()
+      delayedAnnotate.mockRestore()
+    }
 
     const next = await startHeldRun(harness, root, session, 'ok', true)
     await next.done

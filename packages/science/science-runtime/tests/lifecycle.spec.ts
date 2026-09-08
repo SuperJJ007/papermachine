@@ -170,6 +170,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
 
     const rejected = expect(running.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
     const teardown = Promise.withResolvers<undefined>()
+    // oxlint-disable-next-line typescript/unbound-method -- call() supplies the real kernel process.
     const end = KernelProcess.prototype.end
     const heldEnd = vi.spyOn(KernelProcess.prototype, 'end').mockImplementation(async function (this: KernelProcess, reason) {
       const result = await end.call(this, reason)

@@ -16,6 +16,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+
+// Exercise the Windows response transport on every host so fake drivers
+// cannot pass locally while accepting only POSIX FIFO endpoints.
+vi.mock('../src/kernel-transport.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/kernel-transport.ts')>(),
+  selectKernelTransportKind: () => 'tcp',
+}))
 import {
   authorizePythonRun,
   authorizeRun,

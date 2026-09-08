@@ -161,7 +161,7 @@ describe('staticMicromamba', () => {
   it('resolves a configured regular executable path', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    await expect(staticMicromamba(executable)).resolves.toBe(realpathSync(executable))
+    await expect(staticMicromamba(executable)).resolves.toBe(realpathSync.native(executable))
   })
 
   it('rejects an absent path as INSTALLER_UNAVAILABLE', async () => {
@@ -174,7 +174,7 @@ describe('staticMicromamba', () => {
     const executable = makeExecutable(root)
     const link = join(root, 'link-to-micromamba')
     symlinkSync(executable, link)
-    await expect(staticMicromamba(link)).resolves.toBe(realpathSync(executable))
+    await expect(staticMicromamba(link)).resolves.toBe(realpathSync.native(executable))
   })
 
   it('rejects a non-executable regular file on POSIX', async () => {
@@ -201,14 +201,14 @@ describe('staticMicromamba', () => {
   it('propagates a non-missing-path lstat failure unchanged', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    staticFsFault.lstat = realpathSync(executable)
+    staticFsFault.lstat = realpathSync.native(executable)
     await expect(staticMicromamba(executable)).rejects.toThrow(/injected lstat failure/)
   })
 
   it('propagates a non-object rejection unchanged (not classified as a missing path)', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    staticFsFault.lstatNonObject = realpathSync(executable)
+    staticFsFault.lstatNonObject = realpathSync.native(executable)
     await expect(staticMicromamba(executable)).rejects.toBe('injected non-object lstat failure')
   })
 })

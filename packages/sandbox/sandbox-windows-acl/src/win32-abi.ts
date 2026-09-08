@@ -18,7 +18,7 @@
  *    then still dies with STATUS_DLL_INIT_FAILED (0xC0000142) whenever
  *    CREATE_NO_WINDOW / CREATE_NEW_CONSOLE is used.
  *  - Console isolation: under this restriction scheme a hidden console is not
- *    attainable, so children share the host console (stdio redirection is
+ *    attainable for the restricted child, so children share the runner console (stdio redirection is
  *    pipe-based and unaffected).
  * @module @deepseek-ai/dsh-sandbox-windows-acl/win32-abi
  */

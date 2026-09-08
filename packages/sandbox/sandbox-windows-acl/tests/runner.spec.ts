@@ -40,6 +40,28 @@ function runRunner(args: string[], timeoutMs = 30_000) {
   })
 }
 
+describe.skipIf(!isWin32)('consoleless windows-acl runner', () => {
+  it('preserves pipe bytes through a console-subsystem descendant chain', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-consoleless-workspace-'))
+    const temp = mkdtempSync(join(tmpdir(), 'dsh-consoleless-temp-'))
+    const entry = fileURLToPath(new URL('./fixtures/consoleless-runner.ts', import.meta.url))
+    const child = 'process.stdout.write("dsh-\\u79d1\\u5b66-\\u2713")'
+    const launcher = `const { spawnSync } = require('node:child_process'); const child = spawnSync(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' }); process.exitCode = child.status ?? 1`
+    try {
+      const result = spawnSync(process.execPath, ['--import', 'tsx/esm', entry,
+        '--workspace', workspace, '--temp', temp, '--mode', 'workspace-write',
+        '--', process.execPath, '-e', launcher,
+      ], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 30_000 })
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toBe('dsh-科学-✓')
+      expect(result.stderr).toBe('')
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+      rmSync(temp, { recursive: true, force: true })
+    }
+  }, 35_000)
+})
+
 describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
   let scratchRoot!: string
   let writableDir!: string

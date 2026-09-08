@@ -140,9 +140,9 @@ export function renderScienceContext(session: Session): string {
 }
 
 /**
- * Bind Science mode on first use and the environment on first missing
- * revision, then return the current projection. No-ops (besides the replay)
- * once both are already bound and matching.
+ * Bind missing Science facts and retry a seeded failed environment before
+ * its first run. A live environment observation is never repeated by later
+ * prompt assemblies in the same session lifecycle.
  * @param ctx - context carrying the optional `ctx.scienceRuntime` service.
  * @param session - exact live Session to bind.
  * @param signal - caller-owned cancellation signal for environment binding.
@@ -174,7 +174,12 @@ export async function ensureScienceBound(
   } else if (projection.mode.modeRevision !== config.modeRevision) {
     throw new Error(`tool-science: session is bound to Science mode revision ${JSON.stringify(projection.mode.modeRevision)}, configured revision is ${JSON.stringify(config.modeRevision)}`)
   }
-  if (projection.environment === null) {
+  const retrySeededEnvironment = projection.environment !== null
+    && projection.environment.status !== 'applied'
+    && projection.runs.length === 0
+    && session.firstLiveSeq > 0
+    && !session.events.slice(session.firstLiveSeq).some(event => event.type === 'science/environment-bound')
+  if (projection.environment === null || retrySeededEnvironment) {
     const scienceRuntime = ctx.get('scienceRuntime')
     if (scienceRuntime === undefined) {
       throw new Error('tool-science: no Science Runtime is mounted (ctx.scienceRuntime)')

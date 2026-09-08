@@ -156,9 +156,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     expect(registry.blocking(successor)).toBeUndefined()
   })
 
-  // readyKernelHarness binds the fake Python profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('quarantines a same-ID successor until an in-flight run\'s lease settles', async () => {
+  it('quarantines a same-ID successor until an in-flight run\'s lease settles', async () => {
     const { ctx, runtime, attached } = await readyKernelHarness('science-same-id')
     const running = await runtime.startRun({
       session: attached.session,
@@ -195,9 +193,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     }
   })
 
-  // readyKernelHarness binds the fake Python profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('cleans an unexpectedly detached exact Session but never appends to its old log', async () => {
+  it('cleans an unexpectedly detached exact Session but never appends to its old log', async () => {
     const { runtime, attached } = await readyKernelHarness('science-detached')
     const handle = await runtime.startRun({
       session: attached.session,
@@ -212,9 +208,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     expect(attached.session.events.some(event => event.type === 'science/run-finished')).toBe(false)
   })
 
-  // readyKernelHarness binds the fake Python profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('reports terminal append failures as detached when the exact Session disappears at the same moment', async () => {
+  it('reports terminal append failures as detached when the exact Session disappears at the same moment', async () => {
     const { runtime, attached } = await readyKernelHarness('science-detached-append')
     const handle = await runtime.startRun({
       session: attached.session,
@@ -232,9 +226,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     await expect(handle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
   })
 
-  // bindEnvironment probes the fake Python profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('rejects pre-publication work when the exact Session detaches during a probe', async () => {
+  it('rejects pre-publication work when the exact Session detaches during a probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-detach-bind-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)
@@ -255,9 +247,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     })).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
   })
 
-  // readyKernelHarness binds the fake Python profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('cancels a live run and disposes its kernel, then removes its service registration on fiber disposal', async () => {
+  it('cancels a live run and disposes its kernel, then removes its service registration on fiber disposal', async () => {
     const { ctx, runtime, runtimeFiber, attached } = await readyKernelHarness('science-runtime-dispose')
     const handle = await runtime.startRun({
       session: attached.session,

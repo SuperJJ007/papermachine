@@ -20,6 +20,7 @@
 
 const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
 const { createInterface } = require('node:readline')
+const { createConnection } = require('node:net')
 
 const PROTOCOL_VERSION = 2
 
@@ -29,18 +30,23 @@ if (fifoPath === undefined) {
   process.exit(2)
 }
 
-let fifoFd = openSync(fifoPath, 'w')
+const tcp = fifoPath.startsWith('tcp:') ? fifoPath.split(':') : undefined
+const socket = tcp === undefined ? undefined : createConnection({ host: tcp[1], port: Number(tcp[2]) })
+const fifoFd = socket === undefined ? openSync(fifoPath, 'w') : undefined
+if (socket !== undefined) socket.write(`${tcp[3]}\n`)
 let fifoClosed = false
 
 function send(frame) {
   if (fifoClosed) return
-  writeSync(fifoFd, `${frame}\n`)
+  if (socket === undefined) writeSync(fifoFd, `${frame}\n`)
+  else socket.write(`${frame}\n`)
 }
 
 function closeFifo() {
   if (fifoClosed) return
   fifoClosed = true
-  closeSync(fifoFd)
+  if (socket === undefined) closeSync(fifoFd)
+  else socket.end()
 }
 
 send(`READY\t${PROTOCOL_VERSION}\t${process.pid}`)

@@ -111,9 +111,7 @@ describe('Science Runtime settings-namespace ownership', () => {
     ])
   })
 
-  // bindEnvironment resolves the fake profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('captures the resolved profile map once at load: a later write reaches only a restarted Runtime', async () => {
+  it('captures the resolved profile map once at load: a later write reaches only a restarted Runtime', async () => {
     const root = freshRoot()
     const prefix = createFakePythonPrefix(root)
     const { ctx, runtimeFiber } = await boot(root, {})
@@ -181,9 +179,7 @@ describe('Science Runtime settings-namespace ownership', () => {
     expect(ctx.get('scienceRuntime')).toBeUndefined()
   })
 
-  // bindEnvironment resolves the fake profile via createFakePythonPrefix,
-  // whose POSIX-shaped `bin/python` the product never looks for on win32.
-  it.skipIf(process.platform === 'win32')('keeps the root entry free of settings even when a provider is mounted', async () => {
+  it('keeps the root entry free of settings even when a provider is mounted', async () => {
     const root = freshRoot()
     const prefix = createFakePythonPrefix(root)
     const { ctx } = await boot(root, { fake: { pythonPrefix: prefix } }, { entry: ScienceRuntime })

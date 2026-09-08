@@ -5,7 +5,8 @@
  * (CREATE_NO_WINDOW / CREATE_NEW_CONSOLE) is intentionally absent: under this
  * restriction scheme hidden-console children die with STATUS_DLL_INIT_FAILED
  * (0xC0000142) — verified empirically, see win32-abi.ts. Stdio redirection is
- * pipe-based and unaffected; the child shares the host console.
+ * pipe-based and unaffected; the child shares the runner's console, which
+ * runner.ts establishes before a GUI-hosted invocation creates children.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/spawn
  */
 

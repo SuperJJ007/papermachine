@@ -222,7 +222,7 @@ export class ControlledSubprocess extends SubprocessRuntime {
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.specs.push(spec)
     this.onSpawn?.(spec)
-    const r = spec.argv[0]?.endsWith('/Rscript') ?? false
+    const r = /[\\/]Rscript(?:\.exe)?$/.test(spec.argv[0] ?? '')
     if (spec.argv.includes('--version')) return settledHandle(r ? 'Fake R 4.5.0\n' : 'Fake Python 3.13.5\n', '')
     if (spec.argv.includes('-m') || spec.argv.some(arg => arg.includes('installed.packages'))) {
       return settledHandle(r ? this.packagesOutput.r : this.packagesOutput.python, '')
@@ -275,9 +275,21 @@ function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Pro
 /** Fake interpreter probe behavior that exercises lossless UTF-8 acceptance. */
 export type FakeUtf8Probe = 'valid' | 'invalid'
 
+/**
+ * Locate the fake interpreter marker using the host's Conda layout.
+ * @param prefix - fake Conda prefix.
+ * @param language - interpreter to locate.
+ * @returns the marker or executable file owned by the fixture.
+ */
+export function fakeInterpreterPath(prefix: string, language: 'python' | 'r'): string {
+  return process.platform === 'win32'
+    ? language === 'python' ? join(prefix, 'python.exe') : join(prefix, 'Scripts', 'Rscript.exe')
+    : join(prefix, 'bin', language === 'python' ? 'python' : 'Rscript')
+}
+
 /** Write a Windows interpreter marker and a Node probe/kernel adapter owned by the fake sandbox runner. */
 function writeWindowsFakeInterpreter(prefix: string, language: 'python' | 'r', utf8Probe: FakeUtf8Probe): void {
-  const executable = language === 'python' ? join(prefix, 'python.exe') : join(prefix, 'Scripts', 'Rscript.exe')
+  const executable = fakeInterpreterPath(prefix, language)
   mkdirSync(language === 'python' ? prefix : join(prefix, 'Scripts'), { recursive: true })
   writeFileSync(executable, 'Science test interpreter; executed by the fake sandbox runner.\n')
   writeFileSync(`${executable}.science-test.mjs`, `import { createRequire } from 'node:module'

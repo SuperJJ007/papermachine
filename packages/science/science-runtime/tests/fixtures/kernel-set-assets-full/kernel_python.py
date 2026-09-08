@@ -28,7 +28,7 @@
 //        trapSigint false/absent: SIGINT is installed as a no-op listener, so
 //        the process survives it and keeps sleeping.
 
-const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
+const { existsSync, closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
 
@@ -140,6 +140,14 @@ function handleRun(runId, sourcePath, stdoutPath, stderrPath, artifactDir) {
   }
   if (kind === 'close-fifo') {
     closeFifo()
+    return
+  }
+  if (kind === 'wait-file') {
+    const poll = () => {
+      if (existsSync(action.releasePath)) send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
+      else setTimeout(poll, 10)
+    }
+    poll()
     return
   }
   if (kind === 'sleep') {

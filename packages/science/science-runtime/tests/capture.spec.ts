@@ -60,11 +60,12 @@ let callCounter = 0
 
 /**
  * Bind the fake Python profile (unless `bound`), then start one run held
- * open by the fake kernel driver's `sleep` action so the test can write the
- * run's artifact files under its real `runId` before DONE arrives.
+ * open until the caller reads `done`, after writing its artifact files.
+ * The release file prevents slow filesystem work from racing kernel completion.
  */
 async function startHeldRun(
   harness: Awaited<ReturnType<typeof createKernelRuntimeHarness>>,
+  root: string,
   session: Session,
   status: 'ok' | 'error' = 'ok',
   bound = false,
@@ -78,12 +79,20 @@ async function startHeldRun(
     })
   }
   callCounter += 1
-  return harness.runtime.startRun({
-    session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 200, status, chartResult, chartStatus }),
+  const releasePath = join(root, `release-${String(callCounter)}`)
+  const handle = await harness.runtime.startRun({
+    session, language: 'python', code: kernelAction({ action: 'wait-file', releasePath, status, chartResult, chartStatus }),
     ...artifacts,
     ...authorizePythonRun(session, `capture-run-${String(callCounter)}`),
     signal: new AbortController().signal,
   })
+  return {
+    ...handle,
+    get done() {
+      writeFileSync(releasePath, '')
+      return handle.done
+    },
+  }
 }
 
 /** Start one run, write every listed file into its artifact directory, then await settlement. */
@@ -96,7 +105,7 @@ async function runWithFiles(
   alreadyBound = false,
   artifacts?: Pick<StartScienceRunRequest, 'artifactInputs' | 'editBaselines' | 'rasterArtifacts'>,
 ) {
-  const handle = await startHeldRun(harness, session, status, alreadyBound, artifacts)
+  const handle = await startHeldRun(harness, root, session, status, alreadyBound, artifacts)
   for (const [relativePath, data] of Object.entries(files)) {
     await writeArtifact(root, session, handle.runId, relativePath, data)
   }
@@ -160,7 +169,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     const version = first.result.capture?.captured.at(0)
     if (version === undefined) throw new Error('input test: expected one captured version')
 
-    const handle = await startHeldRun(harness, session, 'ok', true, {
+    const handle = await startHeldRun(harness, root, session, 'ok', true, {
       artifactInputs: [{ artifactId: version.artifactId, version: version.version, path: 'data/source.csv' }],
     })
     const scratch = await planSessionScratch(join(root, 'dsh-home'), session)
@@ -356,6 +365,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     }
     const handle = await startHeldRun(
       harness,
+      root,
       session,
       'ok',
       false,
@@ -387,7 +397,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     const session = createScienceSession(harness.ctx, 'science-capture-chart-failure')
 
     const rejected = await startHeldRun(
-      harness, session, 'ok', false, { rasterArtifacts: ['rejected.png'] }, undefined, 'error',
+      harness, root, session, 'ok', false, { rasterArtifacts: ['rejected.png'] }, undefined, 'error',
     )
     await writeArtifact(root, session, rejected.runId, 'rejected.png', PNG)
     const rejectedResult = await rejected.done
@@ -395,7 +405,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     expect(rejectedResult.capture?.chartUnavailablePaths).toEqual(['rejected.png'])
 
     const invalid = await startHeldRun(
-      harness, session, 'ok', true, { rasterArtifacts: ['invalid.png'] }, 'not-an-object',
+      harness, root, session, 'ok', true, { rasterArtifacts: ['invalid.png'] }, 'not-an-object',
     )
     await writeArtifact(root, session, invalid.runId, 'invalid.png', PNG)
     const invalidResult = await invalid.done
@@ -403,21 +413,21 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     expect(invalidResult.capture?.chartUnavailablePaths).toEqual(['invalid.png'])
 
     const invalidChart = await startHeldRun(
-      harness, session, 'ok', true, { rasterArtifacts: ['invalid-chart.png'] },
+      harness, root, session, 'ok', true, { rasterArtifacts: ['invalid-chart.png'] },
       { charts: { 'invalid-chart.png': { runtime: 'unknown' } }, errors: {} },
     )
     await writeArtifact(root, session, invalidChart.runId, 'invalid-chart.png', PNG)
     expect((await invalidChart.done).capture?.chartUnavailablePaths).toEqual(['invalid-chart.png'])
 
     const invalidError = await startHeldRun(
-      harness, session, 'ok', true, { rasterArtifacts: ['invalid-error.png'] },
+      harness, root, session, 'ok', true, { rasterArtifacts: ['invalid-error.png'] },
       { charts: {}, errors: { 'invalid-error.png': 1 } },
     )
     await writeArtifact(root, session, invalidError.runId, 'invalid-error.png', PNG)
     expect((await invalidError.done).capture?.chartUnavailablePaths).toEqual(['invalid-error.png'])
 
     const missingResult = await startHeldRun(
-      harness, session, 'ok', true, { rasterArtifacts: ['missing-result.png'] }, undefined, 'missing-result',
+      harness, root, session, 'ok', true, { rasterArtifacts: ['missing-result.png'] }, undefined, 'missing-result',
     )
     await writeArtifact(root, session, missingResult.runId, 'missing-result.png', PNG)
     expect((await missingResult.done).capture?.chartUnavailablePaths).toEqual(['missing-result.png'])
@@ -435,11 +445,11 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     )
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-chart-always')
-    const exited = await startHeldRun(harness, session, 'ok', false, undefined, undefined, 'crash')
+    const exited = await startHeldRun(harness, root, session, 'ok', false, undefined, undefined, 'crash')
     await writeArtifact(root, session, exited.runId, 'plot.png', PNG)
     expect((await exited.done).capture?.chartUnavailablePaths).toEqual(['plot.png'])
 
-    const next = await startHeldRun(harness, session, 'ok', true)
+    const next = await startHeldRun(harness, root, session, 'ok', true)
     await next.done
     const starts = session.events.filter(event => event.type === 'science/run-started')
     expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
@@ -459,14 +469,14 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-chart-timeout')
     const first = await startHeldRun(
-      harness, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
+      harness, root, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
     )
     await writeArtifact(root, session, first.runId, 'plot.png', PNG)
     const firstResult = await first.done
     expect(firstResult.capture?.captured[0]).not.toHaveProperty('chart')
     expect(firstResult.capture?.chartUnavailablePaths).toEqual(['plot.png'])
 
-    const next = await startHeldRun(harness, session, 'ok', true)
+    const next = await startHeldRun(harness, root, session, 'ok', true)
     await next.done
     const starts = session.events.filter(event => event.type === 'science/run-started')
     expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
@@ -486,7 +496,7 @@ describe.skipIf(process.platform === 'win32')('Science auto-capture', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-chart-retiring')
     const handle = await startHeldRun(
-      harness, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
+      harness, root, session, 'ok', false, { rasterArtifacts: ['plot.png'] }, undefined, 'hang',
     )
     await writeArtifact(root, session, handle.runId, 'plot.png', PNG)
     handle.cancel()

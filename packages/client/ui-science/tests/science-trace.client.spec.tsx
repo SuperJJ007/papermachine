@@ -366,6 +366,16 @@ describe('Science process model', () => {
     expect(build(nodes, { runs: [run('r', 1)] }).groups[0]?.durationMs).toBe(500)
     expect(build(nodes, { runs: [run('r', 1, 'running')] }).groups[0]?.durationMs).toBeUndefined()
   })
+  it('omits empty user and steering messages without advancing inferred turns', () => {
+    const nodes: ConversationNode[] = [
+      { kind: 'user', seq: 1, time: 0, source: { kind: 'user' }, content: [] },
+      { kind: 'user', seq: 2, time: 1, source: { kind: 'user' }, content: [{ type: 'image', attachment: { attachmentId: 'image-only' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 } }] },
+      { kind: 'steering', seq: 3, time: 2, messageId: 'empty' as never, source: { kind: 'user' }, content: [{ type: 'text', text: '  ' }] },
+      { kind: 'user', seq: 4, time: 3, source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue' }] },
+    ]
+    expect(build(nodes).dialogues).toEqual([{ actor: 'user', turn: 1, text: 'Continue', seq: 4, anchor: 'seq:4' }])
+  })
+
   it('uses createdAt as the fallback for a projection without trajectory coordinates', () => {
     // Directly constructed legacy projections have an empty trace. The
     // timestamp fallback keeps these values renderable without weakening
@@ -376,7 +386,7 @@ describe('Science process model', () => {
     expect(noNodes.groups).toMatchObject([{ turn: 1, artifacts: [{ logicalName: 'chart.png', version: 1 }] }])
     expect(noNodes).toMatchObject({ unassigned: { artifacts: [] } })
     const laterArtifact = { ...artifact, versionId: 'version-later' as never, createdAt: 15_000 }
-    const later = build([], { artifacts: [laterArtifact] }, turnTimes)
+    const later = build([], { artifacts: [laterArtifact] }, new Map([...turnTimes].reverse()))
     expect(later.groups).toMatchObject([{ turn: 2, artifacts: [{ version: 1 }] }])
   })
   it('expands terminal epochs and places sorted markers before their containing or next turn', () => {

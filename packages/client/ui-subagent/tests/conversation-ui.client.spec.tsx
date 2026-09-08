@@ -153,6 +153,9 @@ describe('SubagentHeaderLineage', () => {
     hoverCatalog(trigger)
 
     expect(input.setCatalogOpen).toHaveBeenCalledWith(PARENT, true)
+    fireEvent(window, new Event('resize'))
+    fireEvent(document, new Event('scroll'))
+    expect(screen.getByRole('treeitem', { name: /worker/ })).toBeTruthy()
     expect(screen.getAllByRole('treeitem')).toHaveLength(3)
     expect(screen.getByText('正在扫描项目文件 · 可继续 · 正在运行')).toBeTruthy()
     expect(screen.getByText('一次性 · 当前未运行')).toBeTruthy()

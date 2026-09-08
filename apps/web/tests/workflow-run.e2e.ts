@@ -15,7 +15,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, holdReplayChunks, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
@@ -32,6 +32,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let prompt: string
+  let releaseChild = (): void => {}
 
   const waitForParentSettlement = (): Promise<SessionId> => new Promise((resolve, reject) => {
     let dispose = (): void => {}
@@ -55,6 +56,8 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       replayChildFixtures: [CHILD_FIXTURE],
       paceMs: 50,
     })
+    releaseChild = holdReplayChunks(scaffold.ctx, options => options.messages.some(message =>
+      message.role === 'user' && message.content.some(block => block.type === 'text' && block.text === CHILD_PROMPT)))
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -64,6 +67,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   }, 120_000)
 
   afterAll(async () => {
+    releaseChild()
     await browser?.close()
     await scaffold?.close()
   })
@@ -156,6 +160,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
 
     await member.click()
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
+    releaseChild()
 
     const sessions = page.getByRole('tree', { name: 'Sessions' })
     await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()

@@ -20,7 +20,9 @@ CI 的 `scripts/run-web-snapshots.ts` 先用相互独立的 Vitest 调用串行�
 
 对 PR 而言，门禁仅在 Linux 消费方 job 中运行：这些场景面向 POSIX，其他 PR job 不安装 Chromium。自托管的默认分支 Linux 串行热备也包含该比较，而 macOS 和 Windows 串行 job 仍不使用浏览器（不存在托管的 Linux 串行聚合）。PR 的 `all checks passed` 已依赖消费方 job，因此浏览器比较失败会阻止合并，无需新增 branch-protection check 名称。
 
-完整本地 replay 中，6-worker 浏览器命令耗时约 65–71 秒。12-worker 对比约为 50 秒，因此把浏览器 worker 预算减半只增加约 15–20 秒，而不是让墙钟时间翻倍。门禁调度器会在 `built-package-invariants` 成功后立即启动浏览器快照，并发运行彼此独立的门禁，因此既不需要专用 job 超时，也不需要手动制定 YAML 顺序规则。
+完整本地 replay 中，6-worker 浏览器命令耗时约 65–71 秒。12-worker 对比约为 50 秒，因此把浏览器 worker 预算减半只增加约 15–20 秒，而不是让墙钟时间翻倍。门禁调度器会在其余产物消费者完成后启动浏览器快照，因此既不需要专用 job 超时，也不需要手动制定 YAML 顺序规则。
+
+浏览器场景通过 model-stream waterfall 协调短暂状态：回放 chunk 会等待队列入队、子会话导航或阅读位置达到待验证状态。逐 chunk 节奏只模拟视觉上的增量输出，不作为浏览器操作的截止时间。响应式布局检查会在调整窗口后等待原有几何约束成立；队列快照同时等待入队与输入框清空。消息投递测试接受即时或延迟确认，但必须证明消息恰好持久化投递一次且待投递队列为空。
 
 ## 曾考虑的替代方案
 

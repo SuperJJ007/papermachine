@@ -4,6 +4,8 @@ import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
+import type { Context } from '@deepseek-ai/cordis'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 /** The built page under test; `pnpm run test:web` rebuilds it before running. */
 export const DIST_INDEX = fileURLToPath(new URL('../dist/index.html', import.meta.url))
@@ -146,4 +148,26 @@ export function conversationContextKey(kind: string, id: string): string {
 export async function expandToolGroups(page: Page): Promise<void> {
   const closedGroups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
   while (await closedGroups.count() > 0) await closedGroups.first().click()
+}
+
+/**
+ * Hold selected replay chunks until the browser establishes the state under test.
+ * @param ctx - scaffold context owning the real model-stream waterfall.
+ * @param matches - select the chunk at which the stream waits.
+ * @returns release the barrier and remove the listener; safe during cleanup.
+ */
+export function holdReplayChunks(
+  ctx: Context, matches: (options: GenerateOptions, chunk: StreamChunk) => boolean,
+): () => void {
+  const gate = Promise.withResolvers<undefined>()
+  const dispose = ctx.on('llm/stream', async function* (options, next) {
+    for await (const chunk of next()) {
+      if (matches(options, chunk)) await gate.promise
+      yield chunk
+    }
+  })
+  return () => {
+    gate.resolve(undefined)
+    dispose()
+  }
 }

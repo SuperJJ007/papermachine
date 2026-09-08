@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandToolGroups, newEnglishPage, saveFailureShot } from './support.ts'
+import { holdReplayChunks, expandToolGroups, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -470,6 +470,9 @@ describe('web e2e: long Chat scroll contract', () => {
       replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
+      let textChunks = 0
+      const releaseStream = holdReplayChunks(world.scaffold.ctx, (_options, chunk) =>
+        chunk.type === 'text-delta' && ++textChunks === 2)
       await openSeed(
         world.page,
         HISTORY_FIXTURE,
@@ -508,6 +511,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await wheelTranscript(world.page, 420)
         const readerAnchor = await visibleFlowAnchor(world.page)
         const chunksAfterAnchor = world.events.filter(event => event.type === 'assistant/chunk').length
+        releaseStream()
         await expect.poll(
           () => world.events.filter(event => event.type === 'assistant/chunk').length,
           { timeout: 10_000 },
@@ -518,6 +522,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(world.page)
         await expectSameFlowTop(world.page, readerAnchor)
       } finally {
+        releaseStream()
         releaseHistory()
       }
 
@@ -788,6 +793,9 @@ describe('web e2e: long Chat scroll contract', () => {
       ],
       seeds: [{ fixture: INPUTS_FIXTURE, id: FLING_SESSION_ID }],
     }, async (world) => {
+      let textChunks = 0
+      const releaseTail = holdReplayChunks(world.scaffold.ctx, (_options, chunk) =>
+        chunk.type === 'text-delta' && ++textChunks === 12)
       const readyPath = join(world.scaffold.workspaceCwd, TOOL_READY_FILE)
       const releasePath = join(world.scaffold.workspaceCwd, TOOL_RELEASE_FILE)
       await openSeed(world.page, INPUTS_FIXTURE, INPUTS_FIXTURE.markers.assistant(INPUTS_FIXTURE.turns))
@@ -830,12 +838,14 @@ describe('web e2e: long Chat scroll contract', () => {
         await expectBottom(world.page)
         await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
         const chunksAtRepin = world.events.filter(event => event.type === 'assistant/chunk').length
+        releaseTail()
         await expect.poll(
           () => world.events.filter(event => event.type === 'assistant/chunk').length,
           { timeout: 15_000 },
         ).toBeGreaterThan(chunksAtRepin + 5)
         await expectBottom(world.page)
       } finally {
+        releaseTail()
         if (!released) await writeFile(releasePath, 'release\n').catch(() => {})
       }
 

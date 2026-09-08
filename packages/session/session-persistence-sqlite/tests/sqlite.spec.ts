@@ -445,7 +445,13 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    let db: DatabaseSync
+    try {
+      db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    } finally {
+      clock.mockRestore()
+    }
     expect(attempts).toBe(2)
     expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
     expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
@@ -503,14 +509,31 @@ describe('SessionPersistenceSqlite schema ownership', () => {
       attempts += 1
       return Object.assign(new Error('database is locked'), { errcode: 5 })
     })
-    await expect(openDatabase(
-      BusyDatabase,
-      await freshDbPath('dsh-sqlite-journal-paced-'),
-      'wal',
-      50,
-    )).rejects.toThrow('database is locked')
-    expect(attempts).toBeGreaterThan(1)
-    expect(attempts).toBeLessThanOrEqual(6)
+    const clock = vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(30)
+      .mockReturnValueOnce(30)
+      .mockReturnValueOnce(40)
+      .mockReturnValueOnce(40)
+      .mockReturnValue(50)
+    const started = Date.now()
+    try {
+      await expect(openDatabase(
+        BusyDatabase,
+        await freshDbPath('dsh-sqlite-journal-paced-'),
+        'wal',
+        50,
+      )).rejects.toThrow('database is locked')
+    } finally {
+      clock.mockRestore()
+    }
+    expect(attempts).toBe(5)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(40)
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {

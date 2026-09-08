@@ -102,6 +102,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await sessionRow.click()
     // Settled barrier: the newest recorded reply renders from the tail page.
     await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
     // The tail page is partial (56 messages > one 50-message page): the first
     // turns are NOT loaded, yet the strip already reports the whole log —
     // the sessionStats projection, not the window fold.

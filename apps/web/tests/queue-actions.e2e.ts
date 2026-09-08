@@ -95,6 +95,7 @@ describe('web e2e: queue row actions', () => {
     for (const text of [REMOVE, EDIT]) {
       await input.fill(text)
       await input.press('Enter')
+      await expect.poll(() => input.inputValue()).toBe('')
     }
     const queueHeader = page.getByRole('button', { name: '2 queued messages' })
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
@@ -112,23 +113,26 @@ describe('web e2e: queue row actions', () => {
     ).toBe(2)
 
     await page.setViewportSize({ width: 640, height: 1000 })
-    const queueBox = await page.locator('[data-queue-dock]').boundingBox()
-    const composerBox = await page.locator('[data-composer-card]').boundingBox()
-    expect(queueBox).not.toBeNull()
-    expect(composerBox).not.toBeNull()
-    expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
-    expect(queueBox!.x + queueBox!.width)
-      .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
-    const queueLeftInset = queueBox!.x - composerBox!.x
-    const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
-    const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
-      const style = getComputedStyle(element)
-      return {
-        dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
-      }
-    })
-    expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
-    expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
+    await expect.poll(async () => {
+      const queueBox = await page.locator('[data-queue-dock]').boundingBox()
+      const composerBox = await page.locator('[data-composer-card]').boundingBox()
+      expect(queueBox).not.toBeNull()
+      expect(composerBox).not.toBeNull()
+      expect(queueBox!.x).toBeGreaterThanOrEqual(composerBox!.x)
+      expect(queueBox!.x + queueBox!.width)
+        .toBeLessThanOrEqual(composerBox!.x + composerBox!.width)
+      const queueLeftInset = queueBox!.x - composerBox!.x
+      const queueRightInset = composerBox!.x + composerBox!.width - queueBox!.x - queueBox!.width
+      const composerMetrics = await page.locator('[data-composer-card]').evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          dockInset: Number.parseFloat(style.getPropertyValue('--dsh-composer-dock-inset')),
+        }
+      })
+      expect(queueLeftInset).toBeCloseTo(composerMetrics.dockInset, 1)
+      expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
+      return true
+    }).toBe(true)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
     const editRow = page.getByText(EDIT, { exact: true }).locator('..')
@@ -216,6 +220,7 @@ describe('web e2e: queue row actions', () => {
     for (const text of ['Layout queue first', 'Layout queue second']) {
       await input.fill(text)
       await input.press('Enter')
+      await expect.poll(() => input.inputValue()).toBe('')
     }
     const queueHeader = page.getByRole('button', { name: '2 queued messages' })
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
@@ -228,7 +233,7 @@ describe('web e2e: queue row actions', () => {
     )
     await compareOrRefreshGolden(LAYOUT_EXPECTED, layoutSnapshot, MODE)
 
-    const expectAlignedContextPanels = async () => {
+    const expectAlignedContextPanels = async () => expect.poll(async () => {
       const queuePanelBox = await page.locator('[data-queue-dock] > div').boundingBox()
       const todoBox = await page.locator('[data-testid="todo-panel"]').boundingBox()
       const goalBox = await page.locator('[data-goal-bar] > div').boundingBox()
@@ -241,7 +246,8 @@ describe('web e2e: queue row actions', () => {
       expect(todoBox!.x).toBeCloseTo(queuePanelBox!.x, 1)
       expect(todoBox!.width).toBeCloseTo(goalBox!.width, 1)
       expect(todoBox!.width).toBeCloseTo(queuePanelBox!.width, 1)
-    }
+      return true
+    }).toBe(true)
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
     await expectAlignedContextPanels()

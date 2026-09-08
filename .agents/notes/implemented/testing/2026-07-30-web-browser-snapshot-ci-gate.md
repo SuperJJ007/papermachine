@@ -20,7 +20,9 @@ CI's `scripts/run-web-snapshots.ts` first runs `hmr-live.e2e.ts` and `cordis-too
 
 For pull requests, the gate runs only in the Linux consumer job: these scenarios target POSIX, and the other PR jobs do not provision Chromium. The self-hosted default-branch Linux serial standby also includes the comparison, while the macOS and Windows serial jobs remain browser-free (there is no hosted Linux serial aggregate). A PR's `all checks passed` verdict already depends on the consumer job, so a browser compare failure blocks the merge without requiring a new branch-protection check name.
 
-Completed local replays measured the six-worker browser command at about 65–71 seconds. A twelve-worker comparison completed in about 50 seconds, so halving the browser worker budget adds about 15–20 seconds rather than doubling wall time. The gate scheduler starts browser snapshots as soon as `built-package-invariants` succeeds and runs independent gates concurrently, so it needs neither a dedicated job timeout nor a manual YAML ordering rule.
+Completed local replays measured the six-worker browser command at about 65–71 seconds. A twelve-worker comparison completed in about 50 seconds, so halving the browser worker budget adds about 15–20 seconds rather than doubling wall time. The gate scheduler starts browser snapshots after the other artifact consumers finish, so it needs neither a dedicated job timeout nor a manual YAML ordering rule.
+
+Browser scenarios coordinate transient states through the model-stream waterfall: replay chunks wait until queue admission, child navigation, or reader positioning reaches the state being asserted. Per-chunk pacing remains visual realism, never the deadline for a browser action. Responsive-layout checks wait for their original geometry constraints to hold after resizing; queue snapshots wait for both mailbox admission and composer clearing. Message-delivery tests accept either an immediate or deferred acknowledgement while requiring one durable delivery and an empty pending mailbox.
 
 ## Alternatives considered
 

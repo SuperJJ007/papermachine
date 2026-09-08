@@ -223,8 +223,9 @@ describe('web e2e: resident question composer round trip', () => {
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     // Golden of the answered transcript: the ask_user_question round trip
     // rendered as history (question tool row + DONE), composer takeover gone.
-    await page.locator('[data-conversation-scroll]').evaluate((element) => { element.scrollTop = element.scrollHeight })
-    await expect.poll(() => page.getByRole('button', { name: 'Back to bottom', exact: true }).count()).toBe(0)
+    const backToBottom = page.getByRole('button', { name: 'Back to bottom', exact: true })
+    if (await backToBottom.count() > 0) await backToBottom.click()
+    await expect.poll(() => backToBottom.count()).toBe(0)
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ANSWERED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])

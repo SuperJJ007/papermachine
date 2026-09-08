@@ -1092,11 +1092,12 @@ describe('KernelProcess', () => {
   it.skipIf(process.platform === 'win32')('treats an unparseable frame as fatal, ignores a second one already-faulted, and rejects a later execute with the same fault', async () => {
     const harness = await createHarness('kernel-garbage')
     const kernel = await startKernel(harness, 'python')
-    // double-garbage sends TWO unparseable lines for one RUN: the first sets
-    // protocolFault (rejecting this execute); the second's onFrameLine call
-    // must hit the already-faulted early return rather than double-fault.
+    const stream = capturedReadStreams.at(-1)
+    if (stream === undefined) throw new Error('no response-FIFO read stream was captured')
     await expect(kernel.execute(await prepareRun(harness.root, 'run-garbage', { action: 'double-garbage' })))
       .rejects.toThrow(KernelProtocolError)
+    // The OS may deliver only the first bad frame before teardown; explicitly deliver buffered late data.
+    stream.emit('data', 'THIS-IS-NOT-A-VALID-FRAME-LATE\n')
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
     await expect(kernel.execute(await prepareRun(harness.root, 'run-after-garbage', { status: 'ok' })))
       .rejects.toThrow(KernelProtocolError)

@@ -292,6 +292,7 @@ describe('web e2e: composer shortcut follows the swapped busy behavior', () => {
 
 describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
   let releaseStream = (): void => {}
+  let releaseQuestion = (): void => {}
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -308,6 +309,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       paceMs: REPLAY_PACE_MS,
     })
     releaseStream = holdReplayChunks(scaffold.ctx, () => true)
+    releaseQuestion = holdReplayChunks(scaffold.ctx, (_options, chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call')
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -320,6 +322,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
 
   afterAll(async () => {
     releaseStream()
+    releaseQuestion()
     await browser?.close()
     await scaffold?.close()
   })
@@ -362,6 +365,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ timeout: 10_000 })
     const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
+    releaseQuestion()
 
     // Answer the question; the step closes, the loop drains both steerings
     // into one next-step request, and the final reply obeys both markers.

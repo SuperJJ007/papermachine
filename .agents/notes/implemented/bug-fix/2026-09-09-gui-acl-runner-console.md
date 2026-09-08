@@ -10,7 +10,7 @@ The packaged Electron executable can run the ACL wrapper as Node without owning 
 
 ## Decision
 
-The runner establishes console ownership before creating restricted children. An existing console or pseudoconsole remains untouched. A consoleless runner allocates a console under its own token, hides its window, and restores its inherited standard handles. The process owns the console until exit. Allocation or handle-restoration failure prevents child creation and uses the existing runner failure diagnostic.
+The runner establishes console ownership before creating restricted children. An existing console or pseudoconsole remains untouched. Attachment is determined by `GetConsoleCP`, including windowless consoles where `GetConsoleWindow` returns null; a window handle alone cannot establish whether allocation is legal. A consoleless runner allocates a console under its own token, hides its window, and restores its inherited standard handles. The process owns the console until exit. Allocation or handle-restoration failure prevents child creation and uses the existing runner failure diagnostic.
 
 Child creation retains suspension and job assignment before execution. Token restrictions, grants, environment selection, inherited pipe bytes, and exit-code mirroring remain unchanged. The [restricted-token sandbox decision](../feature/2026-08-08-windows-acl-restricted-token-sandbox.md) still owns those security constraints; this note supplies its GUI startup prerequisite.
 

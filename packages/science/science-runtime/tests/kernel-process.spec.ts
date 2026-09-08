@@ -788,14 +788,23 @@ describe('KernelProcess', () => {
     // call (that requires the real process's own async exit to settle), so
     // both reach onFifoError's classification regardless of which one
     // failProtocol's own already-faulted guard later discards.
-    stream.emit('error', new Error('injected real FIFO stream error'))
+    stream.emit('error', Object.assign(new Error('injected real FIFO stream error'), { code: 'EIO' }))
     stream.emit('error', 'injected non-Error FIFO stream failure')
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'protocol' })
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32').each([true, false])('classifies a response reset by process exit evidence (process exits: %s)', async (exits) => {
+    const harness = await createHarness('kernel-response-reset')
+    const kernel = await startKernel(harness, 'python')
+    const stream = capturedReadStreams.at(-1)
+    if (stream === undefined) throw new Error('no response read stream was captured')
+    const request = await prepareRun(harness.root, 'reset-crash', { action: 'crash' })
+    stream.emit('error', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))
+    if (exits) await expect(kernel.execute(request)).rejects.toThrow(KernelExitedError)
+    await expect(kernel.exited).resolves.toMatchObject({ cause: exits ? 'crash' : 'protocol' })
+  })
+
+  // This fixture uses a POSIX FIFO reader; native TCP lifecycle coverage lives in kernel-set.spec.ts.
   it.skipIf(process.platform === 'win32')('ignores a response-FIFO stream error that arrives after the kernel already exited', async () => {
     const harness = await createHarness('kernel-fifo-error-after-exit')
     const kernel = await startKernel(harness, 'python')
@@ -841,6 +850,7 @@ describe('KernelProcess', () => {
       const endResult = kernel.end('test-teardown')
       stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
       await expect(endResult).resolves.toMatchObject({ quiescent: true })
+      await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
       await new Promise(resolve => setImmediate(resolve))
       expect(uncaught).not.toHaveBeenCalled()
     } finally {
@@ -1117,6 +1127,16 @@ describe('KernelProcess', () => {
   // POSIX-only fixture: createFakeInterpreterPrefix lays down
   // `<prefix>/bin/python` (or `Rscript`), a shape win32's
   // executable-layout lookup never finds.
+  it.skipIf(process.platform === 'win32')('rejects pending chart extraction as process exit when teardown closes its streams', async () => {
+    const harness = await createHarness('kernel-chart-teardown')
+    const kernel = await startKernel(harness, 'python')
+    const request = await prepareChartRequest(harness.root, 'chart-teardown', { testAction: 'hang' })
+    const pending = kernel.extractCharts(request)
+    const assertion = expect(pending).rejects.toThrow(/exited \(commanded\) before CHART_EXTRACT/)
+    await kernel.end('test-teardown')
+    await assertion
+  })
+
   it.skipIf(process.platform === 'win32')('fails an in-flight execute distinctly when the kernel exits uncommanded', async () => {
     const harness = await createHarness('kernel-crash')
     const kernel = await startKernel(harness, 'python')

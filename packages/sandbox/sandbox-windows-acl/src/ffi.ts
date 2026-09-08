@@ -133,6 +133,7 @@ export interface Win32Bindings {
   // runner can clean up grants after the child exits.
   setConsoleCtrlHandler(handler: null, add: number): number
   getConsoleWindow(): NativePtr | null
+  getConsoleCP(): number
   allocConsole(): number
   showWindow(window: NativePtr, command: number): number
   setStdHandle(which: number, handle: NativePtr): number
@@ -432,6 +433,7 @@ function bindings(): Win32Bindings {
     terminateProcess: bind(kernel32, 'TerminateProcess', 'int', [PVOID, 'uint32']),
     setConsoleCtrlHandler: bind(kernel32, 'SetConsoleCtrlHandler', 'int', [PVOID, 'int']),
     getConsoleWindow: bind(kernel32, 'GetConsoleWindow', PVOID, []),
+    getConsoleCP: bind(kernel32, 'GetConsoleCP', 'uint32', []),
     allocConsole: bind(kernel32, 'AllocConsole', 'int', []),
     showWindow: bind(user32, 'ShowWindow', 'int', [PVOID, 'int']),
     setStdHandle: bind(kernel32, 'SetStdHandle', 'int', ['int', PVOID]),

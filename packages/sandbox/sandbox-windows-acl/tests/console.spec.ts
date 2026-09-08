@@ -8,7 +8,8 @@ import { STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE } from '../src/wi
 function consoleApi() {
   const window = 100n as NativePtr
   const api = {
-    getConsoleWindow: vi.fn<Win32Bindings['getConsoleWindow']>().mockReturnValueOnce(null).mockReturnValue(window),
+    getConsoleWindow: vi.fn<Win32Bindings['getConsoleWindow']>().mockReturnValue(window),
+    getConsoleCP: vi.fn(() => 65001).mockReturnValueOnce(0),
     allocConsole: vi.fn(() => 1),
     showWindow: vi.fn(() => 0),
     getStdHandle: vi.fn((which: number) => BigInt(-which) as NativePtr),
@@ -24,6 +25,7 @@ describe('ensureRunnerConsole', () => {
   it('preserves an existing console without changing its window or standard handles', () => {
     const { api, bindings, window } = consoleApi()
     api.getConsoleWindow.mockReset().mockReturnValue(window)
+    api.getConsoleCP.mockReset().mockReturnValue(65001)
     ensureRunnerConsole(bindings)
     expect(api.allocConsole).not.toHaveBeenCalled()
     expect(api.showWindow).not.toHaveBeenCalled()
@@ -58,8 +60,8 @@ describe('ensureRunnerConsole', () => {
 
   it('rejects an allocation that did not establish console ownership', () => {
     const { api, bindings } = consoleApi()
-    api.getConsoleWindow.mockReset().mockReturnValue(null)
-    expect(() => { ensureRunnerConsole(bindings) }).toThrow('without an associated console window')
+    api.getConsoleCP.mockReset().mockReturnValue(0)
+    expect(() => { ensureRunnerConsole(bindings) }).toThrow('without an associated console')
     expect(api.setStdHandle).not.toHaveBeenCalled()
   })
 
@@ -67,5 +69,22 @@ describe('ensureRunnerConsole', () => {
     const { api, bindings } = consoleApi()
     api.setStdHandle.mockReturnValue(0)
     expect(() => { ensureRunnerConsole(bindings) }).toThrow('SetStdHandle')
+  })
+
+  it('preserves attachment to an existing windowless console', () => {
+    const { api, bindings } = consoleApi()
+    api.getConsoleWindow.mockReturnValue(null)
+    api.getConsoleCP.mockReset().mockReturnValue(65001)
+    ensureRunnerConsole(bindings)
+    expect(api.allocConsole).not.toHaveBeenCalled()
+    expect(api.setStdHandle).not.toHaveBeenCalled()
+  })
+
+  it('restores standard handles when a newly allocated console has no window', () => {
+    const { api, bindings } = consoleApi()
+    api.getConsoleWindow.mockReturnValue(null)
+    ensureRunnerConsole(bindings)
+    expect(api.showWindow).not.toHaveBeenCalled()
+    expect(api.setStdHandle).toHaveBeenCalledTimes(3)
   })
 })

@@ -674,6 +674,11 @@ export class KernelProcess {
   }
 
   private onFifoError(error: unknown): void {
+    // Windows can report process death as a TCP reset rather than clean EOF.
+    if (error instanceof Error && 'code' in error && error.code === 'ECONNRESET') {
+      void this.onFifoEnd()
+      return
+    }
     this.onStreamError('kernel response channel', error)
   }
 
@@ -690,7 +695,7 @@ export class KernelProcess {
   }
 
   private onStreamError(source: string, error: unknown): void {
-    if (this.exitSettled) return
+    if (this.exitSettled || this.commandedReason !== undefined) return
     this.failProtocol(error instanceof Error
       ? new KernelProtocolError(`science-runtime: ${source} failed: ${error.message}`)
       : new KernelProtocolError(`science-runtime: ${source} failed`))

@@ -732,16 +732,21 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-run-spawn-cancel')
     await bindFakePython(harness.runtime, session)
+    const spawned = Promise.withResolvers<undefined>()
     installTestKernelSet(harness.ctx, harness.runtime, {
       assetsRoot: KERNEL_ASSETS_NO_READY_ROOT,
       kernelStartTimeoutMs: 30_000,
+      subprocess: wrapKernelSpawn(harness.ctx.subprocess, (handle) => {
+        spawned.resolve(undefined)
+        return handle
+      }),
     })
     const controller = new AbortController()
     const pending = harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session), signal: controller.signal,
     })
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await Promise.race([spawned.promise, pending])
     const abortedAt = Date.now()
     controller.abort()
     await expect(pending).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })

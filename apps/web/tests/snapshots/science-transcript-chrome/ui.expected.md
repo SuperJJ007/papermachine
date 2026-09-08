@@ -32,4 +32,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} Latest kernel records python · epoch 1 · started
+- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} Latest kernel records python · epoch 1 · interrupted

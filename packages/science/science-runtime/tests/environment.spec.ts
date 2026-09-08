@@ -320,9 +320,6 @@ describe('ScienceRuntime.bindEnvironment', () => {
     'fails loudly when a probe provider is %s', bindWithBrokenProbe,
   )
 
-  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
-  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
-  // test depends on can never actually run there.
   it.skipIf(process.platform === 'win32')('uses the Darwin locale allowlist for a host-local direct probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-darwin-locale-'))
     roots.push(root)
@@ -761,10 +758,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(spaced.subprocess.specs).toEqual([])
   })
 
-  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
-  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
-  // test depends on can never actually run there.
-  it.skipIf(process.platform === 'win32')('keeps distinct configured Python and R prefixes distinct, and records an escaping executable as invalid without a probe', async () => {
+  it('keeps distinct configured Python and R prefixes distinct, and records an escaping executable as invalid without a probe', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-distinct-'))
     const escapingRoot = mkdtempSync(join(process.cwd(), '.science-runtime-escaping-'))
     roots.push(root, escapingRoot)
@@ -788,7 +782,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const escapingPrefix = createFakePythonPrefix(escapingRoot)
     const candidate = fakeInterpreterPath(escapingPrefix, 'python')
     unlinkSync(candidate)
-    symlinkSync('/bin/sh', candidate)
+    symlinkSync(process.execPath, candidate)
     const escaping = await createFastRuntimeHarness(escapingRoot, { escaping: { pythonPrefix: escapingPrefix } })
     contexts.push(escaping.ctx)
     const escapingSession = createScienceSession(escaping.ctx, 'science-bind-escaping')
@@ -909,10 +903,30 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(opens).toBe(2)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix/createFakeRPrefix lay down `<prefix>/bin/python` or
-  // `<prefix>/bin/Rscript`, a shape win32's executable-layout lookup never finds, so the probe this
-  // test depends on can never actually run there.
-  it.skipIf(process.platform === 'win32')('records static invalid observations without probing malformed history or interpreter entries', async () => {
+  it('rejects a POSIX interpreter without execute bits before creating probe scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-static-mode-policy-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const executable = join(prefix, 'bin', 'python')
+    writeFileSync(executable, '')
+    chmodSync(executable, 0o600)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-mode-policy')
+    const scratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      await expect(observeProfile({ subprocess: harness.subprocess, sandbox: harness.sandbox,
+        sessionScratch: scratch, sessionId: session.id, signal: new AbortController().signal,
+        packagesMaxEntries: 2_000, packagesMaxBytes: 65_536, minimumEnforcement: 'full',
+      }, { id: ScienceEnvironmentProfileId('fake'), pythonPrefix: prefix })).resolves.toMatchObject({
+        python: { binding: { capability: 'invalid', reason: expect.stringContaining('regular executable') } },
+      })
+      expect(harness.subprocess.specs).toEqual([])
+    } finally { platform.mockRestore() }
+  })
+
+  it('records static invalid observations without probing malformed history or interpreter entries', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-static-invalid-'))
     roots.push(root)
     const historyDirectory = createFakePythonPrefix(join(root, 'history-directory'))
@@ -921,7 +935,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const missingExecutable = createFakePythonPrefix(join(root, 'missing-executable'))
     unlinkSync(fakeInterpreterPath(missingExecutable, 'python'))
     const nonExecutable = createFakePythonPrefix(join(root, 'non-executable'))
-    chmodSync(fakeInterpreterPath(nonExecutable, 'python'), 0o600)
+    if (process.platform === 'win32') {
+      rmSync(fakeInterpreterPath(nonExecutable, 'python'))
+      mkdirSync(fakeInterpreterPath(nonExecutable, 'python'))
+    } else chmodSync(fakeInterpreterPath(nonExecutable, 'python'), 0o600)
     const nonDirectoryPrefix = join(root, 'prefix-file')
     writeFileSync(nonDirectoryPrefix, 'not a prefix')
     const loopingPrefix = join(root, 'looping-prefix')
@@ -960,7 +977,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(nonExecutableResult.python).toMatchObject({ capability: 'invalid' })
     expect(nonExecutableResult.python?.reason).toMatch(/regular executable/)
     expect(file.python).toMatchObject({ capability: 'invalid' })
-    expect(file.python?.reason).toMatch(/conda-meta\/history/)
+    expect(file.python?.reason).toMatch(/conda-meta[\\/]history/)
     expect(harness.subprocess.specs).toEqual([])
   })
 

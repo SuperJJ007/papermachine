@@ -24,6 +24,7 @@
 
 import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { createInterface } from 'node:readline'
+import { createConnection } from 'node:net'
 
 const PROTOCOL_VERSION = 2
 
@@ -33,18 +34,23 @@ if (fifoPath === undefined) {
   process.exit(2)
 }
 
-let fifoFd = openSync(fifoPath, 'w')
+const tcp = fifoPath.startsWith('tcp:') ? fifoPath.split(':') : undefined
+const socket = tcp === undefined ? undefined : createConnection({ host: tcp[1], port: Number(tcp[2]) })
+const fifoFd = socket === undefined ? openSync(fifoPath, 'w') : undefined
+if (socket !== undefined) socket.write(`${tcp[3]}\n`)
 let fifoClosed = false
 
 function send(frame, terminator = '\n') {
   if (fifoClosed) return
-  writeSync(fifoFd, `${frame}${terminator}`)
+  if (socket === undefined) writeSync(fifoFd, `${frame}${terminator}`)
+  else socket.write(`${frame}${terminator}`)
 }
 
 function closeFifo() {
   if (fifoClosed) return
   fifoClosed = true
-  closeSync(fifoFd)
+  if (socket === undefined) closeSync(fifoFd)
+  else socket.end()
 }
 
 send(`READY\t${PROTOCOL_VERSION}\t${process.pid}`)

@@ -7,6 +7,7 @@
 // Usage: node fake-kernel-driver-bad-ready.mjs <fifoPath>
 
 import { openSync, writeSync } from 'node:fs'
+import { createConnection } from 'node:net'
 
 const fifoPath = process.argv[2]
 if (fifoPath === undefined) {
@@ -14,8 +15,13 @@ if (fifoPath === undefined) {
   process.exit(2)
 }
 
-const fifoFd = openSync(fifoPath, 'w')
-writeSync(fifoFd, 'NOT-A-READY-FRAME\n')
+if (fifoPath.startsWith('tcp:')) {
+  const [, host, port, token] = fifoPath.split(':')
+  createConnection({ host, port: Number(port) }).write(`${token}\nNOT-A-READY-FRAME\n`)
+} else {
+  const fifoFd = openSync(fifoPath, 'w')
+  writeSync(fifoFd, 'NOT-A-READY-FRAME\n')
+}
 
 // Stays alive so the malformed-line reaction, not a process exit, is what
 // KernelProcess.start() observes; terminate() ends it during cleanup.

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SandboxProvider, { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -113,16 +114,10 @@ describe('confineInterpreterArgv', () => {
 })
 
 describe('interpreterPathEnv', () => {
-  // Mocking process.platform only redirects interpreterPathEnv's own
-  // `if (process.platform === 'win32')` branch; the POSIX branch still calls
-  // node:path's real `join()`, which node fixes to the host's actual
-  // platform at module load and cannot be redirected by this mock — so on a
-  // real win32 host this always joins with `\`, never the POSIX `/` this
-  // assertion requires.
-  it.skipIf(process.platform === 'win32')('joins the prefix bin with the fixed POSIX suffix on darwin/linux', () => {
+  it('joins the prefix bin with the fixed POSIX suffix on darwin/linux', () => {
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     try {
-      expect(interpreterPathEnv('/prefix')).toBe('/prefix/bin:/usr/bin:/bin')
+      expect(interpreterPathEnv('/prefix')).toBe(`${join('/prefix', 'bin')}:/usr/bin:/bin`)
     } finally {
       platform.mockRestore()
     }
@@ -187,6 +182,20 @@ describe('readCaptureTail', () => {
 })
 
 describe('quiesce', () => {
+  it('retains eventual exit evidence when neither bounded observation proves cleanup', async () => {
+    const proof = Promise.withResolvers<boolean>()
+    const terminate = vi.fn()
+    const waitForExit = vi.fn((signal?: AbortSignal) => signal === undefined ? proof.promise : Promise.resolve(false))
+    // The provider intentionally withholds tree-exit evidence after the termination request.
+    const result = await quiesce({ terminate, waitForExit } as unknown as SubprocessHandle)
+    expect(result.quiescent).toBe(false)
+    expect(terminate).toHaveBeenCalledOnce()
+    if (result.quiescent) throw new Error('cleanup was reported without exit evidence')
+    proof.resolve(true)
+    await expect(result.eventualQuiescence).resolves.toBe(true)
+    expect(waitForExit).toHaveBeenCalledTimes(3)
+  })
+
   it('waits again after a forced termination and proves quiescence within the second grace window', async () => {
     const ctx = new Context()
     contexts.push(ctx)

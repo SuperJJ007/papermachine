@@ -51,10 +51,7 @@ async function ready(id: string) {
   return { ...harness, root, session }
 }
 
-// POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
-// shape win32's executable-layout lookup never finds, so environment binding
-// can never reach 'applied' here.
-describe.skipIf(process.platform === 'win32')('ScienceRuntime post-start failure classification', () => {
+describe('ScienceRuntime post-start failure classification', () => {
   it('rejects done as TERMINAL_COMMIT_FAILED when a live Session cannot commit its terminal fact', async () => {
     const harness = await ready('science-terminal-commit')
     const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {

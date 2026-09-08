@@ -33,4 +33,4 @@
   - text: Select model
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps Tool call {{duration}} r · epoch 1 · interrupted
+- text: 1 turns · 1 steps Tool call {{duration}} Latest kernel records r · epoch 1 · interrupted

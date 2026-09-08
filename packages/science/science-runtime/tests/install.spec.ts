@@ -178,12 +178,14 @@ describe('staticMicromamba', () => {
   })
 
   it('rejects a non-executable regular file on POSIX', async () => {
-    if (process.platform === 'win32') return
     const root = makeRoot()
     const notExecutable = join(root, 'not-executable')
     writeFileSync(notExecutable, '#!/bin/sh\nexit 0\n')
     chmodSync(notExecutable, 0o600)
-    await expect(staticMicromamba(notExecutable)).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      await expect(staticMicromamba(notExecutable)).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+    } finally { platform.mockRestore() }
   })
 
   it('rejects a directory as not a regular executable', async () => {

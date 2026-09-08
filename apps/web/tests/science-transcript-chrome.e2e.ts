@@ -36,7 +36,7 @@ const DONE = 'SCIENCE_CHROME_DONE'
 /** One completed Science turn: a context-injection message ahead of a timed assistant reply. */
 function scienceFixture(): string {
   const session = Session.create(SessionId('science-transcript-chrome-source'))
-  const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
+  const eventTimeOrigin = Date.now() - 60_000
   session.append('turn/start', { turn: 1 })
   session.append('science/mode-bound', {
     version: 1,
@@ -116,6 +116,8 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, scienceFixture(), SEED_ID, 'science')
+    const cold = await scaffold.ctx.sessionProjectionCache.coldSnapshot(SessionId(SEED_ID))
+    expect(cold.values.science).toMatchObject({ kernels: [{ state: 'started' }] })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -153,7 +155,7 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     expect(await centerCol.getByRole('button', { name: 'Branch into a new conversation' }).count()).toBe(1)
 
     expect(await centerCol.getByText('Latest kernel records', { exact: true }).count()).toBe(1)
-    expect(await centerCol.getByText('python · epoch 1 · started', { exact: true }).count()).toBe(1)
+    await expect.poll(() => centerCol.getByText('python · epoch 1 · interrupted', { exact: true }).count()).toBe(1)
     expect(await centerCol.getByText(/epoch 1 · live/).count()).toBe(0)
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))

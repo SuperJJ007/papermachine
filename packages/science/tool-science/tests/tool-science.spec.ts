@@ -54,7 +54,7 @@ import {
 import { scienceArtifactEdits } from '../src/artifact-schema.ts'
 import type { ResolveArtifactStoreFacts, ScienceArtifactStoreFacts } from '../src/artifact-schema.ts'
 import { stateValueFromProjection } from '../src/state.ts'
-import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
+import { createFakePythonPrefix, fakeInterpreterPath, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
 // `setup()` mounts a real LocalSubprocessRuntime/LocalSandboxProvider and the
 // run_python/run_r/get_science_state cases spawn a real kernel subprocess
@@ -313,6 +313,7 @@ function makeMicromamba(root: string): string {
   const executable = join(root, 'fake-micromamba')
   writeFileSync(executable, '#!/bin/sh\nexit 0\n')
   chmodSync(executable, 0o755)
+  if (process.platform === 'win32') writeFileSync(`${executable}.science-test.mjs`, 'process.exit(0)\n')
   return executable
 }
 
@@ -1159,6 +1160,10 @@ describe('kernelRestartReason', () => {
 })
 
 describe('closedKernelFacts', () => {
+  it('does not treat a started record as a closed kernel', () => {
+    expect(closedKernelFacts({ kernelEpoch: 1, language: 'python', state: 'started',
+      environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 200 })).toBeUndefined()
+  })
   it('returns undefined for an exited kernel fact missing reason/startedAt — a value the fold never commits but ScienceKernelState\'s plain optional fields do not forbid at the type level', () => {
     const kernel: ScienceKernel = {
       kernelEpoch: 1,
@@ -2281,7 +2286,7 @@ describe('install_science_packages', () => {
     expect(result.content.some(block => block.type === 'text' && block.text.includes('configured micromamba executable path'))).toBe(true)
   })
 
-  it.skipIf(process.platform === 'win32')('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
+  it('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-success')
     const before = replayScience(session.events)?.environment
@@ -2293,26 +2298,40 @@ describe('install_science_packages', () => {
     // micromamba actually writing the requested package (mirrors
     // examples/headless-agent's own science fixture, prepareScienceFixture).
     const pandasMarker = join(root, 'fake-conda', 'conda-meta', 'pandas-2.2.0.json')
-    writeFileSync(join(root, 'fake-conda', 'bin', 'python'), `#!/bin/sh
-case " $* " in
-  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
-  *" -m "*)
-    if [ -f ${JSON.stringify(pandasMarker)} ]; then
-      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"},{"name":"pandas","version":"2.2.0"}]'
-    else
-      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
-    fi
-    ;;
-  *" -c "*) printf 'dsh-科学-✓' ;;
-  *)
-    while [ "$#" -gt 2 ]; do shift; done
-    exec "${process.execPath}" "$1" "$2"
-    ;;
-esac
+    if (process.platform === 'win32') {
+      writeFileSync(`${fakeInterpreterPath(join(root, 'fake-conda'), 'python')}.science-test.mjs`, `
+import { existsSync } from 'node:fs'
+const args = process.argv.slice(2)
+if (args.includes('--version')) process.stdout.write('Fake Python 3.13.5')
+else if (args.includes('-m')) {
+  const packages = [{name:'pip',version:'24.0'},{name:'numpy',version:'1.26.4'}]
+  if (existsSync(${JSON.stringify(pandasMarker)})) packages.push({name:'pandas',version:'2.2.0'})
+  process.stdout.write(JSON.stringify(packages))
+} else process.stdout.write('dsh-科学-✓')
 `)
-    chmodSync(join(root, 'fake-conda', 'bin', 'python'), 0o700)
-    writeFileSync(join(root, 'fake-micromamba'), `#!/bin/sh\ntouch ${JSON.stringify(pandasMarker)}\nexit 0\n`)
-    chmodSync(join(root, 'fake-micromamba'), 0o755)
+      writeFileSync(join(root, 'fake-micromamba.science-test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pandasMarker)}, '{}')\n`)
+    } else {
+      writeFileSync(join(root, 'fake-conda', 'bin', 'python'), `#!/bin/sh
+  case " $* " in
+    *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+    *" -m "*)
+      if [ -f ${JSON.stringify(pandasMarker)} ]; then
+        printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"},{"name":"pandas","version":"2.2.0"}]'
+      else
+        printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
+      fi
+      ;;
+    *" -c "*) printf 'dsh-科学-✓' ;;
+    *)
+      while [ "$#" -gt 2 ]; do shift; done
+      exec "${process.execPath}" "$1" "$2"
+      ;;
+  esac
+  `)
+      chmodSync(join(root, 'fake-conda', 'bin', 'python'), 0o700)
+      writeFileSync(join(root, 'fake-micromamba'), `#!/bin/sh\ntouch ${JSON.stringify(pandasMarker)}\nexit 0\n`)
+      chmodSync(join(root, 'fake-micromamba'), 0o755)
+    }
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('install-success'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['pandas'] },
@@ -2327,7 +2346,7 @@ esac
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
   })
 
-  it.skipIf(process.platform === 'win32')('reports a redundant install as unchanged, appending no revision', async () => {
+  it('reports a redundant install as unchanged, appending no revision', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-redundant')
     const before = replayScience(session.events)?.environment

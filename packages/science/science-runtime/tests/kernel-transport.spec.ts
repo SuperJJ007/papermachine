@@ -52,6 +52,26 @@ describe('selectKernelTransportKind', () => {
 })
 
 describe('LoopbackTcpTransport', () => {
+  it.each([false, true])('owns socket errors during startup cleanup after token handoff: %s', async (handedOff) => {
+    const transport = await LoopbackTcpTransport.create()
+    transports.push(transport)
+    const { port, token } = parseEndpoint(transport.endpointArg)
+    const server = (transport as unknown as { server: Server }).server
+    const accepted = new Promise<Socket>((resolve) => { server.once('connection', resolve) })
+    const client = connect(port, '127.0.0.1')
+    sockets.push(client)
+    const peer = await accepted
+    if (handedOff) {
+      const connected = transport.connect(neverExitingHandle(), 5_000, undefined)
+      client.write(`${token}\nREADY\t2\t123\n`)
+      await connected
+    }
+    expect(() => peer.emit('error', Object.assign(new Error('reset during startup cleanup'), { code: 'ECONNRESET' })))
+      .not.toThrow()
+    expect(peer.destroyed).toBe(true)
+    await transport.endStartFailure()
+  })
+
   it('accepts a correctly tokened connection and forwards frames after the token line', async () => {
     const transport = await LoopbackTcpTransport.create()
     transports.push(transport)

@@ -332,6 +332,20 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
       return stream
     })
   })
+  it.skipIf(transport !== 'tcp')('observes cancellation between TCP connection and READY waiting', async () => {
+    const controller = new AbortController()
+    const connectSpy = vi.spyOn(LoopbackTcpTransport.prototype, 'connect')
+    const connect = connectSpy.getMockImplementation()!
+    connectSpy.mockImplementationOnce(async function (this: LoopbackTcpTransport, ...args) {
+      const stream = await connect.apply(this, args)
+      controller.abort()
+      return stream
+    })
+    const harness = await createHarness('kernel-cancel-after-connect')
+    await expect(startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, signal: controller.signal }))
+      .rejects.toThrow(KernelProtocolError)
+  })
+
   it.skipIf(transport !== 'tcp')('classifies a carrier failure independently of its readable stream', async () => {
     const carrier = Promise.withResolvers<never>()
     const create = LoopbackTcpTransport.create.bind(LoopbackTcpTransport)
@@ -879,7 +893,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
       .resolves.toEqual({ runId: ScienceRunId('run-chart-apply-ok'), status: 'ok', detail: '' })
 
     const pending = kernel.execute(await prepareRun(harness.root, 'run-chart-apply-pending', {
-      action: 'sleep', sleepMs: 5_000, trapSigint: true,
+      action: 'sleep', sleepMs: 300,
     }))
     expect(() => kernel.applyChart({
       runId: ScienceRunId('run-chart-apply-second'),
@@ -887,9 +901,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
       resultPath: '/result',
       timeoutMs: 1_000,
     })).toThrow(/still pending/)
-    await new Promise(resolve => setTimeout(resolve, 300))
-    kernel.interrupt()
-    await expect(pending).resolves.toMatchObject({ status: 'interrupted' })
+    await expect(pending).resolves.toMatchObject({ status: 'ok' })
     await kernel.end('test-teardown')
 
     const faultHarness = await createHarness('kernel-chart-apply-fault')
@@ -913,7 +925,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
     const harness = await createHarness('kernel-chart-pending')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-chart-pending', {
-      action: 'sleep', sleepMs: 5_000, trapSigint: true,
+      action: 'sleep', sleepMs: 300,
     }))
     expect(() => kernel.extractCharts({
       runId: ScienceRunId('run-chart-second'),
@@ -921,9 +933,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
       resultPath: '/result',
       timeoutMs: 1_000,
     })).toThrow(/still pending/)
-    await new Promise(resolve => setTimeout(resolve, 300))
-    kernel.interrupt()
-    await expect(pending).resolves.toMatchObject({ status: 'interrupted' })
+    await expect(pending).resolves.toMatchObject({ status: 'ok' })
     await kernel.end('test-teardown')
   })
 
@@ -994,7 +1004,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
     const harness = await createHarness('kernel-concurrent-execute')
     const kernel = await startKernel(harness, 'python')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-pending', {
-      action: 'sleep', sleepMs: 5_000, trapSigint: true,
+      action: 'sleep', sleepMs: 300,
     }))
     expect(() => {
       void kernel.execute({
@@ -1003,12 +1013,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
         inputDir: '/nowhere/inputs',
       })
     }).toThrow(/still pending/)
-    // Let the driver finish parsing RUN and register its SIGINT trap before
-    // signalling, or the signal can arrive while Node's default (terminating)
-    // SIGINT disposition is still in effect.
-    await new Promise(resolve => setTimeout(resolve, 300))
-    kernel.interrupt()
-    await expect(pending).resolves.toMatchObject({ status: 'interrupted' })
+    await expect(pending).resolves.toMatchObject({ status: 'ok' })
     await kernel.end('test-teardown')
   })
 

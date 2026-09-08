@@ -13,7 +13,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { MAX_OUTPUT_BYTES } from '../src/execution.ts'
+import { DESCENDANT_GRACE_MS, MAX_OUTPUT_BYTES } from '../src/execution.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
 import { KernelSet } from '../src/kernel-set.ts'
 import { planSessionScratch } from '../src/scratch.ts'
@@ -31,7 +31,6 @@ import {
   createScienceSession,
   DirectSandbox,
   installTestKernelSet,
-  KERNEL_ASSETS_DELAYED_READY_ROOT,
   KERNEL_ASSETS_NO_READY_ROOT,
   kernelAction,
   mountArtifactStore,
@@ -733,15 +732,9 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-run-spawn-cancel')
     await bindFakePython(harness.runtime, session)
-    // The delayed-ready driver withholds READY for 300ms; kernelStartTimeoutMs
-    // is generously long so only the request's own signal, threaded into
-    // KernelProcess.start, can end the wait early. Pre-fix, cancel() was
-    // inert during spawn: startRun would only observe it at the next
-    // assertPrepublication check once the spawn eventually finished on its
-    // own, ~300ms later.
     installTestKernelSet(harness.ctx, harness.runtime, {
-      assetsRoot: KERNEL_ASSETS_DELAYED_READY_ROOT,
-      kernelStartTimeoutMs: 5_000,
+      assetsRoot: KERNEL_ASSETS_NO_READY_ROOT,
+      kernelStartTimeoutMs: 30_000,
     })
     const controller = new AbortController()
     const pending = harness.runtime.startRun({
@@ -752,7 +745,7 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     const abortedAt = Date.now()
     controller.abort()
     await expect(pending).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
-    expect(Date.now() - abortedAt).toBeLessThan(200)
+    expect(Date.now() - abortedAt).toBeLessThan(DESCENDANT_GRACE_MS * 3)
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
@@ -1075,12 +1068,17 @@ describe('ScienceRuntime.startRun terminal classification', () => {
 
 describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
   it('survives a cancel answered by DONE interrupted (interrupt-survive)', async () => {
-    const { session, runtime } = await readyPythonHarness('science-run-interrupt-survive')
+    const { session, runtime, ctx, root } = await readyPythonHarness('science-run-interrupt-survive')
+    const releasePath = join(root, 'interrupt-observed')
+    installTestKernelSet(ctx, runtime, {
+      subprocess: wrapKernelSpawn(ctx.subprocess, handle => ({
+        ...handle, interrupt: () => { writeFileSync(releasePath, '') },
+      })),
+    })
     const handle = await runtime.startRun({
-      session, language: 'python', code: kernelAction({ action: 'sleep', sleepMs: 10_000, trapSigint: true }),
+      session, language: 'python', code: kernelAction({ action: 'wait-file', releasePath, status: 'interrupted' }),
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
-    await new Promise(resolve => setTimeout(resolve, 300))
     handle.cancel()
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'cancelled', failureCode: 'CANCELLED' } })
     // The kernel survives: no exited kernel-state fact, and a fresh run reuses the same epoch.

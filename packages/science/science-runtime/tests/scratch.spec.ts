@@ -36,6 +36,7 @@ import {
 } from '../src/scratch.ts'
 
 const fsFault = vi.hoisted(() => ({
+  directorySyncError: undefined as unknown, directorySyncs: 0, directoryCloses: 0,
   emulatePosixModes: false, modePath: '', mode: 0,
   mkdir: '', mkdirError: undefined as unknown, lstat: '', lstatError: undefined as unknown,
   lstatRemaining: Number.POSITIVE_INFINITY, rm: '', rmError: undefined as unknown,
@@ -72,6 +73,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       flags: Parameters<typeof original.open>[1],
       mode?: Parameters<typeof original.open>[2],
     ) => {
+      if (fsFault.emulatePosixModes && flags === 0 && lstatSync(path).isDirectory()) {
+        return {
+          sync: async () => {
+            fsFault.directorySyncs += 1
+            if (fsFault.directorySyncError !== undefined) throw fsFault.directorySyncError
+          },
+          close: async () => { fsFault.directoryCloses += 1 },
+        } as unknown as Awaited<ReturnType<typeof original.open>>
+      }
       if (path === fsFault.ownerOpen && fsFault.ownerOpenError !== undefined) throw fsFault.ownerOpenError
       if (path === fsFault.ownerOpen && flags === 'wx') {
         fsFault.ownerOpenCalls += 1
@@ -87,6 +97,9 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  fsFault.directorySyncError = undefined
+  fsFault.directorySyncs = 0
+  fsFault.directoryCloses = 0
   fsFault.emulatePosixModes = false
   fsFault.modePath = ''
   fsFault.mkdir = ''
@@ -417,6 +430,22 @@ describe('Science Runtime private scratch', () => {
     await expect(ensureSessionScratch(markerHome, markerSession)).rejects.toThrow(/marker access failure/)
     fsFault.lstatError = 'injected non-Error marker failure'
     await expect(ensureSessionScratch(markerHome, markerSession)).rejects.toBe('injected non-Error marker failure')
+  })
+
+  it.each([false, true])('closes the POSIX directory durability handle when sync fails: %s', async (fails) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-directory-sync-'))
+    roots.push(root)
+    const session = await sessionWithId('science-directory-sync')
+    fsFault.emulatePosixModes = true
+    fsFault.directorySyncError = fails ? new Error('injected directory sync failure') : undefined
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const created = ensureSessionScratch(join(root, 'dsh-home'), session)
+      if (fails) await expect(created).rejects.toBe(fsFault.directorySyncError)
+      else await created
+      expect(fsFault.directorySyncs).toBeGreaterThan(0)
+      expect(fsFault.directoryCloses).toBe(fsFault.directorySyncs)
+    } finally { platform.mockRestore() }
   })
 
   it('applies POSIX privacy and executable policy to recorded filesystem modes on every host', async () => {

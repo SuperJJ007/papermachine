@@ -32,7 +32,6 @@ import type { ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/ke
 
 /** Full-featured fake kernel-wire-protocol driver pair (sleep/trapSigint included) named for `resolveKernelDriverPath`. */
 const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-full/', import.meta.url))
-/** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
 /**
  * READY-handshake deadline for tests that spawn a real fake-driver kernel. The
  * full suite runs these files in parallel with hundreds of others, and the
@@ -41,9 +40,8 @@ const KERNEL_ASSETS_FULL_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-ass
  * kernel that never answers still fails inside the test, not the runner.
  */
 export const TEST_KERNEL_START_TIMEOUT_MS = 20_000
+/** Fake driver pair that never sends READY, for spawn/READY-deadline failure coverage. */
 export const KERNEL_ASSETS_NO_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-no-ready/', import.meta.url))
-/** Fake driver pair that delays READY, for spawn-in-flight coverage (see `kernel-set.spec.ts`'s own use of the same fixture). */
-export const KERNEL_ASSETS_DELAYED_READY_ROOT = fileURLToPath(new URL('./fixtures/kernel-set-assets-delayed-ready/', import.meta.url))
 
 /**
  * Mount a real project artifact store at the same Harness home a test's

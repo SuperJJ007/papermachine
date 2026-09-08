@@ -9,11 +9,10 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessOutputRead, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, meetsMinimumEnforcement } from './execution.ts'
+import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, confineRequiringEnforcement } from './execution.ts'
 import type { OperationControl } from './lifecycle.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type { InstallScienceEnvironmentPackagesStatus, ScienceRunOutput } from './types.ts'
@@ -199,9 +198,8 @@ function installConfinementPolicy(session: Session, canonicalPrefix: string): Sa
  * environment it observes or runs against. An install's entire purpose is
  * writing into that same prefix, so this never calls `assertPrefixReadOnly`
  * — the one deliberate asymmetry against that shared helper. Every other
- * safety property still holds: the same {@link meetsMinimumEnforcement}
- * comparison every other confinement site in this Runtime uses gates the
- * result, and an unavailable sandbox maps to the same
+ * safety property still holds: the shared {@link confineRequiringEnforcement}
+ * helper validates the reported enforcement, and an unavailable sandbox maps to the same
  * `CONFINEMENT_UNAVAILABLE` code.
  * @param sandbox - sandbox provider performing the confinement.
  * @param session - exact live Session that owns the confinement policy.
@@ -222,22 +220,7 @@ export function confineInstallArgv(
   argv: readonly string[],
   minimumEnforcement: SandboxEnforcement,
 ): ConfinedArgv {
-  let confined: ConfinedArgv
-  try {
-    confined = sandbox.confine(argv, installConfinementPolicy(session, canonicalPrefix))
-  } catch (error) {
-    if (error instanceof SandboxUnavailableError) {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science requires an available sandbox', { cause: error })
-    }
-    throw error
-  }
-  if (!meetsMinimumEnforcement(confined.enforcement, minimumEnforcement)) {
-    throw new ScienceRuntimeError(
-      'CONFINEMENT_UNAVAILABLE',
-      `Science requires at least ${minimumEnforcement} sandbox enforcement; the sandbox reported ${confined.enforcement}`,
-    )
-  }
-  return confined
+  return confineRequiringEnforcement(sandbox, installConfinementPolicy(session, canonicalPrefix), argv, minimumEnforcement)
 }
 
 /** Convert a batch (`readFrom(0)` after settlement) subprocess output read into the durable `ScienceRunOutput` shape. */

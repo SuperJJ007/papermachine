@@ -1,6 +1,8 @@
 /** Persistent PTY session over the subprocess seam's terminal primitive. */
 
 import { Buffer } from 'node:buffer'
+import xterm from '@xterm/headless'
+import type { Terminal as HeadlessTerminal } from '@xterm/headless'
 import type {
   SubprocessOutcome,
   SubprocessTerminalForeground,
@@ -175,6 +177,7 @@ export class LocalPtySession implements TerminalBackendSession {
   private activeWrite: Promise<boolean> | undefined
   private pollingReady: LocalSendOperation | undefined
   private polling = false
+  private readonly emulator: HeadlessTerminal
   private promptSeen = false
   private promptTextSeen = false
   private promptTail = ''
@@ -189,6 +192,13 @@ export class LocalPtySession implements TerminalBackendSession {
     private readonly terminal: SubprocessTerminalHandle,
     private readonly config: ResolvedConfig,
   ) {
+    this.emulator = new xterm.Terminal({ rows: config.rows, cols: config.cols, scrollback: 0 })
+    this.emulator.onData((response) => {
+      void terminal.write(response).catch((error: unknown) => {
+        // Teardown can close the PTY while a protocol response is being written.
+        if (!this.closing) this.onTransportFailure(error)
+      })
+    })
     this.pid = terminal.pid
     this.sanitizer = new TerminalSanitizer(config.maxReadBytes)
     this.scrollback = new BoundedTextBuffer(config.scrollbackMaxBytes, config.scrollbackLines)
@@ -378,6 +388,7 @@ export class LocalPtySession implements TerminalBackendSession {
   }
 
   private onData(data: string): void {
+    if (!this.closing) this.emulator.write(data)
     const sanitized = this.sanitizer.push(data)
     this.appendOutput(sanitized.text)
     if (sanitized.prompt) {
@@ -549,6 +560,7 @@ export class LocalPtySession implements TerminalBackendSession {
     // it as session_exit below, so an in-flight send is never mis-settled as
     // stdin_read/inferred_idle/timeout during the grace period.
     this.stopPolling()
+    this.emulator.dispose()
     try {
       await this.terminal.terminate()
     } catch (error: unknown) {

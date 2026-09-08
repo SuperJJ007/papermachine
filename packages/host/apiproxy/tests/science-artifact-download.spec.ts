@@ -117,7 +117,7 @@ describe('GET /api/science/artifact/:sessionId/:versionId', () => {
     expect(response.headers.get('content-disposition')).toContain('chart-v3.png')
     const body = new Uint8Array(await response.arrayBuffer())
     expect(body.byteLength).toBe(png.byteLength)
-    expect(body).toEqual(new Uint8Array(png))
+    expect(Buffer.from(body).equals(png)).toBe(true)
   })
 
   it('RFC 5987-encodes a non-ASCII filename carrying an attr-char-excluded mark, with an ASCII-safe plain fallback', async () => {

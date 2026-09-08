@@ -275,6 +275,26 @@ function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Pro
 /** Fake interpreter probe behavior that exercises lossless UTF-8 acceptance. */
 export type FakeUtf8Probe = 'valid' | 'invalid'
 
+/** Write a Windows interpreter marker and a Node probe/kernel adapter owned by the fake sandbox runner. */
+function writeWindowsFakeInterpreter(prefix: string, language: 'python' | 'r', utf8Probe: FakeUtf8Probe): void {
+  const executable = language === 'python' ? join(prefix, 'python.exe') : join(prefix, 'Scripts', 'Rscript.exe')
+  mkdirSync(language === 'python' ? prefix : join(prefix, 'Scripts'), { recursive: true })
+  writeFileSync(executable, 'Science test interpreter; executed by the fake sandbox runner.\n')
+  writeFileSync(`${executable}.science-test.mjs`, `import { createRequire } from 'node:module'
+const args = process.argv.slice(2)
+if (process.env.SCIENCE_RUNTIME_LEAK) process.exit(91)
+if (args.includes('--version')) process.stdout.write(${JSON.stringify(language === 'python' ? 'Fake Python 3.13.5' : 'Fake R 4.5.0')})
+else if (args.includes('-m')) process.stdout.write('[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]')
+else if (args.some(arg => arg.includes('installed.packages'))) process.stdout.write('base\\t4.5.0\\nutils\\t4.5.0\\n')
+else if (args.includes('-c') || args.includes('-e')) process.stdout.write(${utf8Probe === 'valid' ? JSON.stringify('dsh-科学-✓') : 'Buffer.from([255])'})
+else {
+  const [driver, fifo] = args.slice(-2)
+  process.argv = [process.execPath, driver, fifo]
+  createRequire(import.meta.url)(driver)
+}
+`)
+}
+
 /**
  * Return a fake Python prefix whose executable implements frozen probes
  * (`bindEnvironment`'s `--version`/`-c`/`-m`) and, for every other invocation
@@ -290,6 +310,10 @@ export function createFakePythonPrefix(root: string, utf8Probe: FakeUtf8Probe = 
   mkdirSync(join(prefix, 'bin'), { recursive: true })
   mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
   writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-13 <==\n+python-3.13.5\n')
+  if (process.platform === 'win32') {
+    writeWindowsFakeInterpreter(prefix, 'python', utf8Probe)
+    return prefix
+  }
   const executable = join(prefix, 'bin', 'python')
   const utf8Output = utf8Probe === 'valid' ? "printf 'dsh-科学-✓'" : "printf '\\377'"
   writeFileSync(executable, `#!/bin/sh
@@ -321,6 +345,10 @@ export function createFakeRPrefix(root: string, prefix = join(root, 'fake-r-cond
   mkdirSync(join(prefix, 'bin'), { recursive: true })
   mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
   writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-13 <==\n+r-base-4.5.0\n')
+  if (process.platform === 'win32') {
+    writeWindowsFakeInterpreter(prefix, 'r', 'valid')
+    return prefix
+  }
   const executable = join(prefix, 'bin', 'Rscript')
   writeFileSync(executable, `#!/bin/sh
 case " $* " in
@@ -374,13 +402,17 @@ export function realHistorySha256(prefix: string): string {
 export function createFakeSandboxRunner(root: string): string[] {
   const runner = join(root, 'fake-sandbox-runner.mjs')
   writeFileSync(runner, `import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 const separator = process.argv.indexOf('--')
 if (separator === -1) {
   process.stderr.write('science-runtime fake runner did not receive a command separator\\n')
   process.exit(127)
 }
 const [command, ...args] = process.argv.slice(separator + 1)
-const child = spawn(command, args, { stdio: 'inherit' })
+const adapter = command + '.science-test.mjs'
+const child = process.platform === 'win32' && existsSync(adapter)
+  ? spawn(process.execPath, [adapter, ...args], { stdio: 'inherit' })
+  : spawn(command, args, { stdio: 'inherit' })
 process.on('SIGINT', () => child.kill('SIGINT'))
 child.on('error', (error) => {
   process.stderr.write('science-runtime fake runner failed to spawn ' + command + ': ' + String(error) + '\\n')

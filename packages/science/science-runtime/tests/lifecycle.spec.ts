@@ -17,6 +17,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { ScienceRuntimeError } from '../src/index.ts'
 import type ScienceRuntime from '../src/index.ts'
 import { LeaseRegistry, OperationControl } from '../src/lifecycle.ts'
+import { KernelProcess } from '../src/kernel-process.ts'
 import {
   attachScienceSession,
   authorizePythonRun,
@@ -168,17 +169,29 @@ describe('ScienceRuntime lifecycle ownership', () => {
     })
 
     const rejected = expect(running.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
-    attached.detach()
-    await rejected
-    const successor = attachScienceSession(ctx, 'science-same-id', attached.session.events)
-    const successorAuthorization = authorizePythonRun(successor.session, 'science-same-id-successor')
-    await expect(runtime.startRun({
-      session: successor.session,
-      language: 'python',
-      code: kernelAction({ status: 'ok' }),
-      ...successorAuthorization,
-      signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+    const teardown = Promise.withResolvers<undefined>()
+    const end = KernelProcess.prototype.end
+    const heldEnd = vi.spyOn(KernelProcess.prototype, 'end').mockImplementation(async function (this: KernelProcess, reason) {
+      const result = await end.call(this, reason)
+      await teardown.promise
+      return result
+    })
+    try {
+      attached.detach()
+      await rejected
+      const successor = attachScienceSession(ctx, 'science-same-id', attached.session.events)
+      const successorAuthorization = authorizePythonRun(successor.session, 'science-same-id-successor')
+      await expect(runtime.startRun({
+        session: successor.session,
+        language: 'python',
+        code: kernelAction({ status: 'ok' }),
+        ...successorAuthorization,
+        signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+    } finally {
+      teardown.resolve(undefined)
+      heldEnd.mockRestore()
+    }
   })
 
   // readyKernelHarness binds the fake Python profile via createFakePythonPrefix,

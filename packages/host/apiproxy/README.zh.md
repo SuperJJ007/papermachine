@@ -56,7 +56,7 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 陈旧的续传会丢弃该提供方尝试中的所有部分结果、去重条目和游标，然后依据最初从列表推导的可见性快照从第一页重新开始，但不会丢弃探测所得的提供方页面大小。上限探测与陈旧重试共用最多 100 次提供方调用的限制（因此最多检查 2,000 个命中）；如果某页命中数超过其请求的上限、续传游标重复，或用尽该调用预算后结果流仍未耗尽，都会直接返回 `internal` 业务错误，不返回部分结果。载体请求信号可取消持久化列表枚举、冷会话摘要收集和每一次搜索调用；即使同时收到上限拒绝或陈旧拒绝，也以取消为准。部署若未挂载该服务，或索引／查询故障无法恢复，也会返回 `internal` 业务错误，以便客户端保留仅基于元数据的匹配项。
 
-目录选择委托给组合的 `ctx.directoryPicker` 后端（[目录选择 seam](../directory-picker/README.zh.md)）；调用组合能力 kind 之外的方法会以 `directory-picker-unavailable` 失败（客户端不需要广播——组合的选择器包自己的 client half 渲染匹配的交互）。在 `native` 下，`host.pickDirectory` 打开一个原生选择器并返回选中路径（取消为 `null`）；该方法需等待用户完成操作，不使用默认的 30 秒一元调用超时，而调用方与连接的中止仍会传播至原生进程。在 `browse` 下，`host.listDirectory` 返回一个按名称排序的目录层级，携带面包屑祖先链、`home` 锚点与宿主判定的 `hidden` 标志（不带路径即家目录），`host.createDirectory` 创建一个经校验的子段；后端的类型化失败 1:1 映射为 `directory-unreadable`／`directory-exists`／`directory-create-failed` 错误码。浏览器载体的前缀级信任栅栏（dsh-client-connection）像覆盖其他所有 `/api` 请求一样覆盖上述全部方法。
+目录选择委托给组合的 `ctx.directoryPicker` 后端（[目录选择 seam](../directory-picker/README.zh.md)）；调用组合能力 kind 之外的方法会以 `directory-picker-unavailable` 失败（客户端不需要广播——组合的选择器包自己的 client half 渲染匹配的交互）。在 `native` 下，`host.pickDirectory` 打开一个原生选择器并返回选中路径（取消为 `null`）；该方法需等待用户完成操作，不使用默认的 120 秒一元调用超时，而调用方与连接的中止仍会传播至原生进程。在 `browse` 下，`host.listDirectory` 返回一个按名称排序的目录层级，携带面包屑祖先链、`home` 锚点与宿主判定的 `hidden` 标志（不带路径即家目录），`host.createDirectory` 创建一个经校验的子段；后端的类型化失败 1:1 映射为 `directory-unreadable`／`directory-exists`／`directory-create-failed` 错误码。浏览器载体的前缀级信任栅栏（dsh-client-connection）像覆盖其他所有 `/api` 请求一样覆盖上述全部方法。
 
 `host.openPath` 会用操作系统的默认应用打开一个文件系统路径（macOS 为 `open`，Windows 为 `Invoke-Item`，桌面 Linux 为 `xdg-open`）。对于 `.html`、`.htm`、`.xhtml` 与 `.svg`，macOS 和桌面 Linux 会优先使用能够确定的默认浏览器；无法确定时回退到上述应用交接。WSL 会通过 `wslpath -w` 转换每个 Linux 路径，并将所得 Windows/UNC 路径交给 Windows `Invoke-Item`，浏览器可渲染的文档也不例外，而非假定存在 Linux 桌面文件关联。`host.describe.home` 是宿主账户的家目录。Web 客户端用它把 POSIX 家目录路径显示为 `~`；Windows 值仍会上报，但不会缩写。`host.describe.canOpenPath` 会宣告这次交接能否抵达用户可见的桌面：网关显式配置的 `nativeOpen` 优先，注入的 opener 按定义可用，否则平台检测接受 macOS、Windows、WSL 或带 display 的 Linux，并拒绝 headless／容器 Linux。浏览器载体对其施加与 `host.pickDirectory` 相同的回环、同源限制；客户端会组合这两个事实后再呈现原生操作。
 
@@ -70,7 +70,7 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 载体层（`/client` + 根路径）
 
-`AbstractApiClient` 持有全部协议不变量：签发 rpcId、包装／解包信封、Zod 解析、SSE 帧解码、一元请求超时，以及按微任务批处理的信封观测（`subscribeEnvelopes`）；平台子类只提供 `doFetch` 传输环节。`InProcessApiClient` 以 `toFetchHandler(api)` 为基础，仍是同构接点：它运行完整的协议序列化与校验路径而不经过网络，供需要该路径的调用方和载体测试使用。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
+`AbstractApiClient` 持有全部协议不变量：签发 rpcId、包装／解包信封、Zod 解析、SSE 帧解码、一元请求超时，以及按微任务批处理的信封观测（`subscribeEnvelopes`）；平台子类只提供 `doFetch` 传输环节。`InProcessApiClient` 以 `toFetchHandler(api)` 为基础，仍是同构接点：它运行完整的协议序列化与校验路径而不经过网络，供需要该路径的调用方和载体测试使用。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。 有界一元请求默认允许 120 秒，包含冷会话检查和预设组合；嵌入客户端可通过构造参数 `timeoutMs` 调整。调用方取消在整个请求期间持续生效。
 
 ## 模型体验
 

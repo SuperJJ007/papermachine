@@ -139,6 +139,8 @@ describe('web e2e: queue row actions', () => {
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
+    await page.getByRole('button', { name: 'Save queued message' }).hover()
+    await page.getByRole('tooltip', { name: 'Save queued message' }).waitFor()
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await page.getByRole('button', { name: 'Save queued message' }).click()

@@ -118,6 +118,7 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
 
     const centerCol = page.locator('[class*="centerCol"]')
     // The durable content the row would otherwise carry never reaches the flow.

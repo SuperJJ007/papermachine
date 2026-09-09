@@ -254,6 +254,8 @@ class SingleExeBuild {
       'deploy',
       '--legacy',
       '--prod',
+      // Production closures omit patched development tools; matching runtime patches still apply and must succeed.
+      '--config.allow-unused-patches=true',
       '--config.node-linker=hoisted',
       '--config.auto-install-peers=false',
       '--config.link-workspace-packages=true',

@@ -1,0 +1,19 @@
+.pages {
+  display: flex;
+  align-items: stretch;
+}
+
+.pages button {
+  padding: 0 10px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.pages button[aria-selected='true'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}

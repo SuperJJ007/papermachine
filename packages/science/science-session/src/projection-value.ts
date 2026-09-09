@@ -1,0 +1,310 @@
+/** Derivation of the client-safe Science projection from strict replay state. */
+
+import { assertNever } from '@deepseek-ai/dsh-util-values'
+import type { ScienceFoldState } from './fold-state.ts'
+import type {
+  ScienceClientArtifactVersion,
+  ScienceClientEnvironmentBinding,
+  ScienceClientInterpreterBinding,
+  ScienceClientKernel,
+  ScienceClientOutcomePublication,
+  ScienceClientProjection,
+  ScienceClientRun,
+  ScienceArtifactVersion,
+  ScienceEnvironmentBinding,
+  ScienceInterpreterBinding,
+  ScienceKernel,
+  ScienceOutcomePublication,
+  ScienceProjection,
+  ScienceProjectionMetrics,
+  ScienceRun,
+} from './types.ts'
+
+interface ClientTraceCoordinate {
+  readonly turn: number
+  readonly step: number
+}
+
+/** Stable client-visible prefix of a full environment fingerprint. */
+const fingerprintPreview = (fingerprint: string): string => fingerprint.slice(0, 12)
+
+/** Keep a subprocess label only when it cannot carry a Host path. */
+const pathFreeLabel = (label: string | undefined): string | undefined =>
+  label !== undefined && !/[\\/]/.test(label) ? label : undefined
+
+/**
+ * Remove paths, executable identity, digests, and free-text failure from an
+ * interpreter binding. Package names and versions carry no Host path, so
+ * `packages` and `packagesTruncated` pass through unredacted; only the
+ * inventory digest is truncated to a preview.
+ */
+function clientInterpreter(binding: ScienceInterpreterBinding): ScienceClientInterpreterBinding {
+  const languageVersion = pathFreeLabel(binding.languageVersion)
+  return {
+    language: binding.language,
+    capability: binding.capability,
+    ...languageVersion === undefined ? {} : { languageVersion },
+    ...binding.bindingFingerprint === undefined
+      ? {}
+      : { fingerprintPreview: fingerprintPreview(binding.bindingFingerprint) },
+    ...binding.packages === undefined ? {} : { packages: binding.packages },
+    ...binding.packagesTruncated === undefined ? {} : { packagesTruncated: binding.packagesTruncated },
+    ...binding.packagesSha256 === undefined
+      ? {}
+      : { packagesSha256Preview: fingerprintPreview(binding.packagesSha256) },
+  }
+}
+
+/** Remove Host-owned fields from an environment revision. */
+function clientEnvironment(environment: ScienceEnvironmentBinding): ScienceClientEnvironmentBinding {
+  return {
+    revision: environment.revision,
+    profileId: environment.profileId,
+    configuredAt: environment.configuredAt,
+    validatedAt: environment.validatedAt,
+    status: environment.status,
+    ...environment.python === undefined ? {} : { python: clientInterpreter(environment.python) },
+    ...environment.r === undefined ? {} : { r: clientInterpreter(environment.r) },
+    ...environment.sandboxEnforcement === undefined ? {} : { sandboxEnforcement: environment.sandboxEnforcement },
+  }
+}
+
+/**
+ * Remove the full environment fingerprint from one kernel lifecycle fact or
+ * its end-seed `interrupted` derivation. Neither durable shape carries a
+ * Host path, so the fingerprint preview is the only redaction needed.
+ */
+function clientKernel(kernel: ScienceKernel): ScienceClientKernel {
+  const common = {
+    kernelEpoch: kernel.kernelEpoch,
+    language: kernel.language,
+    environmentRevision: kernel.environmentRevision,
+    environmentFingerprintPreview: fingerprintPreview(kernel.environmentFingerprint),
+  }
+  switch (kernel.state) {
+    case 'started':
+    case 'exited':
+      return {
+        ...common,
+        state: kernel.state,
+        ...kernel.reason === undefined ? {} : { reason: kernel.reason },
+        ...kernel.startedAt === undefined ? {} : { startedAt: kernel.startedAt },
+        at: kernel.at,
+      }
+    case 'interrupted':
+      return {
+        ...common,
+        state: kernel.state,
+        startedAt: kernel.startedAt,
+        finishedAt: kernel.finishedAt,
+        interruptedAtSeq: kernel.interruptedAtSeq,
+      }
+    /* v8 ignore next -- closed-union exhaustiveness guard */
+    default:
+      return assertNever(kernel)
+  }
+}
+
+/**
+ * Remove scratch key, run directory reference, full environment fingerprint,
+ * and free-text failure fields from one run. `toolCallId` and
+ * `requestHeaderSeq` pass through: the browser already holds both as
+ * session-log identities, and they let the client join a run to its
+ * authorizing transcript call. `codeSha256` passes through whole (not
+ * truncated like the environment fingerprint): it is a digest over source
+ * text the same transcript call already restates verbatim once resolved, so
+ * it carries no Host-infrastructure fact, and provenance needs the durable
+ * anchor to be exact.
+ */
+function clientRun(run: ScienceRun, coordinate?: ClientTraceCoordinate): ScienceClientRun {
+  const common = {
+    runId: run.runId,
+    language: run.language,
+    toolCallId: run.toolCallId,
+    ...coordinate,
+    requestHeaderSeq: run.requestHeaderSeq,
+    environmentRevision: run.environmentRevision,
+    environmentFingerprintPreview: fingerprintPreview(run.environmentFingerprint),
+    startedAt: run.startedAt,
+    codeSha256: run.codeSha256,
+    ...run.inputs === undefined ? {} : { inputs: run.inputs },
+    kernelEpoch: run.kernelEpoch,
+  }
+  if (run.status === 'running') return { ...common, status: run.status }
+  if (run.status === 'interrupted') {
+    return {
+      ...common,
+      status: run.status,
+      finishedAt: run.finishedAt,
+      interruptedAtSeq: run.interruptedAtSeq,
+    }
+  }
+  return {
+    ...common,
+    status: run.status,
+    finishedAt: run.finishedAt,
+    stdoutBytes: run.stdoutBytes,
+    stderrBytes: run.stderrBytes,
+    stdoutTruncated: run.stdoutTruncated,
+    stderrTruncated: run.stderrTruncated,
+    ...run.failureCode === undefined ? {} : { failureCode: run.failureCode },
+    ...run.outputDegraded === undefined ? {} : { outputDegraded: run.outputDegraded },
+  }
+}
+
+/**
+ * Cache of {@link buildClientArtifact} results keyed by the source artifact
+ * version object. The fold state clones its `artifacts` array on every
+ * transition (`fold-state.ts`) but never mutates an unchanged version in
+ * place, so a version's source object stays reference-stable across
+ * projections until it is superseded by a metadata-curation snapshot at the
+ * same ordinal. Caching on that identity keeps `toClientScienceProjection`
+ * returning the same client object for the same version across the frequent
+ * re-projections that occur while a session streams, instead of rebuilding
+ * one every emission — the client's per-version load effects key on this
+ * returned identity.
+ */
+const clientArtifactCache = new WeakMap<ScienceArtifactVersion, {
+  readonly coordinate: ClientTraceCoordinate | undefined
+  readonly value: ScienceClientArtifactVersion
+}>()
+
+/** Memoized `buildClientArtifact`, stable per source artifact version object. */
+function clientArtifact(
+  artifact: ScienceArtifactVersion,
+  coordinate?: ClientTraceCoordinate,
+): ScienceClientArtifactVersion {
+  const cached = clientArtifactCache.get(artifact)
+  if (cached !== undefined && cached.coordinate?.turn === coordinate?.turn
+    && cached.coordinate?.step === coordinate?.step) return cached.value
+  const result = buildClientArtifact(artifact, coordinate)
+  clientArtifactCache.set(artifact, { coordinate, value: result })
+  return result
+}
+
+/**
+ * Copy one artifact version's reference and presentation-snapshot fields
+ * through unchanged — this event already carries nothing but browser-safe
+ * facts: the store version reference and the title/caption the model or user
+ * saw when the event committed. `projectId` is dropped: content reads are
+ * session-addressed, so the client never needs the store's project
+ * coordinate.
+ */
+function buildClientArtifact(
+  artifact: ScienceArtifactVersion,
+  coordinate?: ClientTraceCoordinate,
+): ScienceClientArtifactVersion {
+  return {
+    artifactId: artifact.artifactId,
+    logicalName: artifact.logicalName,
+    version: artifact.version,
+    title: artifact.title,
+    ...artifact.caption === undefined ? {} : { caption: artifact.caption },
+    versionId: artifact.versionId,
+    sha256: artifact.sha256,
+    seenAt: artifact.seenAt,
+    ...coordinate,
+  }
+}
+
+/** Remove authorizing request facts from one Outcome publication. */
+function clientOutcome(outcome: ScienceOutcomePublication): ScienceClientOutcomePublication {
+  return {
+    revision: outcome.revision,
+    title: outcome.title,
+    summaryMarkdown: outcome.summaryMarkdown,
+    evidence: outcome.evidence,
+    publishedAt: outcome.publishedAt,
+    environmentRevisions: outcome.environmentRevisions,
+  }
+}
+
+/**
+ * Derive stable projection counters from whole-value collections.
+ * @param runs - projected run history.
+ * @param kernels - projected kernel history.
+ * @param artifacts - projected artifact-version history.
+ * @param outcomeRevision - latest Outcome revision, or zero.
+ * @returns counters derived from the supplied values.
+ */
+export function scienceProjectionMetrics(
+  runs: readonly ScienceRun[],
+  kernels: readonly ScienceKernel[],
+  artifacts: readonly ScienceArtifactVersion[],
+  outcomeRevision: number,
+): ScienceProjectionMetrics {
+  return {
+    runCount: runs.length,
+    successfulRunCount: runs.filter(run => run.status === 'success').length,
+    artifactCount: new Set(artifacts.map(artifact => artifact.artifactId)).size,
+    artifactVersionCount: artifacts.length,
+    kernelCount: kernels.length,
+    outcomeRevision,
+  }
+}
+
+/**
+ * Derive the public value from one accepted strict fold accumulator.
+ * @param state - accepted strict replay state.
+ * @returns the public projection, or `null` before mode binding.
+ */
+export function projectScienceFold(state: ScienceFoldState): ScienceProjection | null {
+  if (state.mode === undefined || state.lastScienceEventSeq === undefined) return null
+  const outcome = state.outcomes.at(-1) ?? null
+  return {
+    mode: state.mode,
+    environment: state.environments.at(-1) ?? null,
+    runs: state.runs,
+    kernels: state.kernels,
+    artifacts: state.artifacts,
+    trace: {
+      turns: state.turns,
+      calls: state.toolCalls,
+      artifacts: state.artifactFacts.map(fact => ({
+        artifactId: fact.artifactId as ScienceArtifactVersion['artifactId'],
+        version: fact.version,
+        ...fact.turn === undefined || fact.step === undefined ? {} : { turn: fact.turn, step: fact.step },
+      })),
+    },
+    outcome,
+    metrics: scienceProjectionMetrics(state.runs, state.kernels, state.artifacts, outcome?.revision ?? 0),
+    lastScienceEventSeq: state.lastScienceEventSeq,
+  }
+}
+
+/**
+ * Remove Host-only provenance and authorization fields from a strict replay value.
+ * @param projection - complete Host-side replay value.
+ * @returns the browser-safe Session projection, or `null` before mode binding.
+ */
+export function toClientScienceProjection(projection: ScienceProjection | null): ScienceClientProjection | null {
+  if (projection === null) return null
+  const runCoordinates = new Map(projection.trace.calls.map(call => [call.callId, { turn: call.turn, step: call.step }]))
+  const artifactCoordinates = new Map(projection.trace.artifacts.map(fact => [
+    `${fact.artifactId}@${String(fact.version)}`,
+    fact.turn === undefined || fact.step === undefined ? undefined : { turn: fact.turn, step: fact.step },
+  ]))
+  return {
+    mode: projection.mode,
+    environment: projection.environment === null ? null : clientEnvironment(projection.environment),
+    runs: projection.runs.map(run => clientRun(run, runCoordinates.get(run.toolCallId))),
+    kernels: projection.kernels.map(clientKernel),
+    artifacts: projection.artifacts.map(artifact => clientArtifact(
+      artifact,
+      artifactCoordinates.get(`${artifact.artifactId}@${String(artifact.version)}`),
+    )),
+    trace: { turns: projection.trace.turns, calls: projection.trace.calls },
+    outcome: projection.outcome === null ? null : clientOutcome(projection.outcome),
+    metrics: projection.metrics,
+    lastScienceEventSeq: projection.lastScienceEventSeq,
+  }
+}
+
+/**
+ * Derive the browser-safe projection from one accepted strict fold.
+ * @param state - accepted strict replay state.
+ * @returns the client projection, or `null` before mode binding.
+ */
+export function projectScienceClientFold(state: ScienceFoldState): ScienceClientProjection | null {
+  return toClientScienceProjection(projectScienceFold(state))
+}

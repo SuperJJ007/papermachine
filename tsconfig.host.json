@@ -129,6 +129,13 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
+    { "path": "packages/bundle/science-app" },
+    {"path": "packages/science/science-session"},
+    {"path": "packages/science/science-runtime"},
+    {"path": "packages/science/science-artifact-store"},
+    {"path": "packages/science/tool-science"},
+    {"path": "packages/session/session-attachment-index"},
+    {"path": "packages/util/byte-size"},
     { "path": "./vendor/cosmokit" },
     { "path": "./vendor/schemastery" },
     { "path": "./vendor/cordis" },

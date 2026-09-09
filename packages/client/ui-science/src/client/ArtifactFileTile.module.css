@@ -1,0 +1,38 @@
+/* Non-image artifact thumbnail: fixed 64px square matching MessageImage's
+   own `tile` variant grid cell. */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tile svg {
+  width: 56px;
+  height: 40px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.tile[data-kind='chart'] rect {
+  fill: var(--dsw-alias-state-business-primary);
+  stroke: none;
+}
+
+.ext {
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}

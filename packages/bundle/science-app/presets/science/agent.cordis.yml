@@ -1,0 +1,3 @@
+# FIXME(replant): P2 installs the restricted Science preset here.
+- id: science-replant-pending
+  name: '@deepseek-ai/dsh-science-app/pending'

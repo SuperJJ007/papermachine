@@ -1,0 +1,42 @@
+- insert:
+    - id: science-app
+      name: '@deepseek-ai/dsh-science-app'
+    - id: ui-brand-papermachine
+      name: '@deepseek-ai/dsh-client-ui-brand-papermachine'
+    # FIXME(replant): P2 validates these Host entries before enabling them.
+    - id: session-attachment-index
+      name: '@deepseek-ai/dsh-session-attachment-index'
+      disabled: true
+    - id: science-session
+      name: '@deepseek-ai/dsh-science-session'
+      disabled: true
+    - id: science-artifact-store
+      name: '@deepseek-ai/dsh-science-artifact-store'
+      disabled: true
+    - id: science-runtime
+      name: '@deepseek-ai/dsh-science-runtime/with-settings'
+      disabled: true
+      config:
+        profiles: {}
+    - id: science-edit-service
+      name: '@deepseek-ai/dsh-tool-science/edit-service'
+      disabled: true
+    # FIXME(replant): P4 replaces the removed Detail/runtime integrations.
+    - id: ui-science
+      name: '@deepseek-ai/dsh-client-ui-science'
+      disabled: true
+      config:
+        toggleScope: global
+- id: agent-presets
+  inject: [sciencePresetRoot]
+  config:
+    default: science
+    roots:
+      - path: !!js sciencePresetRoot
+        trust: system
+- id: ui-agent-preset
+  disabled: true
+- id: ui-brand-official
+  disabled: true
+- id: hmr
+  disabled: true

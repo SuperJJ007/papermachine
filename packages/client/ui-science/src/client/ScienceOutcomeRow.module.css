@@ -1,0 +1,120 @@
+/* Outcome toolview: title/revision header, Markdown summary, and a labeled evidence list. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.leading {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.title {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.status {
+  flex: none;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.card[data-state='error'] .status {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.summary {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.evidenceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.evidenceLabel {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidenceItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.chartMissing {
+  color: var(--dsw-alias-label-caption);
+  font-style: italic;
+}
+
+.fallbackText {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.card[data-state='error'] .fallbackText {
+  color: var(--dsw-alias-state-error-primary);
+}

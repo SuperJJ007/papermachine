@@ -652,6 +652,118 @@ Types: [ScheduleChange](subsystems/schedule.md)
 
 Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
 
+### `science/*`
+
+<a id="scienceartifact-note-added--log-only"></a>
+
+#### `science/artifact-note-added` — log-only
+
+```ts persistence-catalog
+/**
+ * Adds a user-only artifact note that older readers may skip.
+ * @param artifactId - Logical artifact that owns the note.
+ * @param artifactVersion - Version visible when the note was added.
+ * @param text - Plain user-authored note text.
+ * @param createdAt - Epoch milliseconds when the note committed.
+ */
+'science/artifact-note-added': ScienceArtifactNoteAddedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:92`](../packages/science/science-session/src/domain.ts)
+
+<a id="scienceartifact-note-removed--log-only"></a>
+
+#### `science/artifact-note-removed` — log-only
+
+```ts persistence-catalog
+/**
+ * Removes one prior user-only artifact note that older readers may skip.
+ * @param artifactId - Logical artifact that owns the note.
+ * @param noteSeq - Sequence of the note-add event being removed.
+ * @param removedAt - Epoch milliseconds when the removal committed.
+ */
+'science/artifact-note-removed': ScienceArtifactNoteRemovedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:99`](../packages/science/science-session/src/domain.ts)
+
+<a id="scienceartifact-saved--log-only"></a>
+
+#### `science/artifact-saved` — log-only
+
+```ts persistence-catalog
+/** Records one immutable Science artifact version by project-store reference. */
+'science/artifact-saved': ScienceArtifactSavedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:84`](../packages/science/science-session/src/domain.ts)
+
+<a id="scienceenvironment-bound--log-only"></a>
+
+#### `science/environment-bound` — log-only
+
+```ts persistence-catalog
+/** Records one validated whole-value Science environment revision. */
+'science/environment-bound': ScienceEnvironmentBoundEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:78`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencekernel-state--log-only"></a>
+
+#### `science/kernel-state` — log-only
+
+```ts persistence-catalog
+/** Records one whole-value persistent Science kernel lifecycle transition. */
+'science/kernel-state': ScienceKernelStateEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:103`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencemode-bound--log-only"></a>
+
+#### `science/mode-bound` — log-only
+
+```ts persistence-catalog
+/** Binds this session once to the durable Science mode contract. */
+'science/mode-bound': ScienceModeBoundEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:76`](../packages/science/science-session/src/domain.ts)
+
+<a id="scienceoutcome-published--log-only"></a>
+
+#### `science/outcome-published` — log-only
+
+```ts persistence-catalog
+/** Publishes one whole-value Science outcome revision. */
+'science/outcome-published': ScienceOutcomePublishedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:101`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencerun-finished--log-only"></a>
+
+#### `science/run-finished` — log-only
+
+```ts persistence-catalog
+/** Records one whole-value Science run terminal state. */
+'science/run-finished': ScienceRunFinishedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:82`](../packages/science/science-session/src/domain.ts)
+
+<a id="sciencerun-started--log-only"></a>
+
+#### `science/run-started` — log-only
+
+```ts persistence-catalog
+/** Records one whole-value Science run start. */
+'science/run-started': ScienceRunStartedEvent
+```
+
+Source: [`packages/science/science-session/src/domain.ts:80`](../packages/science/science-session/src/domain.ts)
+
 ### `session/*`
 
 <a id="sessionend-seed--log-only"></a>

@@ -1,0 +1,59 @@
+{
+  "name": "@deepseek-ai/dsh-science-app",
+  "description": "PaperMachine product composition over the dsh Web bundle",
+  "version": "0.1.5-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/bundle/science-app"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./pending": {
+      "types": "./lib/types/pending.d.ts",
+      "default": "./lib/pending.js"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts",
+    "lib/pending.js",
+    "presets"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent-presets": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-brand-papermachine": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-science": "workspace:^",
+    "@deepseek-ai/dsh-science-session": "workspace:^",
+    "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
+    "@deepseek-ai/dsh-science-runtime": "workspace:^",
+    "@deepseek-ai/dsh-tool-science": "workspace:^",
+    "@deepseek-ai/dsh-session-attachment-index": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^"
+  }
+}

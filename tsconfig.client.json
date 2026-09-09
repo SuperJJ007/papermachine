@@ -41,6 +41,8 @@
     "packages/client/*/tests/**/*.host.spec.ts"
   ],
   "references": [
+    {"path": "packages/client/ui-science"},
+    {"path": "packages/client/ui-brand-papermachine"},
     // Producer-to-UI spill tests execute the real nested dispatch worker.
     { "path": "./packages/code-runtime/code-runtime-worker-thread" },
     // Shared leaf: web e2e boots the real host webserver (fixture + real-host

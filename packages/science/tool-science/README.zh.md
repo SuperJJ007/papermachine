@@ -1,0 +1,198 @@
+# @deepseek-ai/dsh-tool-science
+
+[English](README.md) | 中文
+
+**面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`install_science_packages`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类、run 写出文件的自动捕获、纯元数据的 artifact 策展，以及 micromamba package 安装。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Environment、run 与 artifact fact 由 Runtime 追加。结果通过普通 assistant 回复呈现，没有发布工具或独立的 Outcome 修订。
+
+一个组合按以下顺序叠加：`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-science-session` 及其 `/invariant`、`@deepseek-ai/dsh-science-artifact-store`、一个 host-local 的 subprocess 与 sandbox provider、`@deepseek-ai/dsh-science-runtime`（以 `dshHome` 与 `profiles` 配置）及其 `/invariant`，然后是本包（以 `profileId`、`modeRevision` 与 `stateHistoryLimit` 配置）及其自身的 `/invariant`。
+
+本包还拥有 artifact viewer 使用的 `scienceEdits` Typert Remote。Web Host 在 Typert Gateway 解析 Remote service 的 Host root 挂载其 `./edit-service` 入口；preset scope 下的包根入口仍是面向模型的 Consumer，不发布 service。该入口注入 `attachments`、`scienceArtifactStore` 与 `scienceRuntime`，从而准入确切已提交 PNG 与直接图表操作。`submit` 接受一个非空有序的 `ScienceEditTarget` 数组（一个 normalized raster region，或一个携带图表元素 id、kind、axes、label 与有界当前值摘要的 `ScienceElementTarget`）和一条指令。每个 target 可以携带一条元素备注，并使用与指令相同的文本规则校验和去除首尾空白。它严格 fold 被寻址在线 Agent 的完整 session，在排入一条结构化用户消息前校验每个 target 的当前已提交版本；region target 还额外要求 raster 媒体类型，元素 target 则必须与该版本可寻址 chart catalog 的一个条目完全一致。任一失败会标明 target 位置，并阻止部分准入。同一版本上的重复 region target 会复用一张已铸造图像；元素 target 既不读 store 也不铸造图像。陈旧选择以 `SCIENCE_EDIT_STALE_VERSION` 拒绝，媒体类型或目录不匹配以 `SCIENCE_EDIT_TARGET_MISMATCH` 拒绝；该方法绝不静默替换成最新版本。消息 source 保存 `{ kind: 'science-edit', targets, instruction }`，包括每个 artifact 的权威 logical name。文本要求模型在相应 `artifact_inputs` 与 `edit_of` 中使用每个确切版本；每个选中的 raster version 都按 target 顺序附加其已铸造图像，每个元素 target 则渲染为一段不带图像的结构化 `element("id", kind=..., axes=..., label=..., current=...)` 描述。
+
+`scienceEdits.applyChartOps` 把确切的 `{ artifactId, version, ops }` 请求与取消信号转发给 `ctx.scienceRuntime.applyChartEdit`。receipt 会命名已提交的 `origin: 'human-edit'` version 与任何带索引的部分失败。它把陈旧、不可寻址以及无效或全部无法解析的操作分别映射为 `CHART_STALE`、`CHART_NOT_ADDRESSABLE` 与 `CHART_OP_INVALID`；Runtime 仍是唯一校验者。面向模型的 artifact 值会从项目 artifact store 仅限 PNG 的 `figure_state` 重建累计直接编辑计数，以及最近的操作和 target 摘要；操作参数仍然隐藏。
+
+`scienceEdits.saveArtifactAs` 把一个 store `sourceVersionId` 与一个 `newLogicalName` 转发给 `ctx.scienceRuntime.saveArtifactAs`，返回新 artifact 的 `{ artifactId, logicalName, version }`。这是一个仅供 viewer 使用的操作——本包不为它注册任何模型工具。它把 Runtime 的 `ARTIFACT_VERSION_NOT_FOUND`/`ARTIFACT_LOGICAL_NAME_CONFLICT` 拒绝翻译为 `SAVE_AS_SOURCE_NOT_FOUND`/`SAVE_AS_NAME_CONFLICT`，其余 Runtime 错误原样透传，与 `applyChartOps` 自身的翻译形状一致。
+
+`ctx.scienceRuntime` 相对于本包自身的 `inject` 而言是可选的——它静态注入的只有 `tools` 与 `systemPrompt`，并在最早需要它的操作（首次使用绑定、每次 `run_python`/`run_r` 调用及 `annotate_artifact`）时才读取 `ctx.get('scienceRuntime')`。即使部署省略 Runtime，本包仍会正常加载；此时对 `science`-preset session 的 assembly 会以清晰错误拒绝，而不是悄悄降级。
+
+编辑引导明确 `artifactId` 是捕获回执与 `get_science_state` 中的 UUID，不能填写文件名。
+
+## 配置
+
+三个键都是必填项，均没有默认值或从环境发现的值。本包不提供已发布的生产身份或历史返回策略。
+
+| 键 | 含义 |
+|---|---|
+| `profileId` | 从已组合的 `ctx.scienceRuntime` 的 `profiles` 配置中选择一个 allowlist 条目。会按持久化 Science safe-ID grammar 校验（`^[A-Za-z0-9][A-Za-z0-9._-]*$`，≤128 个字符）。 |
+| `modeRevision` | 部署方拥有的 Science mode contract revision，会持久化在每个 session 的 `ScienceModeRef` 中。要求 trim 后非空且 ≤128 个字符。 |
+| `stateHistoryLimit` | 正 safe integer；分别限制最近 run、artifact version，以及每个 artifact 的直接编辑摘要。 |
+
+## 首次模型请求
+
+对于 session 当前解析结果为 `science` preset 的 Agent（`@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset`：以 session 的创建 header 为基础，被最后一条 `agent-preset/selected` 事件覆盖——一个在 blank 状态下切换到 `science` 的 session 即使其 header 仍记录创建时的 preset，也满足条件），在其首次真正的 Science prompt assembly 时，本包会重放该 session。如果不存在 `science/mode-bound`，本包会在任何 `step/start`、`request/header` 或 `tool/call` 之前追加一条——durable 的 Science Session applicability 规则会独立强制这一顺序。已存在 mode 的 revision 必须等于配置的 `modeRevision`；不匹配会在构造请求之前拒绝 assembly。如果不存在 durable environment，本包会调用 `ctx.scienceRuntime.bindEnvironment({ session, profileId, signal })`；无论结果是 durable 的 applied 值还是 `invalid` 值，都是模型可见的值，而 Runtime 缺失、取消、超时、Host I/O 失败或 confinement 失败则会改为拒绝 assembly。"confinement 失败"是指沙箱报告的隔离级别低于 `dsh-science-runtime` 配置的 `minimumEnforcement`（默认为 `'full'`；仅当受支持的后端无法达到完全隔离时——例如 win32 的 ACL 沙箱——部署方才会将其降为 `'partial'`）——绝不是 Science 默默接受了更弱的边界。confinement 调用实际达到的级别会记录在生成的 environment binding 上（`ScienceEnvironmentBinding.sandboxEnforcement`），因此 provenance 展示的是实际被接受的级别，而不仅是所要求的级别。恢复的 session 会在首次 Science run 前重试一次持久化的非 applied 环境；当前生命周期产生新的环境观测后，后续 prompt assembly 不会反复重试。已 applied 的绑定和已有 run 记录的 session 不会在此自动重新绑定；`dsh-science-runtime` 自身的 `startRun` 会另行在每次 run 时核验共享 prefix 是否漂移，一旦发生变化就会在那时重新绑定(见该包 README)。没有发起 Agent 的诊断性 prompt assembly，或非 `science`-preset 的 session，不会执行任何 Host I/O，也永远不会追加 Science 事件。
+
+绑定完成后，本包会根据刚提交的 projection 重新渲染 `science:environment` 上下文，并在正在进行的 assembly 中替换那一个具名条目，然后精确地委托一次给 `system-prompt/assemble` waterfall。随后 agent loop 会在 `request/header` 之前把该当前上下文记录为一条 `user/message`，因此首次请求——以及同一步骤内的每次重试请求——都始终可以从 session 日志重建。
+
+## 工具
+
+| 工具 | 参数 | 行为 |
+|---|---|---|
+| `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 artifact-version 历史、有界的 PNG 直接编辑摘要、遗漏计数与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |
+| `run_python` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of`、可选 `raster_artifacts` | 通过 `ctx.scienceRuntime.startRun` 在该 session 持久化的 Python kernel 中运行 `code`，并转发该工具调用的取消信号。`artifact_inputs` 把精确的 `{artifactId, version}` 物化到 `SCIENCE_INPUT_DIR` 下的路径；`edit_of` 把捕获相对输出路径映射到精确父版本；`raster_artifacts` 指名这次 run 在 Runtime 默认的 `rasterCapture: 'declared'` 策略下声明要自动捕获的捕获相对 `.png` 路径。以 `fig.savefig()` 或 `plt.savefig()` 保存的已声明 PNG 会在抽取成功时保留可寻址的 matplotlib 图表状态。其结果会列出本次 run 被自动捕获并持久保存的文件，以及未声明而被跳过的 `.png`（见"Run 结果"）。 |
+| `run_r` | `code`（非空字符串）、可选 `artifact_inputs`、可选 `edit_of`、可选 `raster_artifacts` | 对该 session 的持久化 R kernel 应用相同的精确版本 input、edit parent 与 raster 声明行为。以 `ggsave()` 保存的已声明 PNG 会在抽取成功时保留可寻址的 ggplot2 图表状态。 |
+| `annotate_artifact` | `logical_name`、可选 `version`、`title`、可选 `caption` | 为 `dsh-science-runtime` 自动捕获已经持久保存的某个 artifact 添加标题/caption，通过 `ctx.scienceRuntime.annotateArtifact`；纯元数据操作，因此它为所命名的版本重新加标题，而不会提交一个字节与其前身完全相同的新版本。如果逻辑名实际指向保留 run 目录中一张未捕获的合格 PNG，错误会提示模型重新运行写出代码，并在 `raster_artifacts` 中声明该路径；annotation 不会捕获或导入它。文本 receipt 用 `run_python`/`run_r` 加轮次号标识已知 producer，绝不暴露内部 run id。 |
+| `install_science_packages` | `language`(`python`/`r`)、`packages`(非空的 conda-forge spec 数组) | 通过 `ctx.scienceRuntime.installPackages` 安装进该 session 已绑定的 environment，并转发该工具调用的取消信号。要求部署方已配置安装器(`micromambaPath`/`installChannels`)；否则以 Runtime 的 `INSTALLER_NOT_CONFIGURED` 消息拒绝。返回 `status`、成功时的 environment revision(只有当重新观测到的环境确实与该 session 已绑定的不同时才是新 revision——一次冗余安装会报告未变化的 revision 且不追加任何新 revision)，以及有界的 `stdout`/`stderr`；一次确实追加了新 revision 的安装只会在该语言下一次 `run_python`/`run_r` 调用时才生效，那次调用会重启 kernel 并丢失其当前保有的一切内存状态(见"安装结果")。 |
+
+`run_python`、`run_r` 与 `annotate_artifact` 要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。`install_science_packages` 只要求 direct 顶层 dispatch——它自己不携带 `toolCallId`/`requestHeaderSeq` 溯源信息，与 `bindEnvironment` 自身的整值 environment 追加一致。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact success 值为所有客户端渲染有用文本；`run_python`/`run_r` 与 `annotate_artifact` 还会为每一个被捕获或被策展的 artifact（任意受支持媒体类型）额外保留一条带标签、带版本的 presentation 值，供专用 Web 行使用。五个工具都使用 generic render intent，不带 editor location——`install_science_packages` 也不例外，因为绝不能让任何 Host path 泄漏进只依据 `args` 渲染的 presenter。`install_science_packages` 不需要单独的用户批准：内置 `science` agent preset 没有为它配置任何 `tools/pre-execute`/`ctx.approval` 策略(这套机制本身是存在的——见 `packages/core/tools/README.md`——只是这个工具没有被注册进去)。这是一项经过深思的决定(2026-09，对应 #15)：这个工具唯一做的事就是改变一个共享 Conda prefix 的包集合，而 `dsh-science-runtime` 现在按每次 run 做的 prefix 漂移检测已经让这类改动对共享该 profile 的每一个会话都变得可见且 durable——表现为一条全新的 `science/environment-bound` revision，以及模型会在下一次 run 结果里报告的一次建模内核重启——而不只是对发起安装的那个会话可见。把这个动作挡在批准提示之后，只会打断本应连续的分析流程，去换取一个事后已经被完整记录、可审计的改动。
+
+## 模型体验
+
+### 静态工具指引
+
+#### 模型看到的内容
+
+本包贡献一段固定的静态区段，描述 run 工具的进程模型、状态持久化规则，以及失败与错误的区分，原文照录如下；`run_python`/`run_r` 各自的工具描述也用各语言自己的措辞携带同一条持久化规则——重启原因、指向"Run 结果"一节中同一 kernel fact 的"下次 run 结果会说明"提示，以及 inline install 与 environment install 的区分（`pip install`/`install.packages()` 与 kernel 同生共死；`install_science_packages` 把 package 持久安装进 environment、跨 kernel 存续，详见下方"安装结果"）。
+
+##### Science 工具指引
+
+```markdown
+Use run_python or run_r to execute source in the session's bound Science environment. Each language has one persistent kernel per session: variables, imports, and definitions stay in memory across calls to that language's run tool until the kernel restarts (idle timeout, environment re-bind, interrupt escalation, crash, or session end). A run result names the reason right after a restart. SCIENCE_ARTIFACT_DIR is a fresh directory each run; files written there are gone from the next run's directory, so keep intermediate tables and working data as kernel variables, or under SCIENCE_STATE_DIR only if it must survive a kernel restart, and write only final deliverables there, since eligible files are captured as artifacts. The current directory is a private scratch directory that is not captured; access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path, and artifact_inputs materialize under SCIENCE_INPUT_DIR. When modifying or regenerating an existing artifact, reference its exact version through edit_of for a direct edit or artifact_inputs for an input, and write the output to the same relative path under SCIENCE_ARTIFACT_DIR so automatic capture appends the existing version chain. artifactId is the UUID printed in the capture receipt and by get_science_state, never the file name. A terminal program failure (exception, error condition, timeout) is a result to inspect in the returned stdout/stderr, not a tool malfunction. A tool error result means no trustworthy run occurred: nothing executed, or its outcome could not be confirmed. Use get_science_state to read the current mode, environment, kernel state, and run history without starting a run. Make charts with matplotlib (Python) or ggplot2 (R), save each one as a PNG under SCIENCE_ARTIFACT_DIR, and name it in raster_artifacts so it is captured. Do not use Altair or Vega-Lite. Save matplotlib figures with fig.savefig()/plt.savefig() and ggplot2 charts with ggsave(); figures saved that way stay addressable for direct edits in the viewer. A run's eligible written files (csv/json/md/txt under SCIENCE_ARTIFACT_DIR) are durably captured automatically as versioned artifacts, and a PNG only when named in raster_artifacts; no separate save step is needed otherwise. If a result says a PNG was not captured, rerun the code that writes it and declare the same path in raster_artifacts. Use annotate_artifact to give the artifact that best demonstrates your result a human-readable title and optional caption, so it is highlighted for the reader. Write a render, preview, or debug dump meant only for your own inspection outside SCIENCE_ARTIFACT_DIR (for example a temp directory), never into it, so it is never captured as an artifact. Do not open a new artifact version to reconcile a cosmetic difference the user did not ask for; mention the difference in your reply instead. Use install_science_packages to persist a package into the bound environment across kernel restarts; an in-kernel pip install/install.packages() only lasts until the current kernel restarts.
+```
+
+#### Token 影响
+
+只要插件处于活动状态，每次请求都有固定的指引开销；相对此前"一次性进程"措辞，本区段与两个 run 工具描述因持久化规则的句子而变长，又各自因提及 `install_science_packages` 的一句话再变长一次——两者都是一次性的固定增量，不是按次 run 计费的开销。`install_science_packages` 自身的 schema 是另一项固定的按请求开销，详见下方"工具 schema"。
+
+#### KV Cache 影响
+
+只要指引文本不变，就是 prefix-stable 的；插件生命周期变化可能使这一区段失去复用资格。
+
+### `science:environment` 动态上下文
+
+#### 模型看到的内容
+
+对于 `science`-preset 的 session：当前 mode revision；已绑定 environment 的 profile、revision 与 status；每个已配置解释器的 capability，以及可用时的 version 与一段截断后的 fingerprint；以及固定的 kernel 持久化/重启规则（现在与静态指引使用同一套重启原因）加上 `SCIENCE_STATE_DIR`/`SCIENCE_ARTIFACT_DIR`/`SCIENCE_INPUT_DIR` 的划分。它不包含 Runtime-owned free-text reason、source、stdout、stderr、凭据或 Host path/identity field；也——刻意地，为了让这段上下文在多次 run 之间保持不变——不包含 run 历史与当前 kernel 状态：这两项内容分别留给每个 run 工具自身的结果，以及按需读取（而非每轮重发）的 `get_science_state` 的有界 `runs`/`kernels` 列表。在 Science mode 之外，或对于没有发起 Agent 的诊断性 assembly，它会渲染为 `''`，不贡献任何内容。
+
+#### Token 影响
+
+有界：一行 mode、一行 environment，以及至多两行解释器信息。在多次 run 之间保持不变——开始或结束一次 run 不会改变这段文本——因此在无关的一轮请求中不会新增任何 token；只有 mode revision 提升或 environment 重新绑定才会替换整个快照。
+
+#### KV Cache 影响
+
+只要渲染出的快照未变化就是 append-only 的：[`dsh-agent-loop`](../../core/agent-loop) 只有在上下文确实发生变化、被压缩移除，或某次重试请求需要恢复它时，才会追加一份新的 `user/message` 副本——而不是每一步都追加。变化后的快照会使复用从第一个变化的 token 起失效，这与其他任何动态 runtime 上下文一致。
+
+### 工具 schema
+
+#### 模型看到的内容
+
+模型会看到生成的 [`get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`install_science_packages` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science)。只要组合了本包，这些 schema 就会无条件注册，与所组合的 Runtime 是否配置了安装器无关；内置 `science` agent preset（`apps/cli/config/agent-presets/science`）正是完成该组合的随附组装。
+
+#### Token 影响
+
+在该插件的注册 scope 内，每次请求都有固定的 schema 开销。
+
+#### KV Cache 影响
+
+只要可见的工具定义与顺序未变化就是 prefix-stable 的。插件生命周期变化可能使复用从第一个变化的 schema token 起失效。
+
+### Viewer 编辑消息
+
+#### 模型看到的内容
+
+获准的 artifact viewer 编辑是一个普通用户轮次。其文本会列出一个非空有序 target 集合、每个 target 的逻辑 artifact 与确切版本及其可选元素备注、一条指令，以及必须把每个版本作为相应 `artifact_inputs` source 与 `edit_of` parent。持久化的 `science-edit` source 保存 `{ targets, instruction }`；每个 raster target 都按 target 顺序提供确切被选中的图像附件，元素 target 则不贡献图像。
+
+#### Token 影响
+
+上限由固定框架文本、已校验的 target 列表与指令，以及每个 raster target 的一份图像附件构成。消息会保留在请求历史中，直到上下文压缩（compaction）。
+
+#### KV Cache 影响
+
+仅追加；该消息与其他用户 follow-up 一样位于可复用请求前缀之后。
+
+### Viewer Review 备注
+
+#### 模型看到的内容
+
+什么也看不到。`ScienceEditService.addArtifactNote` 与 `removeArtifactNote` 是用户侧 viewer 状态的专用 Host Remote。添加操作校验 session 内可见的确切 store `ScienceArtifactId` 与版本、裁剪纯文本，并以 `SCIENCE_EDIT_INVALID_REQUEST` 拒绝超过 8,192 字符的内容；删除操作要求活跃添加事件的序号确实属于该 artifact。两者只追加可忽略的非 surface 事件，不排入 agent follow-up。
+
+#### Token 影响
+
+无；Review 备注绝不进入模型请求。
+
+#### KV Cache 影响
+
+无；Review 备注变更不会改变模型可见前缀。
+
+### Run 结果
+
+#### 模型看到的内容
+
+当这次 run 是其自身 kernel epoch 下、在该语言更早一个 epoch 之后记录的第一次 run 时，开头会有一行陈述这一事实：`kernel restarted (<reason>): variables from earlier runs are gone`，`<reason>` 取自 `idle timeout`、`environment re-bind`、`interrupt escalation`、`kernel crash`、`session end` 之一，或 `protocol`/`service-disposed` 两个内部故障措辞——这是 run 结果会陈述的唯一 kernel fact，且只在它有信息量时才出现（该语言的最初一个 epoch，以及之后每一次复用同一 kernel 的 run，这里都不会新增任何内容）。随后每次 run 都会渲染为 `status: <status>`，随后在存在时给出 `failureCode`/`failureMessage` 行，再给出 `--- stdout ---`/`--- stderr ---` 两个区段，分别展示捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时，会附带一行 `(stdout truncated)`/`(stderr truncated)`。当捕获同步执行且产生了新版本时，还会附带一行清单，逐个列出产物的逻辑名、版本、稳定产物 id、媒体类型与字节数：`` Captured 2 artifacts: `summary.csv` v1 (artifact-a; text/csv, 4.1 KB), `plots/loss.png` v4 (artifact-b; image/png, 812.0 B). `` 显式 `edit_of` 基线会在相应产物后附加 `edited from <logicalName> v<N>`；普通的后续版本则附加 `continues v<N>`。带直接编辑的 PNG 会另加一行 `N direct edits: op (target), ...`；完整计数保留，但最多列出 `stateHistoryLimit` 个最近的操作/target 对，操作参数始终隐藏。媒体类型、字节数、血缘和编辑摘要都来自项目 artifact store；`content_origin`/策展状态与 store 内部 version id 随结构化值一起提供给 Client presentation row，但不会打印在这段文本里。如果某条 `edit_of` 命名的输出路径这次 run 实际并未写出，或写出的字节与该 artifact 当前版本完全相同，这条 baseline 会被静默丢弃：capture 不会为该路径提交任何新版本，因此无论是这条回执还是 durable log 都不会记录所声明的 parent。在默认的 `rasterCapture: 'declared'` 策略下，这次 run 写出但未在 `raster_artifacts` 中声明的合格 `.png` 会附带一行指名它和该语言对应的恢复调用：`` (1 PNG file not captured, not declared in raster_artifacts: debug/preview.png; to capture, call run_python again with raster_artifacts: ["debug/preview.png"] and code that writes it) ``。因为输出目录按 run 隔离，后续一次空 run 无法恢复上次的文件。跳过的超限文件数量与 per-run/per-session 截断标记若为真也会各自渲染为一行。非 success 的 run status 是需要阅读的一等结果，而不是错误；该回执完全从 run 自身受限的 output field 派生，因此不会偏离它所描述的 durable `science/artifact-saved`/`science/kernel-state` 事件。
+
+#### Token 影响
+
+受 Runtime 的 stdout/stderr 捕获上限，以及 `captureMaxFilesPerRun` 条被捕获 artifact 条目共同约束，外加极少数紧跟 kernel 重启之后的 run 会多出的一行短文本；保留的调用与结果会在压缩之前被重复发送。
+
+#### KV Cache 影响
+
+Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
+
+### 安装结果
+
+#### 模型看到的内容
+
+`install_science_packages` 会渲染 `status: <status>`。在 `'success'` 时，第二行会依据 `environmentChanged` 呈现两种措辞之一：当重新观测到的环境确实与该 session 已绑定的不同时，`environment revision <n> applied — this takes effect on the next run_python/run_r call for this language, not now: that call restarts the kernel (an environment re-bind) and every variable, import, and definition it currently holds in memory is lost then`；当请求的每个包早已存在、重新观测结果与当前绑定完全一致时，`environment revision <n> unchanged — every requested package was already present, so no revision was appended and no kernel restarts because of this call`。`'failed'` status 会附带它自己那条劝阻回退到 kernel 内 `pip install`/`install.packages()` 的引导行；`'timed-out'` status 会附带一行说明安装器在确认完成之前已在截止时间被停止、环境可能已部分或全部写入，并建议在决定是否重试之前先检查 `get_science_state` 或尝试导入该包——不建议重试超过一次。任何 status 之后都会渲染 `--- stdout ---`/`--- stderr ---` 两个区段，展示安装器捕获到的文本或 `(empty)`；当达到 Runtime 的捕获上限时会附带 `(stdout truncated)`/`(stderr truncated)` 行。非 success 的 status(`'failed'`、`'timed-out'`、`'cancelled'`)是需要阅读的一等结果，与其它每个 Science 工具的失败/错误区分一致；它不会追加任何 environment revision，也不会 durable 地改变任何东西。这条回执从不命名成功尝试所用的已配置 channel URL、micromamba 可执行文件路径，或究竟是哪个已配置 channel——这些都是 Runtime 拥有的部署事实，不是模型需要推理的内容。
+
+#### Token 影响
+
+受 Runtime 的 stdout/stderr 捕获上限约束；保留的调用与结果会在压缩之前被重复发送。
+
+#### KV Cache 影响
+
+Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
+
+### Science 状态结果
+
+#### 模型看到的内容
+
+`get_science_state` 会把 replay projection 的 sanitized、bounded view 渲染为 JSON：`mode`；model-safe 的 `environment` identity、status、capability、version 与 fingerprint preview；去掉携带 path 的 Runtime-owned free text 后的最近 `runs`（每条各自携带自己的 `kernelEpoch`——这是“两次 run 共享同一 epoch 即共享同一 kernel 内存状态”这一 provenance fact）；最近的 `kernels`，各自带 `language`、`kernelEpoch`、`state`（`running`/`exited`/`interrupted`，对应 durable 的 `started`/`exited` 转换加上 replay 派生的中断态的模型词汇）、`reason`（仅在 `exited` 时出现，与 run 结果里的 kernel fact 使用同一套重启原因词汇）与 `startedAt`；最近的 `artifacts`（身份、模型当时看到的标题/caption、`contentOrigin`——`'run-auto' | 'human-edit' | 'import'`，读自项目 artifact store 当前版本行，自来源权威迁移以来这是内容来源事实的唯一权威、`curated`——是否已有模型或人工的 annotation 替换过自动捕获时的标题、媒体类型、字节数与 `seenAt`，以及 PNG 的完整 `editCount` 与最多 `stateHistoryLimit` 个最近操作/target 摘要；绝不包含操作参数、store 内部 version id、内容校验和、project id，也不包含当前 annotation 是哪个 actor 所写）；`metrics`；`history.runsOmitted`、`history.kernelsOmitted` 与 `history.artifactVersionsOmitted`；以及 `lastScienceEventSeq`。它绝不返回 configured/canonical prefix、executable path 或 identity、Conda history hash、Runtime-owned free-text reason、凭据、source、stdout 或 stderr。Artifact title/caption 仍属于 model-authored 或 capture-authored 的 durable content，而不是 Host observation field。`metrics` 是对 durable projection 计数器的显式字段选择，而不是逐字透传——这是一个刻意决定：未来任何 Host 侧新增计数器都必须在这里被有意识地接入，才会到达模型。Durable 的 `kernelCount` 计数器被刻意不选入：`kernels`/`history.kernelsOmitted` 已经用模型词汇、逐 kernel、完整地陈述了同一事实；再保留一个冗余的原始计数只会白白花费 token 而不增加信息量，并且在 `stateHistoryLimit` 更小时可能与被截断的 `kernels` 列表读起来不一致。
+
+#### Token 影响
+
+Run、kernel、artifact-version item 与每个 artifact 的最近直接编辑会分别限制为 `stateHistoryLimit` 条；durable codec 还会限制每一条 retained item。`metrics`、`history` 与每个 `editCount` 会保留总量，但不会返回被省略的值。
+
+#### KV Cache 影响
+
+Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
+
+### Artifact 结果
+
+#### 模型看到的内容
+
+`annotate_artifact` 以文本渲染稳定 artifact id、逻辑名、版本、内容来源、策展状态、标题、可选 caption；当 producing run 存在于当前 session 时，以 `produced by run_python (turn N)` 或 `produced by run_r (turn N)` 命名 producer；随后渲染媒体类型、字节数与有界的直接编辑摘要。它绝不输出文件字节、image content block、内部 run id、store 内部 version id、内容校验和或 project id。它与 `run_python`/`run_r` 带标签的客户端 presentation value 都不是模型可见内容——它随 `tool/result.meta` 传递，只由 `dsh-client-ui-science` 的专用行读取。
+
+#### Token 影响
+
+受 artifact receipt field 与 `stateHistoryLimit` 条最近直接编辑的上限约束；保留的调用/结果会在 compaction 前重复发送。
+
+#### KV Cache 影响
+
+Append-only；新出现的结果文本位于可复用 request prefix 之后。
+
+### 工具错误
+
+#### 模型看到的内容
+
+配置与前置条件失败会被规范化为 `Error: <message>`。它会区分 initiating Agent/preset/mode/request header/Runtime 缺失、安装器未配置、空 source、嵌套 mutation dispatch、重复的 `edit_of` path、无法解析或无效的 artifact input/edit parent/raster artifact path、未知的 artifact `logical_name`/`version`。
+
+#### Token 影响
+
+只有失败的调用才会新增这些保留 token。
+
+#### KV Cache 影响
+
+Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会使已有的 KV cache 条目失效。
+
+## 已知限制与暂缓事项
+
+- **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附的内置 `science` agent preset 与 Web Host 的 `./edit-service` 行是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
+- **没有发布流程** — 模型在对话中回答；没有独立的 Outcome 编辑器或发布工具。

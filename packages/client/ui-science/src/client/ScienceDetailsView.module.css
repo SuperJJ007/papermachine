@@ -1,0 +1,907 @@
+/* Science Details entry: the artifact viewer — tab strip, toolbar, dispatched
+   content or the provenance drill-in, and the no-tab landing view (gallery +
+   Outcome) — stacked in the routed Details column body (the shell owns
+   header chrome and scroll). */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.sectionLabel {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Non-modal T3 reconciliation banner: reconstructed/missing-content counts and an expandable per-artifact list. */
+.reconcileBanner { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); }
+.reconcileBannerToggle { align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; text-decoration: underline; }
+.reconcileBannerList { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.reconcileBannerList li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+
+/* Tab strip: one tab per opened document, plus its own close control. */
+
+.libraryHome { display: flex; flex-direction: column; gap: 12px; padding: 8px 2px; }
+.libraryToolbar { display: flex; align-items: center; gap: 6px; }
+.libraryToolbar input { min-width: 0; flex: 1; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); }
+.libraryToolbar select, .libraryToolbar button { padding: 5px 7px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); }
+.libraryToolbar span { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.libraryList { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.libraryCard { width: 100%; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.libraryList .libraryCard { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 10px; }
+.libraryList .libraryCardThumb { display: contents; }
+.chartList .libraryCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+.chartList .libraryCard:hover { border-color: var(--dsw-alias-label-caption); }
+.chartList .libraryCardThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+.chartList .chartMeta {
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.workspaceList { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--dsw-alias-border-l2); }
+.workspaceList button { display: flex; width: 100%; justify-content: space-between; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
+.fileHead { display: flex; align-items: center; gap: 8px; }
+.fileHead button { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+
+/* Toolbar: library return, version stepper, provenance/download/maximize/close. */
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.toolbarRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saveAsForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saveAsForm input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.saveAsForm button {
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolbarTitle {
+  display: flex;
+  min-width: 0;
+}
+
+.libraryBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.toolbarControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.toolbarAction {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolbarAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolbarAction:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.toolbarAction[data-unavailable] {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.toolbarAction[data-unavailable]:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.stepperButton {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.stepperButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepperButton:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.stepperLabel {
+  min-width: 24px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Content: the dispatched artifact body (image today). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.caption {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.contentFacts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Review position: private notes stay with the viewer and never enter provenance. */
+.notes { display: flex; min-width: 0; flex-direction: column; gap: 7px; margin-top: 12px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.notes h3, .notes p { margin: 0; }
+.notes h3 { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
+.notes ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.notes li { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.notes li span { overflow-wrap: anywhere; }
+.notes small { color: var(--dsw-alias-label-caption); white-space: nowrap; }
+.notes button { padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.notes button:disabled { cursor: default; opacity: .45; }
+.notes form { display: flex; align-items: stretch; gap: 6px; }
+.notes textarea { min-width: 0; min-height: 52px; flex: 1; padding: 7px 8px; resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+
+/* Plain-text and unparseable-JSON content fallback. */
+
+.textContent {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  max-height: 480px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--dsw-alias-markdown-code-block);
+  font: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.specTargets {
+  display: grid;
+  gap: 6px;
+}
+
+.elementPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  container-type: inline-size;
+  /* Elevated surface: this panel's own .elementReference chips (and the
+     shared .notes textarea) paint the l2 layer, and the panel's content
+     scrolls with the rest of the details view. Rebind here so any thumb
+     drawn against this panel's l2 background uses the l2 pair instead of
+     the default (see ui-theme styles/scrollbar.css for the rebinding
+     contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.elementPanelColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  column-gap: 12px;
+  align-items: start;
+}
+
+@container (max-width: 439px) {
+  .elementPanelColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.specTargetRow {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(120px, 1fr) 30px;
+  gap: 6px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.breadcrumbPart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.breadcrumbRoot,
+.breadcrumbCurrent {
+  overflow: hidden;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumbRoot { cursor: pointer; }
+.breadcrumbRoot:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.breadcrumbCurrent { color: var(--dsw-alias-label-primary); font-weight: 600; }
+.breadcrumbSep { flex: none; color: var(--dsw-alias-label-caption); }
+
+.specComment {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.specAdd {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.specTarget,
+.regionButton {
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.specTarget[aria-pressed='true'],
+.regionButton[aria-pressed='true'] {
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.rasterSelector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.rasterCanvas {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.regionGesture,
+.regionBox {
+  position: absolute;
+  z-index: 2;
+}
+
+.artifactImageFrame {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.artifactImageFrame[data-variant='tile'] {
+  width: 64px;
+  height: 64px;
+}
+
+.artifactImageFrame[data-variant='card'] {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+.artifactImage {
+  /* Scientific plots keep their light canvas even when the surrounding UI is dark. */
+  background: var(--dsw-static-neutral-bluish-00);
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.artifactImageFrame[data-variant='tile'] .artifactImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artifactImageFrame[data-variant='card'] .artifactImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left top;
+}
+
+.artifactImageError {
+  min-width: 64px;
+  min-height: 40px;
+}
+
+.regionGesture {
+  inset: 0;
+  cursor: crosshair;
+}
+
+.regionBox {
+  box-sizing: border-box;
+  border: 2px solid var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
+  pointer-events: none;
+}
+
+.editPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.styleHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.styleControl input {
+  box-sizing: border-box;
+  min-height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.editLabel {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.editInstruction {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.editSubmit {
+  align-self: flex-end;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+.editSubmit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Landing view: gallery of latest chart versions, plus Outcome below it. */
+
+.landing {
+  display: flex;
+  flex-direction: column;
+}
+
+.library,
+.librarySection {
+  display: flex;
+  flex-direction: column;
+}
+
+.library { gap: 18px; }
+.librarySection { gap: 8px; }
+
+.librarySectionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.librarySectionHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.librarySectionHead span {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.libraryEmpty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chartList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chartItem {
+  display: flex;
+}
+
+.galleryButton {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.galleryButton:hover {
+  border-color: var(--dsw-alias-label-caption);
+  background: var(--dsw-alias-bg-base);
+}
+
+.galleryButton > :first-child {
+  align-self: center;
+}
+
+.chartMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chartTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.libraryFacts {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartLogicalName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.badge {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.outcomeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.outcomeHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outcomeTitle {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Compact chart editing form plus reference-only element chips. */
+
+.elementPanelSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.elementPanelSection h4 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.directEditRows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 22px;
+  column-gap: 6px;
+  row-gap: 4px;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.directEditRow {
+  display: contents;
+}
+
+.directEditHeading {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.directEditRow[data-selected] .directEditName { color: var(--dsw-alias-brand-primary); }
+
+.directEditName {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.directEditRow > input,
+.directEditRow > select,
+.fontControls input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 1px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.fontControls {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 4px;
+}
+
+.gridControl {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.referenceChips {
+  display: grid;
+  max-height: 280px;
+  overflow-y: auto;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.referenceChip {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.referenceChip:hover,
+.referenceChip:focus-visible,
+.referenceChip[data-selected] {
+  border-color: var(--dsw-alias-brand-primary);
+  outline: 1px solid var(--dsw-alias-brand-primary);
+}
+
+.referenceChip:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.referenceChipSummary {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.elementColorSwatch {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 3px;
+  background: transparent;
+}
+
+.elementReference {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.elementReference:hover {
+  border-color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-primary);
+}
+
+.elementReference:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.elementReference[data-selected] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-bg-base);
+}
+
+.opsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.committedOps summary,
+.pendingOps {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.committedOps summary { cursor: pointer; }
+
+.panelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.opsList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.libraryGroups { display: flex; flex-direction: column; gap: 8px; }
+.libraryGroupHeading { margin: 0; }
+.libraryGroupToggle { display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; }
+.libraryGroupToggle > svg { flex: none; }
+.libraryGroupTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.libraryGroupFacts { flex: none; color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 400; }

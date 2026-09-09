@@ -1,0 +1,60 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../core/system-prompt"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../util/byte-size"
+    },
+    {
+      "path": "../science-session"
+    },
+    {
+      "path": "../science-runtime"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../science-artifact-store"
+    },
+    {
+      "path": "../../util/values"
+    }
+  ]
+}

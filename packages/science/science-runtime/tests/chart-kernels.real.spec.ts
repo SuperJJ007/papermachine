@@ -1,0 +1,199 @@
+/** Opt-in real interpreter regressions for the shipped chart drivers, using private run scratch. */
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import { ScienceEnvironmentProfileId, decodeScienceChartState, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion, ScienceChartState } from '@deepseek-ai/dsh-science-session'
+import { KERNEL_ASSETS_ROOT } from '../src/kernel-assets.ts'
+import { authorizeRun, createKernelRuntimeHarness, createScienceSession, installTestKernelSet } from './harness.ts'
+
+const contexts: Context[] = []
+const roots: string[] = []
+afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+/** Read one version's decoded live-figure-object state from the store, or `undefined` when it carries none. */
+async function chartOf(ctx: Context, artifact: ScienceArtifactVersion): Promise<ScienceChartState | undefined> {
+  const state = await ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
+  return state === undefined ? undefined : decodeScienceChartState(JSON.parse(state.stateJson))
+}
+
+const pythonSource = `import os
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(4, 3))
+ax.plot([0, 1], [0, 1], label='series', color='#006ba2')
+ax.text(.1, .2, 'mean 0.14')
+ax.text(.7, .8, 'mean 0.14')
+ax.set_title('Original')
+fig.savefig(os.path.join(os.environ['SCIENCE_ARTIFACT_DIR'], 'plot.png'), dpi=120, bbox_inches='tight')
+ax.set_title('Mutated after export')
+`
+const rSource = `library(ggplot2)
+p <- ggplot(mtcars, aes(wt, mpg, colour=factor(cyl))) + geom_point() + labs(title='Original')
+out <- file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'plot.png')
+png(out, width=4, height=3, units='in', res=120, type='cairo', family='sans')
+print(p)
+dev.off()
+ggsave(file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'ggsave.png'), p, width=4, height=3, dpi=120)
+png(file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'base.png')); plot(1:3); dev.off()
+png(file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'multiple.png')); print(p); print(p); dev.off()
+overwritten <- file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'overwritten.png')
+ggsave(overwritten, p, width=4, height=3, dpi=120)
+png(overwritten); plot(1:3); dev.off()
+p <- p + labs(title='Mutated after export')
+`
+
+/**
+ * Multi-line series label and annotation text as figure authors legitimately
+ * write them (embedded newlines). The catalog id grammar rejects control
+ * characters and the runtime discards a whole chart's editing state on any
+ * decode failure, so these must survive extraction as sanitized ids while
+ * ``label`` keeps the original text unaltered.
+ */
+const pythonMultilineSource = `import os
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(4, 3))
+ax.plot([0, 1], [0, 1], label='line one\\nline two')
+ax.text(.1, .2, 'first\\nannotation')
+ax.text(.7, .8, 'second\\nannotation')
+fig.savefig(os.path.join(os.environ['SCIENCE_ARTIFACT_DIR'], 'multiline.png'), dpi=120)
+`
+const rMultilineSource = `library(ggplot2)
+df <- data.frame(x = 1:4, y = 1:4, g = factor(rep(c("group one\\nline two", "group three\\nline four"), 2)))
+p <- ggplot(df, aes(x, y, colour = g)) + geom_point()
+out <- file.path(Sys.getenv('SCIENCE_ARTIFACT_DIR'), 'multiline.png')
+ggsave(out, p, width=4, height=3, dpi=120)
+`
+const CONTROL_CHARACTER = /[\x00-\x1f\x7f-\x9f]/
+
+for (const language of ['python', 'r'] as const) {
+  const prefix = process.env[language === 'python' ? 'DSH_SCIENCE_RUNTIME_PYTHON_PREFIX' : 'DSH_SCIENCE_RUNTIME_R_PREFIX']
+  describe.skipIf(prefix === undefined)(`real ${language} chart driver`, () => {
+    it('preserves export geometry and baseline across preview and saved edits', async () => {
+      const root = mkdtempSync(join(process.cwd(), '.science-real-chart-'))
+      roots.push(root)
+      const { ctx, runtime } = await createKernelRuntimeHarness(root,
+        { real: language === 'python' ? { pythonPrefix: prefix! } : { rPrefix: prefix! } }, 60_000)
+      contexts.push(ctx)
+      installTestKernelSet(ctx, runtime, { assetsRoot: KERNEL_ASSETS_ROOT, kernelStartTimeoutMs: 30_000 })
+      const session = createScienceSession(ctx, `real-chart-${language}`)
+      await runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('real'), signal: new AbortController().signal })
+      const run = await runtime.startRun({ session, language, code: language === 'python' ? pythonSource : rSource,
+        rasterArtifacts: language === 'r' ? ['plot.png', 'ggsave.png', 'base.png', 'multiple.png', 'overwritten.png'] : ['plot.png'], ...authorizeRun(session, language), signal: new AbortController().signal })
+      const result = await run.done
+      expect(result.terminal.status, JSON.stringify(result)).toBe('success')
+      const artifact = replayScience(session.snapshotEvents())?.artifacts.find(value => value.logicalName === 'plot.png')
+      expect(artifact).toBeDefined()
+      const chart = await chartOf(ctx, artifact!)
+      expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
+      expect(chart!.elements.find(value => value.id === 'title')?.current).toBe('Original')
+      expect(chart!.hitmapStatus).toBe('ok')
+      if (language === 'python') {
+        const hits = chart!.hitmap.filter(hit => hit.id.startsWith('annotation['))
+        expect(hits).toHaveLength(2)
+        expect(hits[0]!.bbox).not.toEqual(hits[1]!.bbox)
+      } else {
+        expect(chart!.png).toMatchObject({ width: 480, height: 360, dpi: 120 })
+        const artifacts = replayScience(session.snapshotEvents())!.artifacts
+        const ggsaveArtifact = artifacts.find(value => value.logicalName === 'ggsave.png')
+        expect(ggsaveArtifact).toBeDefined()
+        expect(await chartOf(ctx, ggsaveArtifact!)).toBeDefined()
+        for (const name of ['base.png', 'multiple.png', 'overwritten.png']) {
+          const plain = artifacts.find(value => value.logicalName === name)
+          expect(plain).toBeDefined()
+          expect(await chartOf(ctx, plain!)).toBeUndefined()
+        }
+      }
+      const target = { session, artifactId: artifact!.artifactId, version: artifact!.version, signal: new AbortController().signal }
+      const preview = await runtime.previewChartEdit({ ...target, ops: [{ op: 'set_title', axes: language === 'python' ? 0 : null, text: 'Preview only' }] })
+      expect(preview.failedOps).toEqual([])
+      const saved = await runtime.applyChartEdit({ ...target, ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Edited x' }] })
+      expect(saved.failedOps).toEqual([])
+      const savedChart = await chartOf(ctx, saved.artifact)
+      expect(savedChart!.elements.find(value => value.id === 'title')?.current).toBe('Original')
+      expect(savedChart!.hitmapStatus).toBe('ok')
+      if (language === 'r') expect(savedChart!.png).toEqual(chart!.png)
+      const nextTarget = { ...target, version: saved.artifact.version }
+      const nextPreview = await runtime.previewChartEdit({ ...nextTarget,
+        ops: [{ op: 'set_title', axes: language === 'python' ? 0 : null, text: 'Another preview' }] })
+      expect(nextPreview.chart.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
+      const nextSave = await runtime.applyChartEdit({ ...nextTarget,
+        ops: [{ op: 'set_title', axes: language === 'python' ? 0 : null, text: 'Final title' }] })
+      const nextSaveChart = await chartOf(ctx, nextSave.artifact)
+      expect(nextSaveChart!.elements.find(value => value.id === 'x_label')?.current).toBe('Edited x')
+      expect(nextSaveChart!.elements.find(value => value.id === 'title')?.current).toBe('Final title')
+      const fontFamily = language === 'python' ? 'DejaVu Sans' : 'sans'
+      const fontSave = await runtime.applyChartEdit({ ...target, version: nextSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: fontFamily, size: 15 }] })
+      expect(fontSave.failedOps).toEqual([])
+      const savedFont = (await chartOf(ctx, fontSave.artifact))!.elements.find(value => value.kind === 'font')?.current
+      expect(savedFont).toEqual({ family: language === 'python' ? ['DejaVu Sans'] : 'sans', size: 15 })
+      // A generic family alias (the panel's own extracted default, and its
+      // first FONT_FAMILIES suggestion) must resolve through the platform's
+      // installed-face substitution rather than fail outright: matplotlib's
+      // `FontProperties(family=<bare str>)` only takes the fontconfig-pattern
+      // parse path for a plain string, whose grammar rejects the hyphen in
+      // "sans-serif" (`set_font` now passes a one-element list instead), and
+      // R's grid/cairo devices accept it as a built-in generic family too.
+      const genericAliasSave = await runtime.applyChartEdit({ ...target, version: fontSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'sans-serif', size: 16 }] })
+      expect(genericAliasSave.failedOps).toEqual([])
+      const genericAliasFont = (await chartOf(ctx, genericAliasSave.artifact))!.elements.find(value => value.kind === 'font')?.current
+      expect(genericAliasFont).toEqual({ family: language === 'python' ? ['sans-serif'] : 'sans-serif', size: 16 })
+      // A family no installed face can satisfy still rejects with
+      // `font_not_found`, distinguishing a real missing font from the
+      // generic-alias case above.
+      const missingFontPreview = await runtime.previewChartEdit({ ...target, version: genericAliasSave.artifact.version,
+        ops: [{ op: 'set_font', axes: null, family: 'DshNoSuchFontFamily12345', size: 15 }] })
+      expect(missingFontPreview.failedOps).toEqual([{ index: 0, reason: 'font_not_found' }])
+      const regenerated = await runtime.startRun({ session, language,
+        code: (language === 'python' ? pythonSource : rSource).replaceAll("'Original'", "'Regenerated'"),
+        rasterArtifacts: ['plot.png'], ...authorizeRun(session, language, `regenerate-${language}`), signal: new AbortController().signal })
+      expect((await regenerated.done).terminal.status).toBe('success')
+      const regeneratedArtifact = replayScience(session.snapshotEvents())!.artifacts.findLast(
+        value => value.artifactId === artifact!.artifactId,
+      )!
+      const regeneratedSave = await runtime.applyChartEdit({ ...target, version: regeneratedArtifact.version,
+        ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Regenerated x' }] })
+      const regeneratedChart = await chartOf(ctx, regeneratedSave.artifact)
+      expect(regeneratedChart!.elements.find(value => value.id === 'title')?.current).toBe('Regenerated')
+    }, 120_000)
+
+    it('sanitizes multi-line series labels and annotation text into control-character-free ids', async () => {
+      const root = mkdtempSync(join(process.cwd(), '.science-real-chart-multiline-'))
+      roots.push(root)
+      const { ctx, runtime } = await createKernelRuntimeHarness(root,
+        { real: language === 'python' ? { pythonPrefix: prefix! } : { rPrefix: prefix! } }, 60_000)
+      contexts.push(ctx)
+      installTestKernelSet(ctx, runtime, { assetsRoot: KERNEL_ASSETS_ROOT, kernelStartTimeoutMs: 30_000 })
+      const session = createScienceSession(ctx, `real-chart-multiline-${language}`)
+      await runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('real'), signal: new AbortController().signal })
+      const run = await runtime.startRun({ session, language, code: language === 'python' ? pythonMultilineSource : rMultilineSource,
+        rasterArtifacts: ['multiline.png'], ...authorizeRun(session, language, `multiline-${language}`), signal: new AbortController().signal })
+      const result = await run.done
+      expect(result.terminal.status, JSON.stringify(result)).toBe('success')
+      const artifact = replayScience(session.snapshotEvents())?.artifacts.find(value => value.logicalName === 'multiline.png')
+      expect(artifact).toBeDefined()
+      const chart = await chartOf(ctx, artifact!)
+      expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
+      expect(() => decodeScienceChartState(chart)).not.toThrow()
+      const seriesElements = chart!.elements.filter(value => value.kind === 'series')
+      expect(seriesElements.length).toBeGreaterThan(0)
+      for (const element of seriesElements) {
+        expect(element.id).not.toMatch(CONTROL_CHARACTER)
+        expect(element.label).toMatch(/\n/)
+      }
+      if (language === 'python') {
+        const annotationElements = chart!.elements.filter(value => value.kind === 'annotation')
+        expect(annotationElements).toHaveLength(2)
+        for (const element of annotationElements) {
+          expect(element.id).not.toMatch(CONTROL_CHARACTER)
+          expect(element.label).toMatch(/\n/)
+        }
+      }
+    }, 60_000)
+  })
+}

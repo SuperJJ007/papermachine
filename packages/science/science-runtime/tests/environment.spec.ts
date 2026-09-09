@@ -1,0 +1,2266 @@
+/** Focused fake-prefix coverage for Science environment binding and probes. */
+
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import { ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceScratchKey, replayScience } from '@deepseek-ai/dsh-science-session'
+import type { ScienceInterpreterBinding } from '@deepseek-ai/dsh-science-session'
+import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import ScienceRuntime from '../src/index.ts'
+import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig, type Config } from '../src/config.ts'
+import { observeProfile, prefixHistoryDigest, sameObservation } from '../src/environment.ts'
+import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
+import {
+  ControlledSubprocess,
+  createControlledRuntimeHarness,
+  createFastRuntimeHarness,
+  createFakeRPrefix,
+  fakeInterpreterPath,
+  createFakePythonPrefix,
+  createKernelRuntimeHarness,
+  createScienceSession,
+  authorizePythonRun,
+  DirectSandbox,
+  kernelAction,
+  mountArtifactStore,
+  realHistorySha256,
+} from './harness.ts'
+
+// Several cases here spawn a real kernel subprocess through
+// LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
+// contend for the OS scheduler and the default 5s timeout is not enough.
+vi.setConfig({ testTimeout: 30_000 })
+
+const staticFsFault = vi.hoisted(() => ({
+  history: '', executable: '', nonObject: '', cleanupPath: '', identityStat: '',
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...original,
+    readFile: async (path: Parameters<typeof original.readFile>[0], options?: Parameters<typeof original.readFile>[1]) => {
+      if (path === staticFsFault.history) throw Object.assign(new Error('injected static filesystem failure'), { code: 'EACCES' })
+      return original.readFile(path, options as never)
+    },
+    lstat: async (path: Parameters<typeof original.lstat>[0], options?: Parameters<typeof original.lstat>[1]) => {
+      if (path === staticFsFault.executable) throw Object.assign(new Error('injected static path loss'), { code: 'ENOENT' })
+      if (path === staticFsFault.nonObject) throw 'injected non-Error static failure'
+      return original.lstat(path, options as never)
+    },
+    // Distinct from `lstat`'s own fault: this fires only on the later
+    // identity `stat(..., { bigint: true })` call, reached after `lstat`
+    // already validated the same path — a real lstat-then-stat TOCTOU race,
+    // not a path that was already gone at the earlier check.
+    stat: async (path: Parameters<typeof original.stat>[0], options?: Parameters<typeof original.stat>[1]) => {
+      if (path === staticFsFault.identityStat) throw Object.assign(new Error('injected identity-stat path loss'), { code: 'ENOENT' })
+      return original.stat(path, options as never)
+    },
+    rm: async (path: Parameters<typeof original.rm>[0], options?: Parameters<typeof original.rm>[1]) => {
+      if (path === staticFsFault.cleanupPath) throw new Error('injected managed cleanup failure')
+      return original.rm(path, options)
+    },
+  }
+})
+
+const fixedInstallUuid = vi.hoisted(() => ({ value: undefined as string | undefined }))
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:crypto')>()
+  const randomUUID = (...args: Parameters<typeof original.randomUUID>): ReturnType<typeof original.randomUUID> =>
+    (fixedInstallUuid.value as ReturnType<typeof original.randomUUID> | undefined) ?? original.randomUUID(...args)
+  return { ...original, randomUUID }
+})
+
+const roots: string[] = []
+const contexts: Context[] = []
+
+afterEach(async () => {
+  Object.assign(staticFsFault, {
+    history: '', executable: '', nonObject: '', cleanupPath: '', identityStat: '',
+  })
+  fixedInstallUuid.value = undefined
+  await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+/** Force both independently owned observations to fail so aggregation keeps their cleanup ordering. */
+class EveryProbeFailureSandbox extends DirectSandbox {
+  failure: unknown = new Error('injected probe failure')
+
+  override confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
+    throw this.failure
+  }
+}
+
+/**
+ * Prove the probe-directory-before-confinement ordering a real win32 ACL
+ * sandbox requires: `confine()` throws if its `workspaceRoot` is not
+ * already a real directory on disk.
+ */
+class RequireExistingWorkspaceRootSandbox extends DirectSandbox {
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    if (!existsSync(policy.workspaceRoot)) {
+      throw new Error(`science-runtime test: workspaceRoot ${policy.workspaceRoot} does not exist at confine() time`)
+    }
+    return super.confine(argv, policy)
+  }
+}
+
+/**
+ * Reports a different enforcement level per language's own probe argv (`R`'s
+ * `Rscript` executable vs. Python's), for `environmentBinding`'s own
+ * `weakerEnforcement` coverage: the two declared languages' probes confine
+ * under the same provider in production, but the recorded `sandboxEnforcement`
+ * must still be an honest minimum rather than "whichever ran first" if that
+ * were ever not the case.
+ */
+class MixedEnforcementSandbox extends DirectSandbox {
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    const confined = super.confine(argv, policy)
+    return { ...confined, enforcement: argv[0]?.includes('Rscript') === true ? 'partial' : 'full' }
+  }
+}
+
+/** Surface defensive subprocess-provider failures through the public bind operation. */
+class BrokenProbeSubprocess extends ControlledSubprocess {
+  mode: 'error-rejection' | 'non-error-rejection' | 'no-outcome' | 'unquiescent' | 'missing-output' | 'version-both-streams' | 'version-nul' | 'version-stderr-only' = 'non-error-rejection'
+  private broken = false
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (this.broken || (!spec.argv.includes('--version') && !spec.argv.includes('-c'))) return handle
+    this.broken = true
+    if (this.mode === 'error-rejection') return { ...handle, done: Promise.reject(new Error('Error subprocess rejection')) }
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- scripts a non-Error spawn rejection.
+    if (this.mode === 'non-error-rejection') return { ...handle, done: Promise.reject('non-Error subprocess rejection') }
+    if (this.mode === 'no-outcome') return { ...handle, done: Promise.resolve(undefined as never) }
+    if (this.mode === 'unquiescent') return { ...handle, waitForExit: async () => false }
+    if (this.mode === 'missing-output') {
+      const { stdout: _stdout, ...collected } = handle.collected
+      return { ...handle, collected }
+    }
+    if (spec.argv.includes('--version')) {
+      const stdout = this.mode === 'version-both-streams' ? 'Fake stdout\n' : this.mode === 'version-stderr-only' ? '' : 'Fake\0Python\n'
+      const stderr = this.mode === 'version-both-streams' ? 'Fake stderr\n' : this.mode === 'version-stderr-only' ? 'Fake Python 3.13.5\n' : ''
+      const reader = (text: string) => ({ readFrom: () => ({ text, nextOffset: Buffer.byteLength(text), lossy: false, utf8Validity: 'valid' as const }) })
+      return { ...handle, collected: { stdout: reader(stdout), stderr: reader(stderr) } }
+    }
+    return handle
+  }
+}
+
+/** Changes history after each Unicode probe to prove the bounded unstable-observation result. */
+class ChangingHistorySubprocess extends ControlledSubprocess {
+  private revision = 0
+  history = ''
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (spec.argv.includes('-c') || spec.argv.includes('-e')) {
+      this.revision += 1
+      writeFileSync(this.history, `history revision ${String(this.revision)}\n`)
+    }
+    return handle
+  }
+}
+
+/** Report partial enforcement only when unstable static facts require a retry wrap. */
+class RetryPartialSandbox extends DirectSandbox {
+  failRollback = false
+  private wraps = 0
+
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    this.wraps += 1
+    const confined = super.confine(argv, policy)
+    // The first attempt confines three probes (version, utf8, packages) fully;
+    // only the retry's confines report partial enforcement.
+    if (this.wraps <= 3) return confined
+    if (this.failRollback) staticFsFault.cleanupPath = dirname(dirname(policy.workspaceRoot))
+    return { ...confined, enforcement: 'partial' }
+  }
+}
+
+/** Make cleanup fail after a probe has settled, then restore the parent for test teardown. */
+class ProbeFailureAndCleanupSandbox extends DirectSandbox {
+  override confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+    staticFsFault.cleanupPath = policy.workspaceRoot
+    return super.confine(argv, policy)
+  }
+}
+
+/** Fail a started probe so its independently injected cleanup failure is aggregated. */
+class ProbeFailureAndCleanupSubprocess extends ControlledSubprocess {
+  failProbe = true
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    if (this.failProbe) throw new Error('injected probe failure before cleanup')
+    return super.spawn(spec)
+  }
+}
+
+/** Delay exactly one already-exited R probe until the test permits whole-tree observation. */
+class DelayedRVersionSubprocess extends ControlledSubprocess {
+  readonly rVersionStarted = Promise.withResolvers<undefined>()
+  private readonly releaseVersion = Promise.withResolvers<undefined>()
+  private delaying = true
+  failPython = true
+
+  releaseRVersion(): void {
+    this.releaseVersion.resolve(undefined)
+  }
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    if (this.failPython && /[\\/]python(?:\.exe)?$/.test(spec.argv[0] ?? '')) throw new Error('injected Python probe failure')
+    const handle = super.spawn(spec)
+    if (!this.delaying || !/[\\/]Rscript(?:\.exe)?$/.test(spec.argv[0] ?? '') || !spec.argv.includes('--version')) return handle
+    this.delaying = false
+    this.rVersionStarted.resolve(undefined)
+    return {
+      ...handle,
+      done: this.releaseVersion.promise.then(async () => handle.done),
+      waitForExit: async (signal?: AbortSignal) => {
+        await this.releaseVersion.promise
+        return handle.waitForExit(signal)
+      },
+    }
+  }
+}
+
+/** Return a non-zero R version outcome while preserving the requested argv. */
+class FailingRVersionSubprocess extends ControlledSubprocess {
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (!/[\\/]Rscript(?:\.exe)?$/.test(spec.argv[0] ?? '') || !spec.argv.includes('--version')) return handle
+    return { ...handle, done: Promise.resolve({ exitCode: 1, signal: null }) }
+  }
+}
+
+/** Return a non-zero package-inventory probe outcome while preserving the requested argv. */
+class FailingPackagesProbeSubprocess extends ControlledSubprocess {
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    const handle = super.spawn(spec)
+    if (!spec.argv.includes('-m')) return handle
+    return { ...handle, done: Promise.resolve({ exitCode: 1, signal: null }) }
+  }
+}
+
+describe('ScienceRuntime.bindEnvironment', () => {
+  it('accepts a blank session recomposed from the default preset into Science', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-recomposed-session-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = harness.ctx.sessions.create(SessionId('science-recomposed-session'), {
+      meta: { agentPreset: 'standard', cwd: mkdtempSync(join(root, 'workspace-')) },
+    })
+    session.append('agent-preset/selected', { agentPreset: 'science' })
+    session.append('science/mode-bound', {
+      version: 1,
+      mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
+    })
+
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
+  })
+
+  /**
+   * Shared body for both split it.each calls below: only the modes requiring an actual probe
+   * outcome (a rejection, or the stderr-only 'applied' branch) depend on
+   * createFakePythonPrefix's POSIX-shaped fake interpreter ever being found.
+   */
+  type BrokenProbeMode = 'error-rejection' | 'non-error-rejection' | 'no-outcome' | 'unquiescent'
+    | 'missing-output' | 'version-both-streams' | 'version-nul' | 'version-stderr-only'
+  async function bindWithBrokenProbe(mode: BrokenProbeMode): Promise<void> {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-broken-probe-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(BrokenProbeSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    ;(ctx.subprocess as BrokenProbeSubprocess).mode = mode
+    const session = createScienceSession(ctx, `science-broken-probe-${mode}`)
+    const binding = ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (mode === 'missing-output' || mode === 'version-both-streams' || mode === 'version-nul' || mode === 'version-stderr-only') {
+      await expect(binding).resolves.toMatchObject({ status: mode === 'version-stderr-only' ? 'applied' : 'invalid' })
+      expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound', 'science/environment-bound'])
+    } else {
+      await expect(binding).rejects.toMatchObject({ code: mode === 'unquiescent' ? 'QUIESCENCE_UNPROVEN' : 'INFRASTRUCTURE_FAILURE' })
+      expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+    }
+  }
+
+  it.each([
+    'error-rejection', 'non-error-rejection', 'no-outcome', 'unquiescent', 'version-stderr-only',
+  ] as const)('fails loudly when a probe provider is %s', bindWithBrokenProbe)
+
+  // These modes ('missing-output', 'version-both-streams', 'version-nul') all assert status:
+  // 'invalid', which a win32 run also reaches (via the missing-executable static check, before
+  // any probe spawns) for an unrelated reason, so they are platform-independent.
+  it.each(['missing-output', 'version-both-streams', 'version-nul'] as const)(
+    'fails loudly when a probe provider is %s', bindWithBrokenProbe,
+  )
+
+  it.skipIf(process.platform === 'win32')('uses the Darwin locale allowlist for a host-local direct probe', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-darwin-locale-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-darwin-locale')
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')
+    if (original === undefined) throw new Error('process.platform descriptor is unavailable')
+    Object.defineProperty(process, 'platform', { ...original, value: 'darwin' })
+    try {
+      await expect(harness.runtime.bindEnvironment({
+        session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })).resolves.toMatchObject({ status: 'applied' })
+      expect(harness.subprocess.specs.every(spec => spec.env?.LANG === 'en_US.UTF-8' && spec.env.LC_ALL === 'en_US.UTF-8')).toBe(true)
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+    }
+  })
+
+  it('records three empty-base, fully confined probes and commits one applied revision', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science runtime-environment-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    expect(lstatSync(fakeInterpreterPath(prefix, 'python')).isFile()).toBe(true)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const { ctx, runtime, sandbox, subprocess } = harness
+    const session = createScienceSession(ctx, 'science-bind-fake')
+    const environment = await runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+
+    expect(environment).toMatchObject({
+      revision: 1,
+      profileId: 'fake',
+      status: 'applied',
+      python: {
+        capability: 'available',
+        language: 'python',
+        canonicalPrefix: prefix,
+        executable: fakeInterpreterPath(prefix, 'python'),
+        languageVersion: 'Fake Python 3.13.5',
+        packages: [{ name: 'numpy', version: '1.26.4' }, { name: 'pip', version: '24.0' }],
+        packagesTruncated: false,
+      },
+    })
+    expect(session.snapshotEvents().map(event => event.type)).toEqual([
+      'science/mode-bound',
+      'science/environment-bound',
+    ])
+    expect(subprocess.specs).toHaveLength(3)
+    for (const spec of subprocess.specs) {
+      expect(spec.environmentBase).toBe('empty')
+      expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
+      expect(spec.cwd).toMatch(/[\\/]probes[\\/]/)
+    }
+    const [versionSpec, utf8Spec, packagesSpec] = subprocess.specs
+    for (const spec of [versionSpec, utf8Spec]) {
+      expect(spec?.stdio).toEqual({
+        stdin: 'ignore',
+        stdout: { maxBytes: 1_024 },
+        stderr: { maxBytes: 1_024 },
+      })
+    }
+    expect(packagesSpec?.stdio).toEqual({
+      stdin: 'ignore',
+      stdout: { maxBytes: 8 * 1024 * 1024 },
+      stderr: { maxBytes: 8 * 1024 * 1024 },
+    })
+    expect(packagesSpec?.argv).toEqual([fakeInterpreterPath(prefix, 'python'), '-I', '-B', '-X', 'utf8', '-m', 'pip', 'list', '--format=json'])
+    // Every probe argv is ASCII-only: a win32 launcher that forwards the
+    // command line through an ANSI code page (conda-forge's Rscript.exe;
+    // see the equivalent R assertion below) never sees a byte it cannot
+    // represent, regardless of the platform this test itself runs on.
+    for (const spec of subprocess.specs) {
+      for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
+    }
+    expect(sandbox.policies).toHaveLength(3)
+    expect(sandbox.policies.every(policy => policy.mode === 'workspace-write')).toBe(true)
+    expect(sandbox.policies.every(policy => /[\\/]probes[\\/]/.test(policy.workspaceRoot))).toBe(true)
+  })
+
+  it('merges the sandbox backend\'s required env over the probe base env, the backend winning on overlap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science runtime-environment-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const { ctx, runtime, sandbox, subprocess } = harness
+    // A backend runner requirement (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE) must win over a probe base env entry it collides
+    // with, so PATH here proves override order rather than mere presence.
+    sandbox.env = { ELECTRON_RUN_AS_NODE: '1', PATH: '/backend-required-path' }
+    const session = createScienceSession(ctx, 'science-bind-fake-env')
+    await runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    expect(subprocess.specs).toHaveLength(3)
+    for (const spec of subprocess.specs) {
+      expect(spec.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+      expect(spec.env?.PATH).toBe('/backend-required-path')
+    }
+  })
+
+  it('uses a standalone R version argv and preserves strict flags on the UTF-8 probe', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-argv-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { r: { rPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-bind-r-argv')
+
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('r'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'applied',
+      r: {
+        capability: 'available',
+        languageVersion: 'Fake R 4.5.0',
+        packages: [{ name: 'base', version: '4.5.0' }, { name: 'utils', version: '4.5.0' }],
+      },
+    })
+    const executable = fakeInterpreterPath(prefix, 'r')
+    expect(harness.subprocess.specs.map(spec => spec.argv)).toEqual([
+      [executable, '--version'],
+      [executable, '--vanilla', '--encoding=UTF-8', '-e', 'cat(enc2utf8("dsh-\\u79d1\\u5b66-\\u2713"),sep="")'],
+      [executable, '--vanilla', '--encoding=UTF-8', '-e',
+        "m <- installed.packages()[, c('Package', 'Version'), drop = FALSE]; "
+          + "write.table(m, file = stdout(), sep = '\\t', quote = FALSE, row.names = FALSE, col.names = FALSE)"],
+    ])
+    // ASCII-only: conda-forge's win32 Scripts\Rscript.exe forwards its
+    // command line through CreateProcessA (ANSI), corrupting any byte
+    // outside the active code page before R ever sees it.
+    for (const spec of harness.subprocess.specs) {
+      for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
+    }
+  })
+
+  it('records a non-zero R version probe as an invalid environment observation', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-r-version-failure-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(FailingRVersionSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { r: { rPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-bind-r-version-failure')
+
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('r'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      r: {
+        capability: 'invalid',
+        reason: 'interpreter probes did not produce the required lossless output',
+      },
+    })
+    expect(session.snapshotEvents().map(event => event.type)).toEqual([
+      'science/mode-bound',
+      'science/environment-bound',
+    ])
+  })
+
+  it('rejects a configured prefix that overlaps the future writable Science root before it creates any scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-overlap-'))
+    roots.push(root)
+    const dshHome = join(root, 'dsh-home')
+    const prefix = join(dshHome, 'science')
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome, profiles: { overlap: { pythonPrefix: prefix } } })
+    const session = ctx.sessions.create(SessionId('science-bind-overlap'), {
+      meta: { agentPreset: 'science', cwd: mkdtempSync(join(root, 'workspace-')) },
+    })
+    session.append('science/mode-bound', {
+      version: 1,
+      mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
+    })
+
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('overlap'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(existsSync(join(dshHome, 'science'))).toBe(false)
+  })
+
+  it('rejects remote execution or partial enforcement before publishing an environment revision', async () => {
+    const remoteRoot = mkdtempSync(join(process.cwd(), '.science-runtime-remote-'))
+    const partialRoot = mkdtempSync(join(process.cwd(), '.science-runtime-partial-'))
+    roots.push(remoteRoot, partialRoot)
+    const remotePrefix = createFakePythonPrefix(remoteRoot)
+    const remote = await createFastRuntimeHarness(remoteRoot, { fake: { pythonPrefix: remotePrefix } })
+    contexts.push(remote.ctx)
+    ;(remote.subprocess as unknown as { executionWorld: 'host-local' | 'remote' }).executionWorld = 'remote'
+    const remoteSession = createScienceSession(remote.ctx, 'science-remote-world')
+    await expect(remote.runtime.bindEnvironment({
+      session: remoteSession,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(remote.subprocess.specs).toEqual([])
+    expect(existsSync(join(remoteRoot, 'dsh-home', 'science'))).toBe(false)
+
+    const partialPrefix = createFakePythonPrefix(partialRoot)
+    const partial = await createFastRuntimeHarness(partialRoot, { fake: { pythonPrefix: partialPrefix } })
+    contexts.push(partial.ctx)
+    partial.sandbox.enforcement = 'partial'
+    const partialSession = createScienceSession(partial.ctx, 'science-partial-enforcement')
+    await expect(partial.runtime.bindEnvironment({
+      session: partialSession,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(partialSession.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+    // Confinement now runs after the probe directory (and therefore the
+    // owning Session tree) is created, so rejection rolls back this exact
+    // Session's root and marker rather than leaving nothing on disk at all.
+    expect(existsSync(join(partialRoot, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(partialSession)))).toBe(false)
+
+    const unavailableRoot = mkdtempSync(join(process.cwd(), '.science-runtime-unavailable-'))
+    roots.push(unavailableRoot)
+    const unavailablePrefix = createFakePythonPrefix(unavailableRoot)
+    const unavailable = await createFastRuntimeHarness(unavailableRoot, { fake: { pythonPrefix: unavailablePrefix } })
+    contexts.push(unavailable.ctx)
+    vi.spyOn(unavailable.sandbox, 'confine').mockImplementation(() => {
+      throw new SandboxUnavailableError('workspace-write')
+    })
+    const unavailableSession = createScienceSession(unavailable.ctx, 'science-unavailable-enforcement')
+    await expect(unavailable.runtime.bindEnvironment({
+      session: unavailableSession,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(existsSync(join(unavailableRoot, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(unavailableSession)))).toBe(false)
+  })
+
+  it('confines every probe only after its private directory already exists on disk', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-confine-after-exists-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(RequireExistingWorkspaceRootSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-confine-after-exists')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
+  })
+
+  it('accepts a partial-reporting sandbox and records the accepted level once minimumEnforcement allows it', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-accept-partial-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { minimumEnforcement: 'partial' },
+    )
+    contexts.push(harness.ctx)
+    harness.sandbox.enforcement = 'partial'
+    const session = createScienceSession(harness.ctx, 'science-accept-partial')
+    await expect(harness.runtime.bindEnvironment({
+      session,
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
+  })
+
+  it('records the weaker of two differing per-language enforcement levels, not whichever ran first', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-mixed-enforcement-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    createFakeRPrefix(root, prefix)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(MixedEnforcementSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { both: { pythonPrefix: prefix, rPrefix: prefix } },
+      minimumEnforcement: 'partial',
+    })
+    const session = createScienceSession(ctx, 'science-mixed-enforcement')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('both'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied', sandboxEnforcement: 'partial' })
+  })
+
+  it('records an invalid revision for a missing prefix or invalid retained UTF-8 without spawning user source', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-invalid-'))
+    roots.push(root)
+    const invalidPrefix = createFakePythonPrefix(root, 'invalid')
+    const missingPrefix = join(root, 'missing-conda')
+    const harness = await createFastRuntimeHarness(root, {
+      invalid: { pythonPrefix: invalidPrefix },
+      missing: { pythonPrefix: missingPrefix },
+    })
+    contexts.push(harness.ctx)
+    harness.subprocess.utf8Probe = 'invalid'
+    const { ctx, runtime, subprocess } = harness
+    const invalidSession = createScienceSession(ctx, 'science-bind-invalid-utf8')
+    const invalid = await runtime.bindEnvironment({
+      session: invalidSession,
+      profileId: ScienceEnvironmentProfileId('invalid'),
+      signal: new AbortController().signal,
+    })
+    const missingSession = createScienceSession(ctx, 'science-bind-missing')
+    const beforeMissing = subprocess.specs.length
+    const missing = await runtime.bindEnvironment({
+      session: missingSession,
+      profileId: ScienceEnvironmentProfileId('missing'),
+      signal: new AbortController().signal,
+    })
+
+    expect(invalid).toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', canonicalPrefix: invalidPrefix, executable: fakeInterpreterPath(invalidPrefix, 'python') },
+      // A probe actually ran (and confined) before the UTF-8 mismatch made
+      // the observation invalid, so the accepted enforcement level is known.
+      sandboxEnforcement: 'full',
+    })
+    expect(missing).toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', configuredPrefix: missingPrefix },
+    })
+    // A missing prefix fails static checks before any confinement is
+    // attempted, so no enforcement level was ever observed to record.
+    expect(missing.sandboxEnforcement).toBeUndefined()
+    expect(subprocess.specs).toHaveLength(beforeMissing)
+  })
+
+  it('observes a shared Python/R prefix, while an R TMPDIR under a space-containing scratch path fails before a probe starts', async () => {
+    const sharedRoot = mkdtempSync(join(process.cwd(), '.science-runtime-shared-'))
+    const spaceRoot = mkdtempSync(join(process.cwd(), '.science runtime-r-space-'))
+    roots.push(sharedRoot, spaceRoot)
+    const sharedPrefix = createFakePythonPrefix(sharedRoot)
+    createFakeRPrefix(sharedRoot, sharedPrefix)
+    const shared = await createFastRuntimeHarness(sharedRoot, { both: { pythonPrefix: sharedPrefix, rPrefix: sharedPrefix } })
+    contexts.push(shared.ctx)
+    const sharedSession = createScienceSession(shared.ctx, 'science-bind-shared')
+    const environment = await shared.runtime.bindEnvironment({
+      session: sharedSession,
+      profileId: ScienceEnvironmentProfileId('both'),
+      signal: new AbortController().signal,
+    })
+    expect(environment).toMatchObject({
+      status: 'applied',
+      python: { capability: 'available', languageVersion: 'Fake Python 3.13.5' },
+      r: { capability: 'available', languageVersion: 'Fake R 4.5.0' },
+    })
+    const rOnlyScratch = await ensureSessionScratch(join(sharedRoot, 'r-only-home'), sharedSession)
+    await expect(observeProfile({
+      subprocess: shared.subprocess,
+      sandbox: shared.sandbox,
+      sessionScratch: rOnlyScratch,
+      sessionId: sharedSession.id,
+      signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
+    }, { id: ScienceEnvironmentProfileId('r-only'), rPrefix: sharedPrefix })).resolves.toMatchObject({ r: { binding: { capability: 'available' } } })
+
+    const rPrefix = createFakeRPrefix(spaceRoot)
+    const spaced = await createFastRuntimeHarness(spaceRoot, { r: { rPrefix } })
+    contexts.push(spaced.ctx)
+    const spacedSession = createScienceSession(spaced.ctx, 'science-bind-r-space')
+    await expect(spaced.runtime.bindEnvironment({
+      session: spacedSession,
+      profileId: ScienceEnvironmentProfileId('r'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(spaced.subprocess.specs).toEqual([])
+
+    spacedSession.append('science/environment-bound', {
+      version: 1,
+      environment: {
+        revision: 1,
+        profileId: ScienceEnvironmentProfileId('r'),
+        configuredAt: 1,
+        validatedAt: 1,
+        status: 'applied',
+        r: {
+          language: 'r',
+          configuredPrefix: rPrefix,
+          canonicalPrefix: rPrefix,
+          executable: fakeInterpreterPath(rPrefix, 'r'),
+          executableIdentity: 'test-identity',
+          languageVersion: 'Fake R 4.5.0',
+          condaHistorySha256: realHistorySha256(rPrefix),
+          bindingFingerprint: 'b'.repeat(64),
+          packages: [{ name: 'base', version: '4.5.0' }],
+          packagesSha256: 'f'.repeat(64),
+          packagesTruncated: false,
+          capability: 'available',
+        },
+      },
+    })
+    await expect(spaced.runtime.startRun({
+      session: spacedSession,
+      language: 'r',
+      code: 'print("must not spawn")',
+      ...authorizePythonRun(spacedSession, 'science-run-r-space'),
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    expect(spacedSession.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+    expect(spaced.subprocess.specs).toEqual([])
+  })
+
+  it('keeps distinct configured Python and R prefixes distinct, and records an escaping executable as invalid without a probe', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-distinct-'))
+    const escapingRoot = mkdtempSync(join(process.cwd(), '.science-runtime-escaping-'))
+    roots.push(root, escapingRoot)
+    const pythonPrefix = createFakePythonPrefix(root)
+    const rPrefix = createFakeRPrefix(root)
+    const distinct = await createFastRuntimeHarness(root, { both: { pythonPrefix, rPrefix } })
+    contexts.push(distinct.ctx)
+    const distinctSession = createScienceSession(distinct.ctx, 'science-bind-distinct')
+    const environment = await distinct.runtime.bindEnvironment({
+      session: distinctSession,
+      profileId: ScienceEnvironmentProfileId('both'),
+      signal: new AbortController().signal,
+    })
+    expect(environment).toMatchObject({
+      status: 'applied',
+      python: { canonicalPrefix: pythonPrefix },
+      r: { canonicalPrefix: rPrefix },
+    })
+    expect(environment.python?.canonicalPrefix).not.toBe(environment.r?.canonicalPrefix)
+
+    const escapingPrefix = createFakePythonPrefix(escapingRoot)
+    const candidate = fakeInterpreterPath(escapingPrefix, 'python')
+    unlinkSync(candidate)
+    symlinkSync(process.execPath, candidate)
+    const escaping = await createFastRuntimeHarness(escapingRoot, { escaping: { pythonPrefix: escapingPrefix } })
+    contexts.push(escaping.ctx)
+    const escapingSession = createScienceSession(escaping.ctx, 'science-bind-escaping')
+    const before = escaping.subprocess.specs.length
+    const invalid = await escaping.runtime.bindEnvironment({
+      session: escapingSession,
+      profileId: ScienceEnvironmentProfileId('escaping'),
+      signal: new AbortController().signal,
+    })
+    expect(invalid).toMatchObject({ status: 'invalid', python: { capability: 'invalid' } })
+    expect(escaping.subprocess.specs).toHaveLength(before)
+  })
+
+  it('holds the exact Session lease until a sibling probe quiesces after an earlier probe failure', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-probe-cleanup-'))
+    roots.push(root)
+    const pythonPrefix = createFakePythonPrefix(root)
+    const rPrefix = createFakeRPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(DelayedRVersionSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { both: { pythonPrefix, rPrefix } },
+    })
+    const runtime = ctx.scienceRuntime
+    const subprocess = ctx.subprocess as DelayedRVersionSubprocess
+    const session = createScienceSession(ctx, 'science-probe-cleanup')
+    const request = {
+      session,
+      profileId: ScienceEnvironmentProfileId('both'),
+      signal: new AbortController().signal,
+    }
+
+    const binding = runtime.bindEnvironment(request)
+    await subprocess.rVersionStarted.promise
+    await expect(runtime.bindEnvironment(request)).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+
+    subprocess.releaseRVersion()
+    await expect(binding).rejects.toMatchObject({
+      code: 'INFRASTRUCTURE_FAILURE',
+      cause: { message: 'injected Python probe failure' },
+    })
+
+    subprocess.failPython = false
+    await expect(runtime.bindEnvironment(request)).resolves.toMatchObject({ status: 'applied' })
+  })
+
+  it('rejects unknown profiles, rebinds after a run, and pre-aborted binds without publishing facts', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-bind-guards-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const spawnSpy = vi.spyOn(harness.ctx.subprocess, 'spawn')
+    const session = createScienceSession(harness.ctx, 'science-bind-guards')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('unknown'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      code: 'PROFILE_NOT_CONFIGURED',
+      message: 'no Conda prefix is configured for the Science environment profile "unknown" — '
+        + 'open Settings → Plugins → Science to configure one, then restart the Host',
+    })
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: aborted.signal,
+    })).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
+    expect(spawnSpy).not.toHaveBeenCalled()
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const handle = await harness.runtime.startRun({
+      session, language: 'python', code: kernelAction({ status: 'ok' }), ...authorizePythonRun(session), signal: new AbortController().signal,
+    })
+    await handle.done
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('requires a workspace cwd and retries project resolution after an open failure', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-project-resolution-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    let opens = 0
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, 1_800_000, (ctx) => {
+      ctx.provide('scienceArtifactStore', {
+        openProject: async (workspacePath: string) => {
+          opens += 1
+          if (opens === 1) throw new Error('injected project open failure')
+          return { projectId: ScienceProjectId('project-retry'), storeRoot: workspacePath, workspacePath, outcome: 'created' }
+        },
+      } as never)
+    })
+    contexts.push(harness.ctx)
+
+    const noWorkspace = harness.ctx.sessions.create(SessionId('science-project-no-cwd'), { meta: { agentPreset: 'science' } })
+    noWorkspace.append('science/mode-bound', {
+      version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'phase-2-test' },
+    })
+    await expect(harness.runtime.bindEnvironment({
+      session: noWorkspace, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'PROJECT_UNAVAILABLE' })
+
+    const retry = createScienceSession(harness.ctx, 'science-project-retry')
+    await expect(harness.runtime.bindEnvironment({
+      session: retry, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+    await expect(harness.runtime.bindEnvironment({
+      session: retry, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'applied' })
+    expect(opens).toBe(2)
+  })
+
+  it('rejects a POSIX interpreter without execute bits before creating probe scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-static-mode-policy-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const executable = join(prefix, 'bin', 'python')
+    writeFileSync(executable, '')
+    chmodSync(executable, 0o600)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-mode-policy')
+    const scratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      await expect(observeProfile({ subprocess: harness.subprocess, sandbox: harness.sandbox,
+        sessionScratch: scratch, sessionId: session.id, signal: new AbortController().signal,
+        packagesMaxEntries: 2_000, packagesMaxBytes: 65_536, minimumEnforcement: 'full',
+      }, { id: ScienceEnvironmentProfileId('fake'), pythonPrefix: prefix })).resolves.toMatchObject({
+        python: { binding: { capability: 'invalid', reason: expect.stringContaining('regular executable') as unknown } },
+      })
+      expect(harness.subprocess.specs).toEqual([])
+    } finally { platform.mockRestore() }
+  })
+
+  it('records static invalid observations without probing malformed history or interpreter entries', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-static-invalid-'))
+    roots.push(root)
+    const historyDirectory = createFakePythonPrefix(join(root, 'history-directory'))
+    rmSync(join(historyDirectory, 'conda-meta', 'history'))
+    mkdirSync(join(historyDirectory, 'conda-meta', 'history'))
+    const missingExecutable = createFakePythonPrefix(join(root, 'missing-executable'))
+    unlinkSync(fakeInterpreterPath(missingExecutable, 'python'))
+    const nonExecutable = createFakePythonPrefix(join(root, 'non-executable'))
+    if (process.platform === 'win32') {
+      rmSync(fakeInterpreterPath(nonExecutable, 'python'))
+      mkdirSync(fakeInterpreterPath(nonExecutable, 'python'))
+    } else chmodSync(fakeInterpreterPath(nonExecutable, 'python'), 0o600)
+    const nonDirectoryPrefix = join(root, 'prefix-file')
+    writeFileSync(nonDirectoryPrefix, 'not a prefix')
+    const loopingPrefix = join(root, 'looping-prefix')
+    symlinkSync('looping-prefix', loopingPrefix)
+    const harness = await createFastRuntimeHarness(root, {
+      history: { pythonPrefix: historyDirectory },
+      executable: { pythonPrefix: missingExecutable },
+      nonExecutable: { pythonPrefix: nonExecutable },
+      file: { pythonPrefix: nonDirectoryPrefix },
+      loop: { pythonPrefix: loopingPrefix },
+    })
+    contexts.push(harness.ctx)
+    const historySession = createScienceSession(harness.ctx, 'science-static-history')
+    const executableSession = createScienceSession(harness.ctx, 'science-static-executable')
+    const history = await harness.runtime.bindEnvironment({
+      session: historySession, profileId: ScienceEnvironmentProfileId('history'), signal: new AbortController().signal,
+    })
+    const executable = await harness.runtime.bindEnvironment({
+      session: executableSession, profileId: ScienceEnvironmentProfileId('executable'), signal: new AbortController().signal,
+    })
+    const nonExecutableSession = createScienceSession(harness.ctx, 'science-static-non-executable')
+    const nonExecutableResult = await harness.runtime.bindEnvironment({
+      session: nonExecutableSession, profileId: ScienceEnvironmentProfileId('nonExecutable'), signal: new AbortController().signal,
+    })
+    const fileSession = createScienceSession(harness.ctx, 'science-static-prefix-file')
+    const file = await harness.runtime.bindEnvironment({
+      session: fileSession, profileId: ScienceEnvironmentProfileId('file'), signal: new AbortController().signal,
+    })
+    await expect(harness.runtime.bindEnvironment({
+      session: createScienceSession(harness.ctx, 'science-static-prefix-loop'), profileId: ScienceEnvironmentProfileId('loop'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+    expect(history.python).toMatchObject({ capability: 'invalid' })
+    expect(history.python?.reason).toMatch(/history/)
+    expect(executable.python).toMatchObject({ capability: 'invalid' })
+    expect(executable.python?.reason).toMatch(/interpreter/)
+    expect(nonExecutableResult.python).toMatchObject({ capability: 'invalid' })
+    expect(nonExecutableResult.python?.reason).toMatch(/regular executable/)
+    expect(file.python).toMatchObject({ capability: 'invalid' })
+    expect(file.python?.reason).toMatch(/conda-meta[\\/]history/)
+    expect(harness.subprocess.specs).toEqual([])
+  })
+
+  it('preserves non-missing static filesystem failures while retaining only missing paths as invalid observations', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-static-fs-errors-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const history = join(prefix, 'conda-meta', 'history')
+    const executable = fakeInterpreterPath(prefix, 'python')
+    try {
+      staticFsFault.history = history
+      await expect(harness.runtime.bindEnvironment({
+        session: createScienceSession(harness.ctx, 'science-static-read-error'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+      staticFsFault.history = ''
+      staticFsFault.executable = executable
+      const binding = await harness.runtime.bindEnvironment({
+        session: createScienceSession(harness.ctx, 'science-static-lstat-loss'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })
+      expect(binding.python).toMatchObject({ capability: 'invalid' })
+      expect(binding.python?.reason).toMatch(/interpreter/)
+      staticFsFault.executable = ''
+      staticFsFault.nonObject = executable
+      await expect(harness.runtime.bindEnvironment({
+        session: createScienceSession(harness.ctx, 'science-static-non-error'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+      staticFsFault.nonObject = ''
+      // The executable vanishes strictly between `lstat` (which already
+      // validated it) and the later identity `stat`: a true TOCTOU race,
+      // distinct from `staticFsFault.executable`'s lstat-time loss above.
+      staticFsFault.identityStat = executable
+      const identityLoss = await harness.runtime.bindEnvironment({
+        session: createScienceSession(harness.ctx, 'science-static-identity-loss'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })
+      expect(identityLoss.python).toMatchObject({ capability: 'invalid' })
+      expect(identityLoss.python?.reason).toMatch(/changed during static observation/)
+    } finally {
+      staticFsFault.history = ''
+      staticFsFault.executable = ''
+      staticFsFault.identityStat = ''
+    }
+  })
+
+  it('aggregates probe and cleanup failures, and preserves static observation races without publishing a binding', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-observation-failures-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const cleanupContext = new Context()
+    contexts.push(cleanupContext)
+    await cleanupContext.plugin(SessionStore)
+    await cleanupContext.plugin(InvariantRegistry, { enabled: true })
+    await cleanupContext.plugin(ScienceSessionInvariant)
+    await cleanupContext.plugin(ProbeFailureAndCleanupSubprocess)
+    await cleanupContext.plugin(ProbeFailureAndCleanupSandbox)
+    await mountArtifactStore(cleanupContext, root)
+    await cleanupContext.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    const cleanupSession = createScienceSession(cleanupContext, 'science-probe-cleanup-failure')
+    const cleanup = cleanupContext.scienceRuntime.bindEnvironment({
+      session: cleanupSession, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    await expect(cleanup).rejects.toMatchObject({
+      code: 'INFRASTRUCTURE_FAILURE',
+      cause: { errors: [expect.any(Error), expect.any(Error)] },
+    })
+    staticFsFault.cleanupPath = ''
+    expect(cleanupSession.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+
+    ;(cleanupContext.subprocess as ProbeFailureAndCleanupSubprocess).failProbe = false
+    await expect(cleanupContext.scienceRuntime.bindEnvironment({
+      session: createScienceSession(cleanupContext, 'science-probe-cleanup-only-failure'), profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE', cause: { message: 'injected managed cleanup failure' } })
+    staticFsFault.cleanupPath = ''
+
+    const raceRoot = mkdtempSync(join(process.cwd(), '.science-runtime-static-race-'))
+    roots.push(raceRoot)
+    const racePrefix = createFakePythonPrefix(raceRoot)
+    const harness = await createFastRuntimeHarness(raceRoot, { fake: { pythonPrefix: racePrefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.onSpawn = (spec) => {
+      if (spec.argv.includes('-c')) unlinkSync(fakeInterpreterPath(racePrefix, 'python'))
+    }
+    const raceSession = createScienceSession(harness.ctx, 'science-static-race')
+    await expect(harness.runtime.bindEnvironment({
+      session: raceSession, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
+  })
+
+  it('waits for both failed observations before reporting their aggregate failure', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-observe-aggregate-'))
+    roots.push(root)
+    const pythonPrefix = createFakePythonPrefix(root)
+    const rPrefix = createFakeRPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(EveryProbeFailureSandbox)
+    const session = ctx.sessions.create(SessionId('science-observe-aggregate'))
+    const scratch = await ensureSessionScratch(join(root, 'dsh-home'), session)
+    await expect(observeProfile({
+      subprocess: ctx.subprocess,
+      sandbox: ctx.sandbox,
+      sessionScratch: scratch,
+      sessionId: session.id,
+      signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
+    }, {
+      id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
+    })).rejects.toThrow(/observations failed after all probe cleanup settled/)
+    expect(existsSync(scratch.probes)).toBe(true)
+    expect(readdirSync(scratch.probes)).toEqual([])
+    ;(ctx.subprocess as ControlledSubprocess).executionWorld = 'remote'
+    await expect(observeProfile({
+      subprocess: ctx.subprocess,
+      sandbox: ctx.sandbox,
+      sessionScratch: scratch,
+      sessionId: session.id,
+      signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
+    }, {
+      id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    ;(ctx.subprocess as ControlledSubprocess).executionWorld = 'host-local'
+    ;(ctx.sandbox as EveryProbeFailureSandbox).failure = 'injected non-Error observation failure'
+    await expect(observeProfile({
+      subprocess: ctx.subprocess,
+      sandbox: ctx.sandbox,
+      sessionScratch: scratch,
+      sessionId: session.id,
+      signal: new AbortController().signal,
+      packagesMaxEntries: 2_000,
+      packagesMaxBytes: 65_536,
+      minimumEnforcement: 'full',
+    }, {
+      id: ScienceEnvironmentProfileId('both'), pythonPrefix, rPrefix,
+    })).rejects.toMatchObject({ errors: [expect.any(Error), 'injected non-Error observation failure'] })
+  })
+
+  it('records a bounded invalid observation when the prefix changes during both attempts', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-observe-drift-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const history = join(prefix, 'conda-meta', 'history')
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ChangingHistorySubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    ;(ctx.subprocess as ChangingHistorySubprocess).history = history
+    const session = createScienceSession(ctx, 'science-observe-drift')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({ status: 'invalid', python: { reason: 'environment changed during observation' } })
+  })
+
+  it('rolls back newly owned Session scratch when a retry cannot obtain full confinement', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-retry-confinement-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const history = join(prefix, 'conda-meta', 'history')
+    const dshHome = join(root, 'dsh-home')
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ChangingHistorySubprocess)
+    await ctx.plugin(RetryPartialSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome, profiles: { fake: { pythonPrefix: prefix } } })
+    ;(ctx.subprocess as ChangingHistorySubprocess).history = history
+    const session = createScienceSession(ctx, 'science-retry-confinement')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
+    const key = sessionScratchKey(session)
+    expect(existsSync(join(dshHome, 'science', 'v1', 'sessions', key))).toBe(false)
+    expect(existsSync(join(dshHome, 'science', 'v1', 'owners', `${key}.json`))).toBe(false)
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+  })
+
+  it('aggregates a failed retry with failure to roll back newly owned Session scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-retry-rollback-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const history = join(prefix, 'conda-meta', 'history')
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ChangingHistorySubprocess)
+    await ctx.plugin(RetryPartialSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    ;(ctx.subprocess as ChangingHistorySubprocess).history = history
+    ;(ctx.sandbox as RetryPartialSandbox).failRollback = true
+    const session = createScienceSession(ctx, 'science-retry-rollback')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).rejects.toMatchObject({
+      code: 'INFRASTRUCTURE_FAILURE',
+      cause: { message: 'science-runtime: pre-publication Session scratch rollback failed' },
+    })
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
+  })
+
+  it('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-run-rollback-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-run-rollback')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const sessionRoot = join(root, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(session))
+    const stop = harness.ctx.on('internal/dispatch', (_mode, eventName, args) => {
+      if (eventName !== 'session/event') return
+      const [, event] = args as [unknown, { readonly type?: string; readonly data?: { readonly run?: { readonly runId?: string } } }]
+      if (event?.type !== 'science/run-started') return
+      // Faulting the exact run directory makes removeUnpublishedRunScratch
+      // fail during the veto's cleanup, reaching the aggregated
+      // unpublished-run rollback classification.
+      staticFsFault.cleanupPath = join(sessionRoot, 'runs', String(event.data?.run?.runId))
+      throw new Error('injected start append failure')
+    }, { global: true })
+    try {
+      await expect(harness.runtime.startRun({
+        session,
+        language: 'python',
+        code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session, 'science-run-rollback-call'),
+        signal: new AbortController().signal,
+      })).rejects.toMatchObject({
+        message: 'science-runtime: unpublished run rollback failed',
+        errors: [
+          { message: 'injected start append failure' },
+          { message: 'injected managed cleanup failure' },
+        ],
+      })
+    } finally {
+      stop()
+    }
+  })
+
+  it('selects Windows executable candidates and completes a host probe on win32', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-windows-probe-'))
+    roots.push(root)
+    const prefix = join(root, 'windows-prefix')
+    mkdirSync(join(prefix, 'conda-meta'), { recursive: true })
+    mkdirSync(join(prefix, 'Scripts'), { recursive: true })
+    writeFileSync(join(prefix, 'conda-meta', 'history'), 'windows history\n')
+    writeFileSync(join(prefix, 'python.exe'), 'fake')
+    chmodSync(join(prefix, 'python.exe'), 0o700)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-windows-probe')
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')
+    if (original === undefined) throw new Error('process.platform descriptor is unavailable')
+    Object.defineProperty(process, 'platform', { ...original, value: 'win32' })
+    try {
+      await expect(harness.runtime.bindEnvironment({
+        session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+      })).resolves.toMatchObject({ status: 'applied' })
+      expect(harness.subprocess.specs.length).toBeGreaterThan(0)
+      expect(harness.subprocess.specs.every(spec => spec.argv[0]?.endsWith('python.exe'))).toBe(true)
+    } finally {
+      Object.defineProperty(process, 'platform', original)
+    }
+  })
+
+  it.each([
+    ['JSON.parse throws', 'not valid json'],
+    ['top-level value is not an array', '{}'],
+    ['an entry is not an object', '[42]'],
+    ['an entry is null', '[null]'],
+    ['name is not a string', '[{"name":1,"version":"1"}]'],
+    ['version is not a string', '[{"name":"pip","version":1}]'],
+    ['name is empty', '[{"name":"","version":"1"}]'],
+    ['version is empty', '[{"name":"pip","version":""}]'],
+  ] as const)('records an invalid Python observation when the package-inventory probe output is malformed: %s', async (_label, output) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-py-malformed-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = { ...harness.subprocess.packagesOutput, python: output }
+    const session = createScienceSession(harness.ctx, 'science-packages-py-malformed')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it.each([
+    ['no tab separator', 'base'],
+    ['leading tab (empty name)', '\t4.5.0'],
+    ['more than one tab', 'base\t4.5.0\textra'],
+    ['trailing tab (empty version)', 'base\t'],
+  ] as const)('records an invalid R observation when the package-inventory probe output is malformed: %s', async (_label, output) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-r-malformed-'))
+    roots.push(root)
+    const prefix = createFakeRPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { r: { rPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = { ...harness.subprocess.packagesOutput, r: output }
+    const session = createScienceSession(harness.ctx, 'science-packages-r-malformed')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('r'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      r: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it('records an invalid observation when the package-inventory probe itself fails', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-probe-failure-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(FailingPackagesProbeSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, { dshHome: join(root, 'dsh-home'), profiles: { fake: { pythonPrefix: prefix } } })
+    const session = createScienceSession(ctx, 'science-packages-probe-failure')
+    await expect(ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'invalid',
+      python: { capability: 'invalid', reason: 'package inventory probe did not produce parseable output' },
+    })
+  })
+
+  it('truncates by exact UTF-8 byte length rather than by string character count', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-multibyte-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    // Each "中" is one UTF-16 code unit but three UTF-8 bytes: 341 of them
+    // plus "v1" cost 1,025 true UTF-8 bytes but only 343 JS string "length"
+    // units. The byte cap (the lowest allowed value) sits between the two,
+    // so a character-count implementation would wrongly retain this entry.
+    const name = '中'.repeat(341)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: MIN_PACKAGES_MAX_BYTES,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = { ...subprocess.packagesOutput, python: JSON.stringify([{ name, version: 'v1' }]) }
+    const session = createScienceSession(ctx, 'science-packages-multibyte')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([])
+    expect(environment.python.packagesTruncated).toBe(true)
+  })
+
+  it('sorts a package inventory with a repeated name by version', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-sort-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    harness.subprocess.packagesOutput = {
+      ...harness.subprocess.packagesOutput,
+      python: '[{"name":"pip","version":"24.0"},{"name":"pip","version":"1.0"}]',
+    }
+    const session = createScienceSession(harness.ctx, 'science-packages-sort')
+    await expect(harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })).resolves.toMatchObject({
+      status: 'applied',
+      python: {
+        packages: [{ name: 'pip', version: '1.0' }, { name: 'pip', version: '24.0' }],
+      },
+    })
+  })
+
+  it('truncates a package inventory exceeding the configured entry cap while digesting the complete sorted value', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxEntries: 1,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]',
+    }
+    const session = createScienceSession(ctx, 'science-packages-truncate')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([{ name: 'numpy', version: '1.26.4' }])
+    expect(environment.python.packagesTruncated).toBe(true)
+    const completeDigest = createHash('sha256')
+      .update('dsh-science-packages-v1\u0000numpy\u00001.26.4\npip\u000024.0')
+      .digest('hex')
+    expect(environment.python.packagesSha256).toBe(completeDigest)
+  })
+
+  it('retains a package inventory whose entries exactly fill the configured byte cap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-exact-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    // Two entries at the durable per-field 512-byte name cap, each costing
+    // exactly MIN_PACKAGES_MAX_BYTES / 2, sum to exactly MIN_PACKAGES_MAX_BYTES.
+    const first = { name: 'a'.repeat(500), version: '1'.repeat(12) }
+    const second = { name: 'b'.repeat(500), version: '2'.repeat(12) }
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: MIN_PACKAGES_MAX_BYTES,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    subprocess.packagesOutput = { ...subprocess.packagesOutput, python: JSON.stringify([second, first]) }
+    const session = createScienceSession(ctx, 'science-packages-exact')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([first, second])
+    expect(environment.python.packagesTruncated).toBe(false)
+  })
+
+  it('truncates a package inventory whose single oversized entry exceeds the configured byte cap', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-packages-truncate-bytes-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ScienceSessionInvariant)
+    await ctx.plugin(ControlledSubprocess)
+    await ctx.plugin(DirectSandbox)
+    await mountArtifactStore(ctx, root)
+    await ctx.plugin(ScienceRuntime, {
+      dshHome: join(root, 'dsh-home'),
+      profiles: { fake: { pythonPrefix: prefix } },
+      packagesMaxBytes: 1_024,
+    })
+    const subprocess = ctx.subprocess as ControlledSubprocess
+    const oversizedName = 'x'.repeat(1_050)
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: JSON.stringify([{ name: oversizedName, version: '1.0' }]),
+    }
+    const session = createScienceSession(ctx, 'science-packages-truncate-bytes')
+    const environment = await ctx.scienceRuntime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    if (environment.python?.capability !== 'available') throw new Error('fixture binding did not become available')
+    expect(environment.python.packages).toEqual([])
+    expect(environment.python.packagesTruncated).toBe(true)
+    const completeDigest = createHash('sha256')
+      .update(`dsh-science-packages-v1\0${oversizedName}\u00001.0`)
+      .digest('hex')
+    expect(environment.python.packagesSha256).toBe(completeDigest)
+  })
+
+  it('keeps bindingFingerprint independent of the package inventory', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-fingerprint-stable-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createFastRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const first = await harness.runtime.bindEnvironment({
+      session: createScienceSession(harness.ctx, 'science-fingerprint-stable-first'),
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    harness.subprocess.packagesOutput = {
+      ...harness.subprocess.packagesOutput,
+      python: '[{"name":"an-entirely-different-package","version":"9.9.9"}]',
+    }
+    const second = await harness.runtime.bindEnvironment({
+      session: createScienceSession(harness.ctx, 'science-fingerprint-stable-second'),
+      profileId: ScienceEnvironmentProfileId('fake'),
+      signal: new AbortController().signal,
+    })
+    if (first.python?.capability !== 'available' || second.python?.capability !== 'available') {
+      throw new Error('fixture bindings did not become available')
+    }
+    expect(second.python.packagesSha256).not.toBe(first.python.packagesSha256)
+    expect(second.python.bindingFingerprint).toBe(first.python.bindingFingerprint)
+
+    // The formula is exactly the six identity fields below, joined with the
+    // NUL domain separator — packagesSha256 is not one of them.
+    const expectedFingerprint = createHash('sha256')
+      .update([
+        'dsh-science-binding-v1', 'python', first.python.canonicalPrefix, first.python.executable,
+        first.python.executableIdentity, first.python.languageVersion, first.python.condaHistorySha256,
+      ].join('\0'))
+      .digest('hex')
+    expect(first.python.bindingFingerprint).toBe(expectedFingerprint)
+  })
+})
+
+describe('sameObservation', () => {
+  const available = (fingerprint: string): ScienceInterpreterBinding => ({
+    language: 'python',
+    configuredPrefix: '/prefix',
+    canonicalPrefix: '/prefix',
+    executable: '/prefix/bin/python',
+    executableIdentity: 'identity',
+    languageVersion: '3.13.5',
+    condaHistorySha256: 'a'.repeat(64),
+    bindingFingerprint: fingerprint,
+    packages: [],
+    packagesSha256: 'b'.repeat(64),
+    packagesTruncated: false,
+    capability: 'available',
+  })
+  const unavailable: ScienceInterpreterBinding = {
+    language: 'python',
+    configuredPrefix: '/prefix',
+    capability: 'unavailable',
+    reason: 'not found',
+  }
+
+  it('treats two absent bindings as the same observation', () => {
+    expect(sameObservation(undefined, undefined)).toBe(true)
+  })
+
+  it('treats an absent binding paired with a present one as different, in either position', () => {
+    expect(sameObservation(undefined, available('f'.repeat(64)))).toBe(false)
+    expect(sameObservation(available('f'.repeat(64)), undefined)).toBe(false)
+  })
+
+  it('compares two available bindings by fingerprint alone', () => {
+    expect(sameObservation(available('c'.repeat(64)), available('c'.repeat(64)))).toBe(true)
+    expect(sameObservation(available('c'.repeat(64)), available('d'.repeat(64)))).toBe(false)
+  })
+
+  it('never treats an unavailable binding as matching, even against an identical unavailable binding', () => {
+    expect(sameObservation(unavailable, unavailable)).toBe(false)
+    expect(sameObservation(unavailable, available('c'.repeat(64)))).toBe(false)
+  })
+})
+
+describe('prefixHistoryDigest', () => {
+  it('digests the exact history bytes stably, and differently once the file changes', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-history-digest-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const historyPath = join(prefix, 'conda-meta', 'history')
+    const first = await prefixHistoryDigest(prefix)
+    const again = await prefixHistoryDigest(prefix)
+    expect(first).toBe(again)
+    expect(first).toBe(createHash('sha256').update(readFileSync(historyPath)).digest('hex'))
+    writeFileSync(historyPath, '==> 2026-09-06 <==\n+lifelines-0.29.0\n')
+    const changed = await prefixHistoryDigest(prefix)
+    expect(changed).not.toBe(first)
+    expect(changed).toBe(createHash('sha256').update(readFileSync(historyPath)).digest('hex'))
+  })
+
+  it('returns undefined, never throwing, when history is missing or not a regular file', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-history-digest-invalid-'))
+    roots.push(root)
+    const missing = createFakePythonPrefix(join(root, 'missing'))
+    unlinkSync(join(missing, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(missing)).resolves.toBeUndefined()
+    const directory = createFakePythonPrefix(join(root, 'directory'))
+    rmSync(join(directory, 'conda-meta', 'history'))
+    mkdirSync(join(directory, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(directory)).resolves.toBeUndefined()
+    const symlinked = createFakePythonPrefix(join(root, 'symlinked'))
+    const realHistory = join(root, 'symlinked-real-history')
+    writeFileSync(realHistory, readFileSync(join(symlinked, 'conda-meta', 'history')))
+    rmSync(join(symlinked, 'conda-meta', 'history'))
+    symlinkSync(realHistory, join(symlinked, 'conda-meta', 'history'))
+    await expect(prefixHistoryDigest(symlinked)).resolves.toBeUndefined()
+  })
+})
+
+describe('Science Runtime configuration', () => {
+  it('requires a closed profile map with absolute prefixes and a safe integer timeout, empty allowed', () => {
+    expect(() => resolveConfig({ profiles: [] as never })).toThrow(/plain record/)
+    expect(resolveConfig({ profiles: {} }).profiles.size).toBe(0)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: 'relative' } },
+    })).toThrow(/absolute/)
+    expect(() => resolveConfig({
+      profiles: { 'not valid': { pythonPrefix: '/prefix' } },
+    })).toThrow(/profile id/)
+    expect(() => resolveConfig({
+      profiles: { fake: {} },
+    })).toThrow(/requires pythonPrefix or rPrefix/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix', extra: true } as never },
+    })).toThrow(/unknown field/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, dshHome: 1 as never,
+    })).toThrow(/dshHome/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, timeoutMs: 1.5,
+    })).toThrow(/safe integer/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, timeoutMs: 0,
+    })).toThrow(/safe integer/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, timeoutMs: 600_001,
+    })).toThrow(/safe integer/)
+    expect(resolveConfig({ profiles: { r: { rPrefix: '/prefix' } } }).profiles.get('r')).toEqual({
+      id: 'r', rPrefix: '/prefix',
+    })
+  })
+
+  it('validates installTimeoutMs as its own bound, distinct from timeoutMs', () => {
+    expect(resolveConfig({ profiles: {} }).installTimeoutMs).toBe(900_000)
+    expect(resolveConfig({ profiles: {}, installTimeoutMs: 1 }).installTimeoutMs).toBe(1)
+    expect(resolveConfig({ profiles: {}, installTimeoutMs: 3_600_000 }).installTimeoutMs).toBe(3_600_000)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 0 })).toThrow(/installTimeoutMs must be a safe integer/)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 3_600_001 })).toThrow(/installTimeoutMs must be a safe integer/)
+    expect(() => resolveConfig({ profiles: {}, installTimeoutMs: 1.5 })).toThrow(/installTimeoutMs must be a safe integer/)
+    // timeoutMs keeps its own separate, smaller max (600_000): the two
+    // fields are validated independently against their own MIN/MAX, never
+    // against each other, so installTimeoutMs's larger ceiling never widens
+    // what timeoutMs itself accepts.
+    expect(() => resolveConfig({ profiles: {}, timeoutMs: 3_600_000 })).toThrow(/timeoutMs must be a safe integer/)
+    expect(resolveConfig({ profiles: {}, timeoutMs: 600_000, installTimeoutMs: 3_600_000 })).toMatchObject({
+      timeoutMs: 600_000, installTimeoutMs: 3_600_000,
+    })
+  })
+
+  it('requires micromambaPath to be an absolute string when configured, undefined otherwise', () => {
+    expect(resolveConfig({ profiles: {} }).micromambaPath).toBeUndefined()
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: 'relative/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
+    })).toThrow(/micromambaPath/)
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: 1 as never, installChannels: ['https://conda.anaconda.org/conda-forge'],
+    })).toThrow(/micromambaPath/)
+    expect(resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
+    }).micromambaPath).toBe('/opt/dsh/micromamba')
+  })
+
+  it('requires installChannels and micromambaPath to be configured together, or neither', () => {
+    expect(resolveConfig({ profiles: {} }).installChannels).toBeUndefined()
+    // schemastery normalizes an omitted `installChannels` to `[]`, which
+    // must read as unconfigured, not as a declared-empty channel list.
+    expect(resolveConfig({ profiles: {}, installChannels: [] }).installChannels).toBeUndefined()
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba',
+    })).toThrow(/must be configured together/)
+    expect(() => resolveConfig({
+      profiles: {}, installChannels: ['https://conda.anaconda.org/conda-forge'],
+    })).toThrow(/must be configured together/)
+    expect(resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: ['https://conda.anaconda.org/conda-forge'],
+    }).installChannels).toEqual(['https://conda.anaconda.org/conda-forge'])
+  })
+
+  it('rejects a non-array installChannels value reaching resolveConfig directly (bypassing the schema)', () => {
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: 'not-an-array' as never,
+    })).toThrow(/must be an array of strings/)
+  })
+
+  it('validates each installChannels entry as an https-only URL drawn from the fixed character allowlist', () => {
+    const withChannels = (installChannels: string[]): Config => ({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels,
+    })
+    expect(() => resolveConfig(withChannels(['http://conda.anaconda.org/conda-forge']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda forge']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda-forge;rm -rf /']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels(['https://conda.anaconda.org/conda-forge`id`']))).toThrow(/not a valid https channel URL/)
+    expect(() => resolveConfig(withChannels([1 as never]))).toThrow(/not a valid https channel URL/)
+    expect(resolveConfig(withChannels([
+      'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge',
+      'https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge',
+      'https://conda.anaconda.org/conda-forge',
+    ])).installChannels).toEqual([
+      'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge',
+      'https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge',
+      'https://conda.anaconda.org/conda-forge',
+    ])
+  })
+
+  it('rejects more than the fixed maximum installChannels entries', () => {
+    const channels = Array.from({ length: MAX_INSTALL_CHANNELS + 1 }, (_v, i) => `https://mirror-${String(i)}.example.com/conda-forge`)
+    expect(() => resolveConfig({
+      profiles: {}, micromambaPath: '/opt/dsh/micromamba', installChannels: channels,
+    })).toThrow(/at most/)
+  })
+
+  it('validates the package-inventory entry and byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 0,
+    })).toThrow(/packagesMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxEntries: 20_001,
+    })).toThrow(/packagesMaxEntries/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxBytes: 1_023,
+    })).toThrow(/packagesMaxBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, packagesMaxBytes: 1_048_577,
+    })).toThrow(/packagesMaxBytes/)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.packagesMaxEntries).toBe(2_000)
+    expect(resolved.packagesMaxBytes).toBe(65_536)
+  })
+
+  it('validates the raster-capture policy, defaulting to declared when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, rasterCapture: 'sometimes' as never,
+    })).toThrow(/rasterCapture/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }).rasterCapture).toBe('declared')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, rasterCapture: 'always',
+    }).rasterCapture).toBe('always')
+  })
+
+  it('validates chart extraction timeout and live-run retention bounds', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartExtractTimeoutMs: 0,
+    })).toThrow(/chartExtractTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartExtractTimeoutMs: 600_001,
+    })).toThrow(/chartExtractTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartLiveRunsRetained: 0,
+    })).toThrow(/chartLiveRunsRetained/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, chartLiveRunsRetained: 101,
+    })).toThrow(/chartLiveRunsRetained/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })).toMatchObject({
+      chartExtractTimeoutMs: 5_000,
+      chartLiveRunsRetained: 4,
+    })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } },
+      chartExtractTimeoutMs: 1,
+      chartLiveRunsRetained: 100,
+    })).toMatchObject({ chartExtractTimeoutMs: 1, chartLiveRunsRetained: 100 })
+  })
+
+  it('validates the reconciliation session-scan bound', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 0,
+    })).toThrow(/reconcileMaxSessions/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 100_001,
+    })).toThrow(/reconcileMaxSessions/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })).toMatchObject({ reconcileMaxSessions: 500 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileMaxSessions: 1,
+    })).toMatchObject({ reconcileMaxSessions: 1 })
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 0,
+    })).toThrow(/reconcileRetryDelayMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 600_001,
+    })).toThrow(/reconcileRetryDelayMs/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }))
+      .toMatchObject({ reconcileRetryDelayMs: 1_000 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, reconcileRetryDelayMs: 1,
+    })).toMatchObject({ reconcileRetryDelayMs: 1 })
+  })
+
+  it('validates the annotate_artifact not-found diagnostic\'s run-scan bound', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, annotateDiagnosticMaxRuns: 0,
+    })).toThrow(/annotateDiagnosticMaxRuns/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, annotateDiagnosticMaxRuns: 1_001,
+    })).toThrow(/annotateDiagnosticMaxRuns/)
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })).toMatchObject({ annotateDiagnosticMaxRuns: 20 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, annotateDiagnosticMaxRuns: 1,
+    })).toMatchObject({ annotateDiagnosticMaxRuns: 1 })
+  })
+
+  it('validates the auto-capture file, per-run, and per-session bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 1_048_575,
+    })).toThrow(/captureMaxFileBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFileBytes: 52_428_801,
+    })).toThrow(/captureMaxFileBytes/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFilesPerRun: 0,
+    })).toThrow(/captureMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxFilesPerRun: 1_001,
+    })).toThrow(/captureMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxArtifactVersionsPerSession: 0,
+    })).toThrow(/captureMaxArtifactVersionsPerSession/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, captureMaxArtifactVersionsPerSession: 10_001,
+    })).toThrow(/captureMaxArtifactVersionsPerSession/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, unknownField: 1,
+    } as never)).toThrow(/unknown field/)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.captureMaxFileBytes).toBe(5 * 1024 * 1024)
+    expect(resolved.captureMaxFilesPerRun).toBe(50)
+    expect(resolved.captureMaxArtifactVersionsPerSession).toBe(500)
+  })
+
+  it('validates artifact-input count and aggregate-byte bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 0,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1_001,
+    })).toThrow(/inputMaxFilesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 0,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxBytesPerRun: 1_073_741_825,
+    })).toThrow(/inputMaxBytesPerRun/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1,
+    })).toMatchObject({ inputMaxFilesPerRun: 1, inputMaxBytesPerRun: 1 })
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } },
+      inputMaxFilesPerRun: 1_000,
+      inputMaxBytesPerRun: 1_073_741_824,
+    })).toMatchObject({ inputMaxFilesPerRun: 1_000, inputMaxBytesPerRun: 1_073_741_824 })
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.inputMaxFilesPerRun).toBe(20)
+    expect(resolved.inputMaxBytesPerRun).toBe(50 * 1024 * 1024)
+  })
+
+  it('validates the persistent-kernel idle and spawn-to-READY deadline bounds, defaulting when omitted', () => {
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 59_999,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 86_400_001,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 1.5,
+    })).toThrow(/kernelIdleTimeoutMs/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 60_000,
+    }).kernelIdleTimeoutMs).toBe(60_000)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelIdleTimeoutMs: 86_400_000,
+    }).kernelIdleTimeoutMs).toBe(86_400_000)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 999,
+    })).toThrow(/kernelStartTimeoutMs/)
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 600_001,
+    })).toThrow(/kernelStartTimeoutMs/)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 1_000,
+    }).kernelStartTimeoutMs).toBe(1_000)
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, kernelStartTimeoutMs: 600_000,
+    }).kernelStartTimeoutMs).toBe(600_000)
+    const resolved = resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } })
+    expect(resolved.kernelIdleTimeoutMs).toBe(1_800_000)
+    expect(resolved.kernelStartTimeoutMs).toBe(30_000)
+  })
+
+  it('validates minimumEnforcement, defaulting to full and accepting only full or partial', () => {
+    expect(resolveConfig({ profiles: { fake: { pythonPrefix: '/prefix' } } }).minimumEnforcement).toBe('full')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'full',
+    }).minimumEnforcement).toBe('full')
+    expect(resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'partial',
+    }).minimumEnforcement).toBe('partial')
+    expect(() => resolveConfig({
+      profiles: { fake: { pythonPrefix: '/prefix' } }, minimumEnforcement: 'none' as never,
+    })).toThrow(/minimumEnforcement must be "full" or "partial"/)
+  })
+})
+
+describe('ScienceRuntime.installPackages', () => {
+  function makeMicromamba(root: string): string {
+    const executable = join(root, 'fake-micromamba')
+    writeFileSync(executable, '#!/bin/sh\nexit 0\n')
+    chmodSync(executable, 0o755)
+    return executable
+  }
+
+  const DEFAULT_INSTALL_CHANNELS = ['https://conda.anaconda.org/conda-forge']
+
+  async function boundHarness(
+    id: string,
+    utf8Probe: 'valid' | 'invalid' = 'valid',
+    installChannels: string[] = DEFAULT_INSTALL_CHANNELS,
+    /** Config `minimumEnforcement` and the sandbox's own reported enforcement, for install confinement coverage. */
+    enforcement?: { readonly minimum: SandboxEnforcement; readonly reported: SandboxEnforcement },
+  ): Promise<{
+    readonly runtime: ScienceRuntime
+    readonly session: ReturnType<typeof createScienceSession>
+    readonly subprocess: ControlledSubprocess
+    readonly sandbox: DirectSandbox
+    readonly micromambaPath: string
+    readonly root: string
+  }> {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined,
+      { micromambaPath, installChannels, ...(enforcement === undefined ? {} : { minimumEnforcement: enforcement.minimum }) },
+    )
+    if (enforcement !== undefined) harness.sandbox.enforcement = enforcement.reported
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, id)
+    harness.subprocess.utf8Probe = utf8Probe
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    return { runtime: harness.runtime, session, subprocess: harness.subprocess, sandbox: harness.sandbox, micromambaPath, root }
+  }
+
+  /** Every install-attempt spawn (never a version/package-inventory/UTF-8 probe) in issue order. */
+  function installAttempts(subprocess: ControlledSubprocess): SubprocessSpawnSpec[] {
+    return subprocess.specs.filter(spec => spec.argv.includes('install') && spec.argv.includes('--override-channels'))
+  }
+
+  it('rejects with INSTALLER_NOT_CONFIGURED when no micromambaPath is configured', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-not-configured')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INSTALLER_NOT_CONFIGURED' })
+  })
+
+  it('rejects invalid package specs before touching the environment', async () => {
+    const { runtime, session } = await boundHarness('install-invalid-request')
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: [], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY before the environment is bound', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-no-environment')
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY when the applied environment status is not applied', async () => {
+    const { runtime, session } = await boundHarness('install-invalid-environment', 'invalid')
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with ENVIRONMENT_NOT_READY when the requested language has no binding', async () => {
+    const { runtime, session } = await boundHarness('install-missing-language')
+    await expect(runtime.installPackages({
+      session, language: 'r', packages: ['r-dplyr'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
+  })
+
+  it('rejects with INSTALLER_UNAVAILABLE when the configured micromamba path is absent', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createControlledRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, {
+      micromambaPath: join(root, 'missing-micromamba'),
+      installChannels: DEFAULT_INSTALL_CHANNELS,
+    })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-missing-micromamba')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    await expect(harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+  })
+
+  it('rejects with RUNTIME_BUSY when the projection has an orphaned open run', async () => {
+    const { runtime, session } = await boundHarness('install-orphan-run')
+    const projection = replayScience(session.snapshotEvents())
+    const binding = projection?.environment?.python
+    if (binding?.capability !== 'available') throw new Error('test setup: expected an available Python binding')
+    session.append('science/kernel-state', {
+      version: 1,
+      kernel: {
+        kernelEpoch: 1, language: 'python', state: 'started',
+        environmentRevision: 1, environmentFingerprint: binding.bindingFingerprint, at: Date.now(),
+      },
+    })
+    const { toolCallId, requestHeaderSeq } = authorizePythonRun(session)
+    session.append('science/run-started', {
+      version: 1,
+      run: {
+        runId: ScienceRunId('r1'),
+        language: 'python',
+        toolCallId,
+        requestHeaderSeq,
+        environmentRevision: 1,
+        environmentFingerprint: binding.bindingFingerprint,
+        startedAt: Date.now(),
+        codeSha256: 'a'.repeat(64),
+        scratchKey: ScienceScratchKey('b'.repeat(64)),
+        runDirectoryRef: 'runs/r1/',
+        kernelEpoch: 1,
+        status: 'running',
+      },
+    })
+    await expect(runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
+  })
+
+  it('appends a fresh whole-value environment revision and returns it when a successful install actually changed the inventory', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-success')
+    const before = replayScience(session.snapshotEvents())?.environment
+    // A real micromamba install writes the requested package into the
+    // prefix; the fake harness's probe stdout is the only signal
+    // `observeProfile` reads, so this simulates that write landing before
+    // the post-install re-observation runs.
+    subprocess.packagesOutput = {
+      ...subprocess.packagesOutput,
+      python: JSON.stringify([{ name: 'pip', version: '24.0' }, { name: 'numpy', version: '1.26.4' }, { name: 'pandas', version: '2.2.0' }]),
+    }
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['pandas'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environmentChanged).toBe(true)
+    expect(result.environment?.revision).toBe((before?.revision ?? 0) + 1)
+    expect(result.environment?.status).toBe('applied')
+    const after = replayScience(session.snapshotEvents())?.environment
+    expect(after?.revision).toBe((before?.revision ?? 0) + 1)
+    expect(result.stdout.text.length >= 0).toBe(true)
+  })
+
+  it('appends no revision and reports environmentChanged: false when a successful install re-observes an identical inventory', async () => {
+    const { runtime, session } = await boundHarness('install-redundant')
+    const before = replayScience(session.snapshotEvents())?.environment
+    // The fake installer succeeds (default queued-run behavior: exitCode 0)
+    // but the probe stdout `boundHarness` already configured is unchanged,
+    // modeling every requested package already being present — the
+    // `install_science_packages` retry this fix targets after a
+    // misreported 'timed-out' whose install had, in fact, already finished.
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environmentChanged).toBe(false)
+    expect(result.environment?.revision).toBe(before?.revision)
+    const after = replayScience(session.snapshotEvents())?.environment
+    expect(after?.revision).toBe(before?.revision)
+  })
+
+  it('does not append a fresh revision when the install fails', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-failed')
+    const before = replayScience(session.snapshotEvents())?.environment
+    const run = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
+    run.complete({ exitCode: 1, signal: null })
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['does-not-exist'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('failed')
+    expect(result.environment).toBeUndefined()
+    const after = replayScience(session.snapshotEvents())?.environment
+    expect(after?.revision).toBe(before?.revision)
+  })
+
+  it('logs and swallows a scratch-cleanup failure without failing the install', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const prefix = createFakePythonPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { pythonPrefix: prefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-cleanup-failure')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const warnings: string[] = []
+    harness.ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
+    fixedInstallUuid.value = 'fixed-install-uuid'
+    staticFsFault.cleanupPath = join(prefix, '.dsh-science-install', 'fixed-install-uuid')
+    const result = await harness.runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(warnings.some(message => message.includes('package-install scratch cleanup failed'))).toBe(true)
+  })
+
+  it('re-observes an R-only profile, omitting python and including r in the fresh revision', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-install-'))
+    roots.push(root)
+    const rPrefix = createFakeRPrefix(root)
+    const micromambaPath = makeMicromamba(root)
+    const harness = await createControlledRuntimeHarness(
+      root, { fake: { rPrefix } }, 10_000, undefined, { micromambaPath, installChannels: DEFAULT_INSTALL_CHANNELS },
+    )
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'install-r-only')
+    await harness.runtime.bindEnvironment({
+      session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
+    })
+    const result = await harness.runtime.installPackages({
+      session, language: 'r', packages: ['r-dplyr'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environment?.python).toBeUndefined()
+    expect(result.environment?.r?.capability).toBe('available')
+  })
+
+  it('marks the fresh revision invalid when re-observation fails after a successful install', async () => {
+    const { runtime, session, subprocess } = await boundHarness('install-reobserve-invalid')
+    subprocess.utf8Probe = 'invalid'
+    const result = await runtime.installPackages({
+      session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+    })
+    expect(result.status).toBe('success')
+    expect(result.environment?.status).toBe('invalid')
+    expect(result.environment?.failureReason).toBeDefined()
+  })
+
+  describe('channel fallback', () => {
+    const TUNA = 'https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge'
+    const OFFICIAL = 'https://conda.anaconda.org/conda-forge'
+
+    it('tries the next configured channel only after a failed attempt, appending a fresh revision from the succeeding one', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-success', 'valid', [TUNA, OFFICIAL])
+      const failing = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
+      failing.complete({ exitCode: 1, signal: null })
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('success')
+      const attempts = installAttempts(subprocess)
+      expect(attempts).toHaveLength(2)
+      expect(attempts[0]?.argv).toContain(TUNA)
+      expect(attempts[1]?.argv).toContain(OFFICIAL)
+      // Every attempt argv names exactly the one channel it searched, never both.
+      for (const attempt of attempts) expect(attempt.argv.filter(token => token === '--channel')).toHaveLength(1)
+    })
+
+    it('reports failure only after every configured channel has failed', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-exhausted', 'valid', [TUNA, OFFICIAL])
+      for (const stderr of ['first mirror unreachable\n', 'second mirror unreachable\n']) {
+        const failing = subprocess.queueRun('immediate', { stdout: '', stderr })
+        failing.complete({ exitCode: 1, signal: null })
+      }
+      const before = replayScience(session.snapshotEvents())?.environment
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('failed')
+      expect(result.stderr.text).toBe('second mirror unreachable\n')
+      expect(installAttempts(subprocess)).toHaveLength(2)
+      const after = replayScience(session.snapshotEvents())?.environment
+      expect(after?.revision).toBe(before?.revision)
+    })
+
+    it('does not try a further channel once the caller cancels an in-flight attempt', async () => {
+      const { runtime, session, subprocess } = await boundHarness('install-channel-fallback-cancelled', 'valid', [TUNA, OFFICIAL])
+      const pendingRun = subprocess.queueRun('deferred')
+      const controller = new AbortController()
+      // Abort exactly once the first channel attempt's own subprocess spawn
+      // is in flight: an earlier abort would be caught by installPackages'
+      // pre-publication checks and reject outright (matching startRun's own
+      // pre-publication rejections) rather than settle a 'cancelled' outcome
+      // from inside the install attempt itself.
+      subprocess.onSpawn = (spec) => {
+        if (spec.argv.includes('--override-channels')) controller.abort()
+      }
+      const pending = runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: controller.signal,
+      })
+      // Mirrors runMicromambaInstall's own cancellation test: a real
+      // subprocess provider reacts to the fused signal by terminating the
+      // tree, which this fake requires driven explicitly.
+      pendingRun.complete({ exitCode: null, signal: 'SIGTERM' })
+      pendingRun.proveQuiescence()
+      const result = await pending
+      expect(result.status).toBe('cancelled')
+      expect(installAttempts(subprocess)).toHaveLength(1)
+    })
+  })
+
+  describe('minimumEnforcement forwarding', () => {
+    // Regression coverage for installPackages' own `confineInstallArgv` call
+    // forwarding `this.minimumEnforcement` (as opposed to a hardcoded
+    // `'full'`): a win32 desktop deployment configures `minimumEnforcement:
+    // 'partial'` against a sandbox provider that only ever reports
+    // 'partial' (`windows-acl`); deleting the forwarding argument at the
+    // call site (or hardcoding `'full'` there again) makes this reject
+    // instead of succeed.
+    it('succeeds installing against a partial-reporting sandbox when the configured minimum is partial', async () => {
+      const { runtime, session } = await boundHarness(
+        'install-enforcement-partial', 'valid', DEFAULT_INSTALL_CHANNELS, { minimum: 'partial', reported: 'partial' },
+      )
+      const result = await runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })
+      expect(result.status).toBe('success')
+    })
+
+    it('rejects with CONFINEMENT_UNAVAILABLE, naming both levels with no sandbox-configuration action, when the sandbox reports less than the configured minimum', async () => {
+      const { runtime, session, sandbox } = await boundHarness(
+        'install-enforcement-full', 'valid', DEFAULT_INSTALL_CHANNELS, { minimum: 'full', reported: 'full' },
+      )
+      // bindEnvironment's own probe confinement (boundHarness, above) also
+      // requires the configured minimum, so the sandbox is set to report
+      // less than it only once binding has already succeeded — isolating
+      // the assertion to install's own confinement site.
+      sandbox.enforcement = 'partial'
+      await expect(runtime.installPackages({
+        session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
+      })).rejects.toMatchObject({
+        code: 'CONFINEMENT_UNAVAILABLE',
+        message: 'Science requires at least full sandbox enforcement; the sandbox reported partial',
+      })
+    })
+  })
+})

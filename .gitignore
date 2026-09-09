@@ -44,3 +44,4 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+.dsh-built-invariant-*/

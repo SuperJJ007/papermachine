@@ -1,0 +1,202 @@
+/**
+ * Client-safe tagged, versioned presentation values for `run_python`/`run_r`,
+ * `annotate_artifact`, and `publish_outcome`, persisted through
+ * `output.presentationMeta` and replayed by `@deepseek-ai/dsh-client-ui-science`.
+ * Each value is tagged with a stable `kind` and `version` so an older or
+ * newer Client can fall back to the generic tool row instead of misreading a
+ * shape it does not recognize; never bytes, base64, an object URL, or a Host
+ * path.
+ *
+ * @module @deepseek-ai/dsh-tool-science/types
+ */
+
+import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceChartElement, ScienceChartOp } from '@deepseek-ai/dsh-science-session/types'
+
+/** A top-left-origin region normalized against the selected raster version. */
+export interface ScienceNormalizedRegionTarget {
+  readonly kind: 'normalized-region'
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * One addressable chart element referenced by exact catalog fields from the
+ * artifact viewer's element list, carrying no pixel coordinates.
+ */
+export interface ScienceElementTarget {
+  readonly kind: 'element'
+  /** `ScienceChartElement.id` on the addressed chart version. */
+  readonly elementId: string
+  /** `ScienceChartElement.kind` on the addressed chart version. */
+  readonly elementKind: ScienceChartElement['kind']
+  /** Zero-based axes index, or `null` for a figure-wide element. */
+  readonly axes: number | null
+  /** Extracted series or annotation label, or `null` when the element has none. */
+  readonly label: string | null
+  /** Short current-value text for the model-visible message; never pixel coordinates. */
+  readonly current: string
+}
+
+/** One model-visible edit target selected in the Science artifact viewer. */
+export type ScienceEditTarget = ScienceNormalizedRegionTarget | ScienceElementTarget
+
+/** One selected target tied to its exact immutable artifact version. */
+export interface ScienceEditSelection {
+  readonly artifactId: ScienceArtifactId
+  /** Logical artifact name shown in the composer and verified by Host admission. */
+  readonly logicalName: string
+  readonly version: number
+  readonly target: ScienceEditTarget
+  /** Optional instruction scoped to this exact element. */
+  readonly comment?: string
+}
+
+/** Browser request to edit one or more exact immutable Science artifact versions. */
+export interface ScienceEditRequest {
+  readonly targets: readonly ScienceEditSelection[]
+  readonly instruction: string
+}
+
+/** Durable source attached to a viewer-originated Science edit message. */
+export interface ScienceEditMessageSource extends ScienceEditRequest {
+  readonly kind: 'science-edit'
+}
+
+/** Receipt returned after the edit message enters the addressed agent's inbox. */
+export interface ScienceEditReceipt {
+  readonly accepted: true
+}
+
+/** Browser request to apply deterministic operations to one exact chart version. */
+export interface ScienceChartEditRequest {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly ops: readonly ScienceChartOp[]
+}
+
+/** One requested chart operation whose target was absent from the live figure. */
+export interface ScienceChartFailedOp {
+  readonly index: number
+  readonly reason: string
+}
+
+/** Exact new version committed after a direct chart edit. */
+export interface ScienceChartEditReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly origin: 'human-edit'
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
+/** Ephemeral preview bytes and extracted chart state; never persisted. */
+export interface ScienceChartPreviewReceipt {
+  readonly pngBase64: string
+  readonly chart: import('@deepseek-ai/dsh-science-session/types').ScienceChartState
+  readonly failedOps: readonly ScienceChartFailedOp[]
+}
+
+/** Browser request to add a user-only note to one logical artifact. */
+export interface ScienceArtifactNoteAddRequest {
+  readonly artifactId: ScienceArtifactId
+  readonly version: number
+  readonly text: string
+}
+
+/** Browser request to remove one user-only artifact note. */
+export interface ScienceArtifactNoteRemoveRequest {
+  readonly artifactId: ScienceArtifactId
+  readonly noteSeq: number
+}
+
+/** Receipt for a committed user-only artifact-note change. */
+export interface ScienceArtifactNoteReceipt {
+  readonly accepted: true
+}
+
+/** Browser request to duplicate one exact committed artifact version into a brand-new logical artifact. */
+export interface ScienceSaveArtifactAsRequest {
+  /** Store version id (`ScienceArtifactVersion.versionId`) of the source version. */
+  readonly sourceVersionId: string
+  /** Logical name for the new artifact; must be unused in the project. */
+  readonly newLogicalName: string
+}
+
+/** Exact new artifact version committed after a save-as duplication. */
+export interface ScienceSaveArtifactAsReceipt {
+  readonly artifactId: ScienceArtifactId
+  readonly logicalName: string
+  readonly version: number
+}
+
+/** Stable rejection classes for Science edit-message admission. */
+export type ScienceEditErrorCode =
+  | 'SCIENCE_EDIT_INVALID_REQUEST'
+  | 'SCIENCE_EDIT_TARGET_NOT_FOUND'
+  | 'SCIENCE_EDIT_STALE_VERSION'
+  | 'SCIENCE_EDIT_TARGET_MISMATCH'
+  | 'CHART_STALE'
+  | 'CHART_NOT_ADDRESSABLE'
+  | 'CHART_OP_INVALID'
+  | 'SAVE_AS_SOURCE_NOT_FOUND'
+  | 'SAVE_AS_NAME_CONFLICT'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** A user edit gesture over one exact Science artifact version. */
+    'science-edit': ScienceEditMessageSource
+  }
+}
+
+/**
+ * Store content reference carried in one artifact presentation reference
+ * (never bytes): the version row a session-addressed content read resolves.
+ */
+export interface ScienceArtifactPresentationContent {
+  readonly versionId: string
+  readonly mediaType: ScienceArtifactMediaType
+  readonly byteCount: number
+}
+
+/**
+ * One clickable reference to a captured or curated artifact version, keyed
+ * by `(artifactId, version)` — the Client row's per-file unit.
+ */
+export interface ScienceArtifactPresentationItem {
+  readonly artifactId: string
+  readonly logicalName: string
+  readonly version: number
+  readonly title: string
+  readonly content: ScienceArtifactPresentationContent
+}
+
+/**
+ * Replayable presentation value for a `run_python`/`run_r` direct top-level
+ * result (one entry per file that call's auto-capture produced, possibly
+ * none) or an `annotate_artifact` direct top-level result (exactly the one
+ * curated entry). Version 2 replaced the embedded session-attachment
+ * reference with the project-store content reference.
+ */
+export interface ScienceArtifactPresentation {
+  readonly kind: 'science/artifact'
+  readonly version: 2
+  readonly artifacts: readonly ScienceArtifactPresentationItem[]
+}
+
+/** One evidence item carried in an Outcome presentation, echoing the model-facing snake_case shape. */
+export type ScienceOutcomeEvidencePresentation =
+  | { readonly kind: 'run'; readonly run_id: string }
+  | { readonly kind: 'chart'; readonly chart_id: string; readonly version: number }
+  | { readonly kind: 'message'; readonly seq: number }
+
+/** Replayable presentation value for one `publish_outcome` direct top-level result. */
+export interface ScienceOutcomePresentation {
+  readonly kind: 'science/outcome'
+  readonly version: 1
+  readonly revision: number
+  readonly title: string
+  readonly summaryMarkdown: string
+  readonly evidence: readonly ScienceOutcomeEvidencePresentation[]
+  readonly publishedAt: number
+}

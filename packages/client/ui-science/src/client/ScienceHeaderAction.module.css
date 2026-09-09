@@ -1,0 +1,24 @@
+/* Session-header Science action: icon plus label, matching the header's
+   other interactive-action controls (job list, subagent catalog). */
+
+.iconAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.iconAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.panelClosed { transform: scaleX(-1); }
+.panelOpen { transform: none; }

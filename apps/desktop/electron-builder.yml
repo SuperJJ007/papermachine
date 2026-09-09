@@ -22,6 +22,7 @@ electronFuses:
   # carries no verification of its own, so it cannot replace that check.
   resetAdHocDarwinSignature: true
 afterPack: ./scripts/after-pack.mjs
+artifactBuildStarted: ./scripts/assert-native-installer.mjs
 directories:
   output: release
 files:

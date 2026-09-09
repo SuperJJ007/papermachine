@@ -1,0 +1,33 @@
+diff --git a/templates/nsis/common.nsh b/templates/nsis/common.nsh
+--- a/templates/nsis/common.nsh
++++ b/templates/nsis/common.nsh
+@@ -53 +53 @@
+-    MessageBox MB_OK "$(win7Required)"
++    MessageBox MB_OK "$(win7Required)" /SD IDOK
+@@ -70 +70 @@
+-          MessageBox MB_OK|MB_ICONEXCLAMATION "$(x64WinRequired)"
++          MessageBox MB_OK|MB_ICONEXCLAMATION "$(x64WinRequired)" /SD IDOK
+diff --git a/templates/nsis/include/extractAppPackage.nsh b/templates/nsis/include/extractAppPackage.nsh
+--- a/templates/nsis/include/extractAppPackage.nsh
++++ b/templates/nsis/include/extractAppPackage.nsh
+@@ -85 +85 @@
+-      MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)$\n$R0"
++      MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)$\n$R0" /SD IDOK
+diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
+--- a/templates/nsis/include/installUtil.nsh
++++ b/templates/nsis/include/installUtil.nsh
+@@ -129 +129 @@
+-    MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"
++    MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0" /SD IDOK
+diff --git a/templates/nsis/include/installer.nsh b/templates/nsis/include/installer.nsh
+--- a/templates/nsis/include/installer.nsh
++++ b/templates/nsis/include/installer.nsh
+@@ -67 +67 @@
+-            MessageBox MB_OK "Package file $4 found locally, but checksum doesn't match — expected $1, actual $3.$\r$\nLocal file is ignored and package will be downloaded from Internet."
++            MessageBox MB_OK "Package file $4 found locally, but checksum doesn't match — expected $1, actual $3.$\r$\nLocal file is ignored and package will be downloaded from Internet." /SD IDOK
+diff --git a/templates/nsis/installer.nsi b/templates/nsis/installer.nsi
+--- a/templates/nsis/installer.nsi
++++ b/templates/nsis/installer.nsi
+@@ -112 +112 @@
+-                  MessageBox mb_IconStop|mb_TopMost|mb_SetForeground "Unable to elevate, error $0"
++                  MessageBox mb_IconStop|mb_TopMost|mb_SetForeground "Unable to elevate, error $0" /SD IDOK

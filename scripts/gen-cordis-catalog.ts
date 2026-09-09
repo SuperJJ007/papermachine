@@ -689,6 +689,11 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  AttachmentId: 'API documentation is owned by packages/attachment/attachment/src/index.ts',
+  ScienceChartState: 'API documentation is owned by packages/science/science-session/src/types.ts',
+  ScienceLibraryArtifact: 'API documentation is owned by packages/science/tool-science/src/read-types.ts',
+  ScienceLibraryHealth: 'API documentation is owned by packages/science/tool-science/src/read-types.ts',
+  ScienceVersionSummary: 'API documentation is owned by packages/science/tool-science/src/read-types.ts',
   AnnotateScienceArtifactRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
   AnnotateVersionInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
   AppendVersionInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',

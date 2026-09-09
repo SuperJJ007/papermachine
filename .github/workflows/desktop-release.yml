@@ -72,12 +72,9 @@ jobs:
   windows:
     runs-on: windows-latest
     name: Windows installer (x64)
-    # Git Bash so the `run:` blocks below are one shell language across both
-    # jobs. The packaging script itself is shell-independent: pnpm runs it
-    # through cmd.exe here whatever this setting says.
     defaults:
       run:
-        shell: bash
+        shell: pwsh
     steps:
       - uses: actions/checkout@v6
         with:
@@ -125,18 +122,15 @@ jobs:
       # invocation, not only in this workflow.
       - name: App-local CRT DLLs fetched (source tree, pre-package)
         run: |
-          mapfile -t files < <(jq -r '.["win32-x64"].runtime.files[]' apps/desktop/resources/micromamba.json)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "desktop CI: no runtime.files pinned for win32-x64 in resources/micromamba.json" >&2
-            exit 1
-          fi
-          for name in "${files[@]}"; do
-            if [ ! -f "apps/desktop/resources/bin/win32-x64/$name" ]; then
-              echo "desktop CI: missing app-local CRT DLL: $name" >&2
-              exit 1
-            fi
-          done
-          echo "app-local CRT DLLs present: ${files[*]}"
+          $manifest = Get-Content apps/desktop/resources/micromamba.json -Raw | ConvertFrom-Json
+          $files = @($manifest.'win32-x64'.runtime.files)
+          if ($files.Count -eq 0) { throw 'No runtime.files pinned for win32-x64' }
+          foreach ($name in $files) {
+            if (-not (Test-Path -LiteralPath "apps/desktop/resources/bin/win32-x64/$name" -PathType Leaf)) {
+              throw "Missing app-local CRT DLL: $name"
+            }
+          }
+          Write-Output "App-local CRT DLLs present: $($files -join ', ')"
 
       - name: Package
         run: pnpm --filter @deepseek-ai/dsh-desktop run package:win

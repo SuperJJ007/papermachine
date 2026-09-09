@@ -29,6 +29,16 @@ describe('application entrypoints', () => {
     expect(applicationEntrypointViolations(resolve(import.meta.dirname, '..'))).toEqual([])
   })
 
+  it('classifies only the named Science kernel peers, not arbitrary fixture executables', () => {
+    const root = fixture()
+    const directory = 'packages/science/science-runtime/tests/fixtures'
+    write(root, `${directory}/fake-kernel-driver.mjs`, '#!/usr/bin/env node\n')
+    write(root, `${directory}/rogue.mjs`, '#!/usr/bin/env node\n')
+    expect(applicationEntrypointViolations(root)).toEqual([
+      `${directory}/rogue.mjs: executable source has no application/build/test classification`,
+    ])
+  })
+
   it('rejects a package-level application bin', () => {
     const root = fixture()
     write(root, 'packages/example/app/package.json', JSON.stringify({ bin: { app: 'lib/bin.js' } }))

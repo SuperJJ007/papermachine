@@ -12,7 +12,6 @@ import SessionAttachmentIndex from '@deepseek-ai/dsh-session-attachment-index'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as ScienceSession from '@deepseek-ai/dsh-science-session'
-import { runStarted } from '../../science-session/tests/fixtures.ts'
 import ScienceReadService from '../src/read-service.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -69,6 +68,13 @@ it('reads project-library metadata and exact version bytes through all three rea
   expect(await service.scienceVersions(sessionId, [version.versionId, VersionId('absent')])).toMatchObject({ versions: [{ versionId: version.versionId, producer: { sessionTitle: 'Research' } }],
   })
   expect(await service.scienceChartState(sessionId, version.versionId)).toEqual({ chart: null })
+})
+
+it('reads another session’s unreferenced version in the same project', async () => {
+  const { version } = await artifact()
+  const other = SessionId('same-project')
+  ctx.sessions.create(other, { meta: { cwd: workspace } })
+  expect(await service.scienceArtifact(other, version.versionId)).toMatchObject({ versionId: version.versionId })
 })
 
 it('refuses versions from another project even when their identity is known', async () => {
@@ -178,7 +184,7 @@ it('keeps curated metadata and producer coordinates in batched version results',
   expect((await service.scienceLibrary(sessionId)).artifacts).toEqual([])
 })
 
-it('resolves session-pinned versions and ordinal run inputs before project fallback', async () => {
+it('resolves session-pinned versions from their event coordinates', async () => {
   const { projectId, artifact: owner, version } = await artifact()
   const fold = ScienceSession.foldScience([])
   const folded = vi.spyOn(ScienceSession, 'foldScience')
@@ -190,13 +196,7 @@ it('resolves session-pinned versions and ordinal run inputs before project fallb
   const get = vi.spyOn(ctx.scienceArtifactStore, 'getVersion').mockResolvedValueOnce(undefined)
   await expect(service.scienceArtifact(sessionId, version.versionId)).rejects.toThrow('not referenced')
   get.mockRestore()
-  const { inputs: _inputs, ...runWithoutInputs } = runStarted()
-  folded.mockReturnValue({ ...fold, runs: [runStarted({ inputs: [
-    { artifactId: owner.artifactId, version: 1, path: 'inputs/one.csv' },
-    { artifactId: owner.artifactId, version: 2, path: 'inputs/two.csv' },
-  ] }), runWithoutInputs] })
-  expect(await service.scienceArtifact(sessionId, version.versionId)).toMatchObject({ versionId: version.versionId })
-  expect(await service.scienceVersions(sessionId, [VersionId('absent')])).toEqual({ versions: [] })
+
 })
 
 it('reports reconciled version health and skips unrenderable legacy library rows', async () => {

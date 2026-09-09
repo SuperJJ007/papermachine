@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Science 读取方法属于领域，而非 Host 代理聚合。生成的 Remote 服务通过 SessionQuery 解析实时或持久化会话，利用持久化 Science 事实与项目身份授权产物版本，并从产物存储读取当前元数据。connection 服务负责精确 GET/HEAD 字节路由的认证。两种读取路径使用同一个授权函数。
+Science 读取方法属于领域，而非 Host 代理聚合。生成的 Remote 服务通过 SessionQuery 解析实时或持久化会话，以会话 header.cwd 所属项目作为读取授权边界（cwd 缺失即拒绝），本会话产物使用事件坐标，同项目其他版本经存储核实后可读，并从产物存储读取当前元数据。connection 服务负责精确 GET/HEAD 字节路由的认证。两种读取路径使用同一个授权函数。
 
 ## Consequences
 

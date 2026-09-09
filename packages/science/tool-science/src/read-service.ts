@@ -108,17 +108,16 @@ interface AuthorizedScienceArtifact {
 }
 
 /**
-   * Resolve a requested store version only from facts the session fold can
-   * prove. A local artifact event carries the complete store coordinates. An
-   * S3 cross-session run input carries only `(artifactId, ordinal)`, so the
-   * session's durable cwd selects the project and the store corroborates the
-   * corresponding version row before its id can authorize a read.
-   */
+ * Authorize versions within the project selected by the session header's cwd.
+ * Missing cwd denies reads. Session-produced artifacts use their event coordinates;
+ * other versions in that project are readable after verification by the store.
+ */
 async function authorizedScienceArtifact(
   state: SessionReadState,
   requestedVersionId: VersionId,
   store: ScienceArtifactStore,
 ): Promise<AuthorizedScienceArtifact | undefined> {
+  if (state.header.cwd === undefined) return undefined
   const fold = foldScience(state.events)
   const local = fold.artifacts.find(artifact => artifact.versionId === requestedVersionId)
   if (local !== undefined) {
@@ -148,38 +147,7 @@ async function authorizedScienceArtifact(
     }
   }
 
-  const referenced = new Map<string, Set<number>>()
-  for (const run of fold.runs) {
-    for (const input of run.inputs ?? []) {
-      const ordinals = referenced.get(input.artifactId) ?? new Set<number>()
-      ordinals.add(input.version)
-      referenced.set(input.artifactId, ordinals)
-    }
-  }
-  if (state.header.cwd === undefined) return undefined
   const projectId = (await store.openProject(state.header.cwd)).projectId
-  for (const [artifactId, ordinals] of referenced) {
-    const versions = await store.listVersions(projectId, artifactId as Parameters<ScienceArtifactStore['listVersions']>[1])
-    const matched = versions.find(version => version.versionId === requestedVersionId && ordinals.has(version.ordinal))
-    if (matched !== undefined) return {
-      projectId,
-      artifactId: matched.artifactId,
-      versionId: matched.versionId,
-      ordinal: matched.ordinal,
-      sha256: matched.sha256,
-      mediaType: matched.mediaType,
-      byteCount: matched.byteCount,
-      title: matched.title,
-      caption: matched.caption,
-      contentOrigin: matched.contentOrigin,
-      createdAt: matched.createdAt,
-      producerSessionId: matched.producerSessionId,
-      producerRunId: matched.producerRunId,
-      producerToolCallId: matched.producerToolCallId,
-      producerRequestHeaderSeq: matched.producerRequestHeaderSeq,
-      producerTurn: matched.producerTurn,
-    }
-  }
   const projectVersion = await store.getVersion(projectId, requestedVersionId)
   return projectVersion === undefined ? undefined : {
     projectId,
@@ -502,7 +470,10 @@ export class ScienceReadService extends TypertRemoteService {
     if (!sessionId || !versionId) return new Response(null, { status: 400 })
     let artifact: AuthorizedScienceArtifact
     try { artifact = await this.readable(SessionId(sessionId), VersionId(versionId)) }
-    catch { return new Response(null, { status: 404 }) }
+    catch {
+      // Session lookup and authorization failures share 404 to avoid disclosing session or version existence.
+      return new Response(null, { status: 404 })
+    }
     try {
       const data = await this.ctx.scienceArtifactStore.readBlob(artifact.projectId, artifact.sha256)
       request.signal.throwIfAborted()

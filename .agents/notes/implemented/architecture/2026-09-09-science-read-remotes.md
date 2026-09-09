@@ -10,7 +10,7 @@ Science reads must preserve session authorization after removal of the applicati
 
 ## Decision
 
-Science read methods belong to the domain rather than a Host proxy aggregate. A generated Remote service resolves live or stored sessions through SessionQuery, authorizes artifact versions using durable Science facts and project identity, and reads current metadata from the artifact store. The connection service owns authentication for the exact GET/HEAD byte route. Both routes use the same authorization function.
+Science read methods belong to the domain rather than a Host proxy aggregate. A generated Remote service resolves live or stored sessions through SessionQuery, authorizes reads within the project selected by the session header's cwd (missing cwd denies reads), using event coordinates for session-produced artifacts and store verification for any other version in that project, and reads current metadata from the artifact store. The connection service owns authentication for the exact GET/HEAD byte route. Both routes use the same authorization function.
 
 ## Consequences
 

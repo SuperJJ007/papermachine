@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-本表记录 `ce76a86204..bb36e06d0c3ea1032613c1171210c99a50fd6ee4`，每行按所列包或文件统计完整差异（含测试、文档及生成文件），不把源码行数与完整差异混用。数据来自 `git diff --stat ce76a86204..bb36e06d0c3ea1032613c1171210c99a50fd6ee4 -- <path>`，+/− 由同范围 `--numstat` 汇总。B 指 2026-09-09 迁移研究的 `B-upstream-patch-audit.md`；KEEP 水位项按 PLAN §2.3 落为 RE-APPLY，附件项按 P2.5 使用上游 File API 重设计。自有 Science 包不算上游补丁；自有 session-attachment-index 单列以记录其 V3 适配。
+本表记录 `ce76a86204..6528088e9f8c579024124add2642cde5a062ff16`，每行按所列包或文件统计完整差异（含测试、文档及生成文件），不把源码行数与完整差异混用。数据来自 `git diff --stat ce76a86204..6528088e9f8c579024124add2642cde5a062ff16 -- <path>`，+/− 由同范围 `--numstat` 汇总。B 指 2026-09-09 迁移研究的 `B-upstream-patch-audit.md`；KEEP 水位项按 PLAN §2.3 落为 RE-APPLY，附件项按 P2.5 使用上游 File API 重设计。自有 Science 包不算上游补丁；自有 session-attachment-index 单列以记录其 V3 适配。
 
 | 包或文件 | +/− | B 对应行与判定 | 上游替代 | 已提上游 | 决定记录 |
 | --- | --- | --- | --- | --- | --- |
@@ -34,7 +34,7 @@ Status: implemented
 | `packages/e2b/subprocess-e2b` | +109/−17 | B §3 subprocess / companion call sites; RE-APPLY | 无目标环境或观测替代 | 未提 | [subprocess-target-environment-base](../architecture/2026-09-09-subprocess-target-environment-base.zh.md), [subprocess-observation-facts](../architecture/2026-09-09-subprocess-observation-facts.zh.md), [managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.zh.md) |
 | `packages/experimental/webworker-runtime` | +3/−0 | B §3 subprocess / companion call sites; RE-APPLY | 无目标环境或观测替代 | 未提 | [subprocess-target-environment-base](../architecture/2026-09-09-subprocess-target-environment-base.zh.md), [subprocess-observation-facts](../architecture/2026-09-09-subprocess-observation-facts.zh.md) |
 | `packages/extensions/tool-cordis` | +90/−27 | B §3 extensions/tool-cordis; REGENERATE | 使用上游生成器 | 未提 | [science-read-remotes](../architecture/2026-09-09-science-read-remotes.zh.md) |
-| `packages/fs/tool-fs` | +433/−47 | B §3 tool-fs; RE-APPLY | 无只读包入口 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
+| `packages/fs/tool-fs` | +435/−47 | B §3 tool-fs; RE-APPLY | 无只读包入口 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
 | `packages/fs/tool-fs-search` | +5/−1 | B §3 subprocess / companion call sites; RE-APPLY | 无目标环境或观测替代 | 未提 | [subprocess-target-environment-base](../architecture/2026-09-09-subprocess-target-environment-base.zh.md), [subprocess-observation-facts](../architecture/2026-09-09-subprocess-observation-facts.zh.md) |
 | `packages/llm/plugin-package-inventory-deepseek` | +1/−1 | B §3 subprocess / companion call sites; RE-APPLY | 无目标环境或观测替代 | 未提 | [subprocess-target-environment-base](../architecture/2026-09-09-subprocess-target-environment-base.zh.md), [subprocess-observation-facts](../architecture/2026-09-09-subprocess-observation-facts.zh.md) |
 | `packages/lsp/lsp-stdio` | +1/−0 | B §3 subprocess / companion call sites; RE-APPLY | 无目标环境或观测替代 | 未提 | [subprocess-target-environment-base](../architecture/2026-09-09-subprocess-target-environment-base.zh.md), [subprocess-observation-facts](../architecture/2026-09-09-subprocess-observation-facts.zh.md) |
@@ -64,6 +64,8 @@ Status: implemented
 | `scripts/gen-cordis-catalog.ts` | +6/−0 | B §4 scripts catalog registration; RE-APPLY | 已有生成器或分类规则，补 Science 登记 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
 | `scripts/verify-application-entrypoints.ts` | +4/−0 | B §4 scripts test-driver classification; RE-APPLY | 已有生成器或分类规则，补 Science 登记 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
 | `scripts/verify-application-entrypoints.spec.ts` | +10/−0 | B §4 scripts classification rejection test; RE-APPLY | 已有生成器或分类规则，补 Science 登记 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
+| `scripts/check-workspace-constraints.ts` | +5/−0 | B §4 scripts publication payload registration; RE-APPLY | 已有逐包精确清单，登记必需发布载荷 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
+| `scripts/check-workspace-constraints.spec.ts` | +21/−0 | B §4 scripts publication payload rejection tests; RE-APPLY | 已有逐包精确清单，登记必需发布载荷 | 未提 | [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md) |
 
 D9 保持 `effective` 必填：每个设置快照都携带生效值，重启生效的所有者保留注册时读取的值，客户端无需引入 undefined 分支。约 20 个上游客户端 fixture 的改动是接受的 rc 冲突成本；下列完整客户端测试差异包含两个自有 ui-science 文件，不把它们算作上游补丁：
 
@@ -91,6 +93,8 @@ D9 保持 `effective` 必填：每个设置快照都携带生效值，重启生�
 - `packages/client/ui-theme/tests/apply.client.spec.ts`
 
 D10 删除 Science 自有 `workspaceFiles`/`workspaceFile`，删除前 commit 为 `1089ef24a1`。文件标签使用上游 `api/workspace-files` 与 `ui-sidebar-files`；Science overlay 未禁用这两个插件。只有 P4 实测证明缺少 dotfile/node_modules 过滤或 mediaType 时，才以最小代码补足。`textAttachmentByteLimit` 继续约束附件预览，默认 2 MiB。D11 以会话 cwd 所属项目授权；同项目跨会话可读，cwd 缺失拒绝，run-inputs 分支由项目版本查询覆盖。
+
+发布包通过现有 `packageFileExtras` 登记次级入口、共享 chunk、内核 assets 和 preset，并要求四个包的 `files` 与其精确匹配。只缩减 `files` 会让已安装包丢失公开入口及运行资源；登记补充载荷保留这些能力而不放宽全局规则。四个包分别验证缺少任意条目或加入未归属条目都会拒绝。
 
 ## 考虑过的替代方案
 

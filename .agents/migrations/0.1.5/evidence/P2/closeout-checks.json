@@ -1,0 +1,243 @@
+{
+  "sourceCandidate": "6528088e9f8c579024124add2642cde5a062ff16",
+  "initialGates": [
+    {
+      "check": "tsconfig-paths",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/gen-tsconfig-paths.ts",
+        "--check"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "cordis-config",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-cordis-config.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "package-dependencies",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-package-dependencies.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "client-catalog",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/gen-client-catalog.ts",
+        "--check"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "cordis-catalog",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/gen-cordis-catalog.ts",
+        "--check"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "note-format",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-agent-note-format.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "type-equiv",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-type-equiv.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "translation-pairing",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-translation-pairing.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "export-jsdoc",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-export-jsdoc.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "archived-notes",
+      "command": [
+        "pnpm",
+        "exec",
+        "tsx",
+        "scripts/verify-archived-agent-notes.ts"
+      ],
+      "exitCode": 0
+    },
+    {
+      "check": "lint",
+      "command": [
+        "pnpm",
+        "run",
+        "lint"
+      ],
+      "exitCode": 1
+    },
+    {
+      "check": "duplication",
+      "command": [
+        "pnpm",
+        "run",
+        "duplication"
+      ],
+      "exitCode": 1
+    },
+    {
+      "check": "hygiene",
+      "command": [
+        "pnpm",
+        "run",
+        "hygiene"
+      ],
+      "exitCode": 1
+    },
+    {
+      "check": "doc-sync",
+      "command": [
+        "pnpm",
+        "run",
+        "doc-sync"
+      ],
+      "exitCode": 1
+    }
+  ],
+  "finalHygiene": {
+    "exitCode": 1,
+    "passed": 13,
+    "failed": [
+      "package invariants (P6)",
+      "client packages (P4)",
+      "client UI i18n (P4)"
+    ]
+  },
+  "lint": {
+    "exitCode": 1,
+    "errors": 480,
+    "allErrorsUnder": "packages/client/ui-science"
+  },
+  "duplication": {
+    "exitCode": 1,
+    "clones": 1,
+    "paths": [
+      "packages/client/ui-science/src/client/library-artifact.ts",
+      "packages/science/tool-science/src/read-types.ts"
+    ]
+  },
+  "science": {
+    "exitCode": 0,
+    "command": "pnpm exec vitest run --coverage packages/science --coverage.include='packages/science/*/src/**/*.ts'",
+    "filesPassed": 55,
+    "filesSkipped": 3,
+    "testsPassed": 1024,
+    "testsSkipped": 34,
+    "coverage": {
+      "science-artifact-store": {
+        "statements": 100.0,
+        "branches": 100.0,
+        "functions": 100.0,
+        "lines": 100.0
+      },
+      "science-runtime": {
+        "statements": 100.0,
+        "branches": 100.0,
+        "functions": 100.0,
+        "lines": 100.0
+      },
+      "science-session": {
+        "statements": 100.0,
+        "branches": 100.0,
+        "functions": 100.0,
+        "lines": 100.0
+      },
+      "tool-science": {
+        "statements": 100.0,
+        "branches": 100.0,
+        "functions": 100.0,
+        "lines": 100.0
+      }
+    }
+  },
+  "adjacent": {
+    "exitCode": 1,
+    "filesPassed": 57,
+    "filesFailed": 2,
+    "filesSkipped": 3,
+    "testsPassed": 781,
+    "testsFailed": 3,
+    "testsSkipped": 25,
+    "failureOwner": "P4: ui-theme repository-wide CSS assertions against ui-science"
+  },
+  "install": {
+    "exitCode": 0,
+    "command": "pnpm install --frozen-lockfile"
+  },
+  "typecheck": {
+    "exitCode": 0,
+    "command": "pnpm run typecheck"
+  },
+  "build": {
+    "exitCode": 0,
+    "command": "pnpm run build"
+  },
+  "docSync": {
+    "exitCode": 1,
+    "passed": 25,
+    "failed": 9,
+    "owner": "P6"
+  },
+  "workspaceConstraintTests": {
+    "exitCode": 0,
+    "testsPassed": 15
+  },
+  "builtReadOnlySmoke": {
+    "exitCode": 0,
+    "testsPassed": 1
+  },
+  "finalDocs": {
+    "exitCode": 1,
+    "passed": 25,
+    "failed": 9,
+    "noteFormatExitCode": 0,
+    "translationPairingExitCode": 0
+  }
+}

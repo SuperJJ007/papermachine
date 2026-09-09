@@ -278,42 +278,46 @@ describe('normalizeImage', () => {
 })
 
 describe('hasLowColourCount', () => {
-  it('distinguishes photographic rasters from low-colour graphics without averaged sampling', async () => {
+  it.each([
+    ['high-frequency noise', false],
+    ['gradient', false],
+    ['solid', true],
+    ['antialiased text', true],
+    ['transparency', true],
+  ] as const)('classifies %s without averaged sampling', async (sample, expected) => {
     const side = 512
-    const highFrequency = sharp(noisePixels(side, side), { raw: { width: side, height: side, channels: 3 } })
-    const gradientPixels = new Uint8Array(side * side * 3)
-    for (let y = 0; y < side; y += 1) {
-      for (let x = 0; x < side; x += 1) {
-        const offset = (y * side + x) * 3
-        gradientPixels[offset] = x & 0xff
-        gradientPixels[offset + 1] = y & 0xff
-        gradientPixels[offset + 2] = (x * 3 + y * 5) & 0xff
-      }
+    const sources = {
+      'high-frequency noise': () => sharp(noisePixels(side, side), { raw: { width: side, height: side, channels: 3 } }),
+      gradient: () => {
+        const pixels = new Uint8Array(side * side * 3)
+        for (let y = 0; y < side; y += 1) {
+          for (let x = 0; x < side; x += 1) {
+            const offset = (y * side + x) * 3
+            pixels[offset] = x & 0xff
+            pixels[offset + 1] = y & 0xff
+            pixels[offset + 2] = (x * 3 + y * 5) & 0xff
+          }
+        }
+        return sharp(pixels, { raw: { width: side, height: side, channels: 3 } })
+      },
+      solid: () => sharp({
+        create: { width: side, height: side, channels: 3, background: { r: 12, g: 34, b: 56 } },
+      }),
+      'antialiased text': () => sharp(Buffer.from(`
+        <svg width="512" height="256" xmlns="http://www.w3.org/2000/svg">
+          <rect width="512" height="256" fill="white"/>
+          <text x="24" y="145" font-size="96" fill="#16324f">DeepSeek 16-bit</text>
+        </svg>
+      `)),
+      transparency: async () => sharp(await sharp({
+        create: { width: side, height: side, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      }).composite([{ input: Buffer.from(`
+        <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="256" cy="256" r="180" fill="#0f8" fill-opacity="0.7"/>
+        </svg>
+      `) }]).png().toBuffer()),
     }
-    const ordinaryPhoto = sharp(gradientPixels, { raw: { width: side, height: side, channels: 3 } })
-    const solid = sharp({
-      create: { width: side, height: side, channels: 3, background: { r: 12, g: 34, b: 56 } },
-    })
-    const text = sharp(Buffer.from(`
-      <svg width="512" height="256" xmlns="http://www.w3.org/2000/svg">
-        <rect width="512" height="256" fill="white"/>
-        <text x="24" y="145" font-size="96" fill="#16324f">DeepSeek 16-bit</text>
-      </svg>
-    `))
-    const transparentData = await sharp({
-      create: { width: side, height: side, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-    }).composite([{ input: Buffer.from(`
-      <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="256" cy="256" r="180" fill="#0f8" fill-opacity="0.7"/>
-      </svg>
-    `) }]).png().toBuffer()
-    const transparent = sharp(transparentData)
-
-    await expect(hasLowColourCount(highFrequency)).resolves.toBe(false)
-    await expect(hasLowColourCount(ordinaryPhoto)).resolves.toBe(false)
-    await expect(hasLowColourCount(solid)).resolves.toBe(true)
-    await expect(hasLowColourCount(text)).resolves.toBe(true)
-    await expect(hasLowColourCount(transparent)).resolves.toBe(true)
+    await expect(hasLowColourCount(await sources[sample]())).resolves.toBe(expected)
   })
 
   it('reads grayscale-alpha samples without treating alpha or the next pixel as RGB', async () => {

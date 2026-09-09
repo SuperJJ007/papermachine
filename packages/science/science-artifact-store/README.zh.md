@@ -10,6 +10,8 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 
 一个 Project 就是一个工作区目录。`openProject(workspacePath)` 通过工作区下的标记文件 `<workspace>/.papermachine/project.json`(`{projectId, createdAt}`)解析其身份,首次使用时创建该文件。存储自身在 `<storeRoot>/project.json` 保留一份记录(`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`),每次打开时刷新——这份记录本身就是注册表,不存在另外的全局索引文件。
 
+身份解析按工作区标记、项目记录的顺序持有跨进程写锁。并发首次打开共享同一个项目 ID；并发重开和移动/复制判断会串行更新元数据。锁竞争遵循 [`dsh-atomic-write`](../../util/atomic-write/README.zh.md) 的有界等待和孤立锁恢复策略。
+
 当存储记录的 `workspacePath` 与本次打开的路径不同时,身份解析规则如下:
 
 - 记录路径已不存在,或已不再携带指向本 Project 的标记 → **move(移动)**:id 不变,存储记录的路径被更新。

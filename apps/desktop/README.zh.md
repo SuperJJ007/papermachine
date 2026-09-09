@@ -68,6 +68,8 @@ Onboarding 的安装位置这一行，让用户在安装之前把 Harness home �
 
 Windows 安装包是 per-user 安装（`%LOCALAPPDATA%`，不需要提权），不带代码签名。macOS 这边 `electron-builder.yml` 同样没有配置 Apple Developer ID（`mac.identity: null`），所以 `scripts/after-pack.mjs` 的 `afterPack` 钩子会在其余每个打包步骤都改完 app 内容之后，自己对打包出的 `.app` 做 ad-hoc deep 签名（`codesign --force --deep --sign -`），再用 `codesign --verify --deep --strict` 验证结果:这是 mac 包携带的唯一签名,它能让下载下来的副本被 Gatekeeper 判定为"来自身份不明的开发者"而不是"已损坏"。见[mac ad-hoc 签名的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-mac-adhoc-deep-signature.zh.md)。Windows 安装包的 `resources/bin/win32-x64/` 同时带着 `fetch:micromamba win32-x64` 落在那里的 MSVC C/C++ 运行库 DLL，随包本地、与 `micromamba.exe` 同目录：一个 per-user、不提权的安装器无法要求或运行裸机上缺失的那次机器级 Visual C++ 可再发行组件安装（见[随包本地 CRT 的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.zh.md)）。`.github/workflows/desktop-release.yml` 构建两个平台并把产物收进同一个 draft GitHub release；draft 不创建 tag，在有人发布它之前对仓库写者之外不可见。
 
+Windows 安装器必须在 Windows 上构建。产物开始构建钩子拒绝 NSIS 交叉编译（包括 `--prepackaged`），因为 Mac 的卸载器提取路径可能生成 CRC 无效的可执行文件。保留 CRC 校验。Windows 静默安装保留卸载失败的非零退出码，并通过固定的 [NSIS 模板补丁](../../patches/app-builder-lib@26.15.3.patch)自动关闭错误通知。升级失败需要定位原因；全新安装成功不能证明已有安装能够升级。见[安装器失败处理决定](../../.agents/notes/implemented/bug-fix/2026-09-09-nsis-silent-failure.zh.md)。
+
 Windows 安装包是实验性 / Beta：`dsh-sandbox-windows-acl` 只能做到 `partial` 沙箱强制，达不到 macOS 那种 `full` 隔离（见其 README 的 "Verified boundaries" 一节）；R 在非 ASCII 安装路径或用户名下有已知边角情况；需要 Windows 10 64 位及以上；遇到问题提 issue 时请附上 `%USERPROFILE%\.papermachine\logs`。
 
 生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 `~/.papermachine` 下，既在 application payload 之外,也在 Electron `userData` 之外。

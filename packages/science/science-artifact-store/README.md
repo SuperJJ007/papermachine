@@ -10,6 +10,8 @@ Loading the service does not load SQLite. The engine imports `node:sqlite` only 
 
 A project is a workspace directory. `openProject(workspacePath)` resolves its identity from a marker file at `<workspace>/.papermachine/project.json` (`{projectId, createdAt}`), creating one on first use. The store keeps its own record at `<storeRoot>/project.json` (`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`), refreshed on every open — this record is the registry; there is no separate global index.
 
+Identity resolution holds cross-process writer locks in workspace-marker then project-record order. Concurrent first opens share one project id; concurrent reopens and move/copy decisions serialize their metadata updates. Lock contention has the bounded wait and orphan-recovery policy of [`dsh-atomic-write`](../../util/atomic-write/README.md).
+
 Resolution rule when the store's recorded `workspacePath` differs from the path opening now:
 
 - The recorded path is gone, or no longer carries a marker naming this project → **move**: same id, the store's recorded path is updated.

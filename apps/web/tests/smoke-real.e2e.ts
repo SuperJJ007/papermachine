@@ -385,7 +385,7 @@ describe('dsh web keyless CLI smoke', () => {
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }
-  }, 30_000)
+  })
 
   it('DSH_TOOLS_MODE=code collapses the provider wire tools to run_code with the SDK prompt section', async () => {
     requireDist()

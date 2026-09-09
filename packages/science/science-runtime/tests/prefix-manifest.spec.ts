@@ -49,10 +49,7 @@ describe('Science Runtime prefix manifests', () => {
     expect(diffPrefixManifest(manifest, await capturePrefixManifest(join(root, 'prefix')))).toEqual([])
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a
-  // shape win32's executable-layout lookup never finds, so environment binding
-  // can never reach 'applied' here.
-  it.skipIf(process.platform === 'win32')('leaves the fake configured prefix byte-for-byte manifest-equivalent after binding and running', async () => {
+  it('leaves the fake configured prefix byte-for-byte manifest-equivalent after binding and running', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-prefix-unchanged-'))
     roots.push(root)
     const prefix = createFakePythonPrefix(root)

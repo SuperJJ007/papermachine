@@ -113,6 +113,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   dialect: ShellDialect,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<void> {
   const start = async (): Promise<void> => {
@@ -130,20 +131,24 @@ async function startupSession(
     // bound, so the wait loops over follow-up sends until the controlled
     // prompt is actually visible (in the viewport or the retained scrollback
     // when it landed between sends), bounded by the send deadline.
+    await session.initialize(signal)
     let viewport = ''
+    let first = true
+    const deadline = Date.now() + timeoutMs
     for (;;) {
-      const first = viewport.length === 0
+      if (Date.now() >= deadline) throw new Error('PTY shell did not reach readiness before startup timeout')
       const operation = session.startSend({
         text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
         submit: first,
         ...signal !== undefined ? { signal } : {},
       })
+      first = false
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
       viewport = result.viewport
       const scrollback = session.read({ offset: 0, count: 20 }).text
-      if (viewport.includes(CONTROLLED_PROMPT) || scrollback.includes(CONTROLLED_PROMPT)) break
+      if ([viewport, scrollback].some(text => text.split('\n').includes(CONTROLLED_PROMPT))) break
     }
     session.motd = viewport
   }
@@ -200,7 +205,7 @@ export class BashTerminalBackend implements TerminalBackend {
     })
     const session = this.createSession(terminal, this.config)
     try {
-      await startupSession(session, this.config.shellDialect, spec.signal)
+      await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session
     } catch (error) {
       try {

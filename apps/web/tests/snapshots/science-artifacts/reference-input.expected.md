@@ -99,4 +99,4 @@
   - text: Select model
   - img
 - button "Send message" [disabled]
-- text: 2 turns · 2 steps LLM {{duration}} · Tool call {{duration}} python · epoch 1 · interrupted
+- text: 2 turns · 2 steps LLM {{duration}} · Tool call {{duration}} Latest kernel records python · epoch 1 · interrupted

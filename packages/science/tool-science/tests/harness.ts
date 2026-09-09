@@ -9,6 +9,7 @@
 
 export {
   createFakePythonPrefix,
+  fakeInterpreterPath,
   createFakeSandboxRunner,
   installTestKernelSet,
   kernelAction,

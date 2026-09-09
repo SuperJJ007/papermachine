@@ -54,7 +54,7 @@ import {
 import { scienceArtifactEdits } from '../src/artifact-schema.ts'
 import type { ResolveArtifactStoreFacts, ScienceArtifactStoreFacts } from '../src/artifact-schema.ts'
 import { stateValueFromProjection } from '../src/state.ts'
-import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
+import { createFakePythonPrefix, fakeInterpreterPath, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 
 // `setup()` mounts a real LocalSubprocessRuntime/LocalSandboxProvider and the
 // run_python/run_r/get_science_state cases spawn a real kernel subprocess
@@ -313,6 +313,7 @@ function makeMicromamba(root: string): string {
   const executable = join(root, 'fake-micromamba')
   writeFileSync(executable, '#!/bin/sh\nexit 0\n')
   chmodSync(executable, 0o755)
+  if (process.platform === 'win32') writeFileSync(`${executable}.science-test.mjs`, 'process.exit(0)\n')
   return executable
 }
 
@@ -473,8 +474,7 @@ describe('diagnostic and non-science assembly', () => {
 })
 
 describe('first-use binding', () => {
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('binds mode then environment before step/start, and renders the post-bind context', async () => {
+  it('binds mode then environment before step/start, and renders the post-bind context', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-first-use')
 
@@ -513,6 +513,56 @@ describe('first-use binding', () => {
 
     expect(session.events.filter(event => event.type === 'science/mode-bound')).toHaveLength(boundOnce)
     expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(environmentOnce)
+  })
+
+  it.each([true, false])('observes a resumed failed pre-run environment once (prefix repaired: %s)', async (repaired) => {
+    const { ctx } = await setup()
+    const original = scienceSession(ctx, 'science-failed-original')
+    original.append('science/mode-bound', {
+      version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' },
+    })
+    original.append('science/environment-bound', {
+      version: 1,
+      environment: {
+        revision: 1, profileId: ScienceEnvironmentProfileId('fake'), configuredAt: 1, validatedAt: 1,
+        status: 'invalid', failureReason: 'interpreter probe failed', sandboxEnforcement: 'partial',
+        python: { language: 'python', configuredPrefix: join(root, 'fake-conda'), capability: 'invalid', reason: 'interpreter probe failed' },
+      },
+    })
+    if (!repaired) await rm(join(root, 'fake-conda'), { recursive: true, force: true })
+    const resumed = ctx.sessions.create(SessionId('science-failed-resumed'), {
+      seed: [...original.events], meta: { agentPreset: 'science', cwd: original.header.cwd! },
+    })
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
+    expect(replayScience(resumed.events)?.environment).toMatchObject({
+      revision: 2, status: repaired ? 'applied' : 'invalid',
+    })
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
+    expect(resumed.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
+    // An observation made during the current lifecycle is not retried on each step.
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(original), signal: testSignal })
+    expect(original.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+  })
+
+  it('preserves a seeded failed environment after a Science run has started', async () => {
+    const { ctx } = await setup()
+    const original = scienceSession(ctx, 'science-failed-after-run')
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(original), signal: testSignal })
+    await runSuccessfully(ctx, original, 'science-before-failed-probe')
+    original.append('science/environment-bound', {
+      version: 1,
+      environment: {
+        revision: 2, profileId: ScienceEnvironmentProfileId('fake'), configuredAt: 2, validatedAt: 2,
+        status: 'invalid', failureReason: 'interpreter probe failed',
+        python: { language: 'python', configuredPrefix: join(root, 'fake-conda'), capability: 'invalid', reason: 'interpreter probe failed' },
+      },
+    })
+    const resumed = ctx.sessions.create(SessionId('science-failed-after-run-resumed'), {
+      seed: [...original.events], meta: { agentPreset: 'science', cwd: original.header.cwd! },
+    })
+    await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
+    expect(replayScience(resumed.events)?.environment).toMatchObject({ revision: 2, status: 'invalid' })
+    expect(resumed.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
   })
 
   it('rejects assembly on a configured mode-revision mismatch', async () => {
@@ -905,8 +955,7 @@ describe('requireArtifactStore / resolveArtifactStoreFacts', () => {
     expect(() => requireArtifactStore(ctx)).toThrow(/no Science Artifact Store is mounted/)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('resolves a captured artifact\'s current store version row, and rejects a versionId the store no longer holds', async () => {
+  it('resolves a captured artifact\'s current store version row, and rejects a versionId the store no longer holds', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-resolve-store-version')
     const run = await runSuccessfully(ctx, session, 'science-resolve-store-version-run')
@@ -919,8 +968,7 @@ describe('requireArtifactStore / resolveArtifactStoreFacts', () => {
     await expect(resolveArtifactStoreFacts(ctx, 4, dangling)).rejects.toThrow(/no longer identifies a committed store version/)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('reads PNG edit history only, bounds recent operations, and resolves explicit and implicit lineage', async () => {
+  it('reads PNG edit history only, bounds recent operations, and resolves explicit and implicit lineage', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-resolve-store-facts')
     const run = await runSuccessfully(ctx, session, 'science-resolve-store-facts-run')
@@ -953,8 +1001,7 @@ describe('requireArtifactStore / resolveArtifactStoreFacts', () => {
     expect(continuedFacts.lineage).toEqual({ kind: 'continues', version: 2 })
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('preserves migrated implicit-baseline lineage and fails loud for dangling baseline references', async () => {
+  it('preserves migrated implicit-baseline lineage and fails loud for dangling baseline references', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-resolve-baseline-invariants')
     const run = await runSuccessfully(ctx, session, 'science-resolve-baseline-invariants-run')
@@ -1113,6 +1160,10 @@ describe('kernelRestartReason', () => {
 })
 
 describe('closedKernelFacts', () => {
+  it('does not treat a started record as a closed kernel', () => {
+    expect(closedKernelFacts({ kernelEpoch: 1, language: 'python', state: 'started',
+      environmentRevision: 1, environmentFingerprint: 'a'.repeat(64), at: 200 })).toBeUndefined()
+  })
   it('returns undefined for an exited kernel fact missing reason/startedAt — a value the fold never commits but ScienceKernelState\'s plain optional fields do not forbid at the type level', () => {
     const kernel: ScienceKernel = {
       kernelEpoch: 1,
@@ -1142,8 +1193,7 @@ describe('get_science_state', () => {
     expect(result.isError).toBe(true)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('returns a sanitized bounded projection after binding', async () => {
+  it('returns a sanitized bounded projection after binding', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-bound')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
@@ -1547,8 +1597,7 @@ describe('run_python', () => {
     expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('rejects a raster_artifacts path escape through the real Runtime before publishing a run', async () => {
+  it('rejects a raster_artifacts path escape through the real Runtime before publishing a run', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-raster-path-escape')
     const result = await ctx.tools.execute({
@@ -1614,8 +1663,7 @@ describe('run_python', () => {
     }))
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('runs source through ctx.scienceRuntime and returns the durable terminal result', async () => {
+  it('runs source through ctx.scienceRuntime and returns the durable terminal result', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-success')
     const toolCallId = CallId('run-4')
@@ -1639,8 +1687,7 @@ describe('run_python', () => {
     expect(result.meta).toBeNull()
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('prepends the kernel-restart line with the exact model phrase when a mid-session environment rebind starts a fresh kernel epoch', async () => {
+  it('prepends the kernel-restart line with the exact model phrase when a mid-session environment rebind starts a fresh kernel epoch', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-run-restart-env-rebind')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
@@ -1677,8 +1724,7 @@ describe('run_python', () => {
     expect(secondText.startsWith('kernel restarted (environment re-bind): variables from earlier runs are gone\n')).toBe(true)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('prepends the kernel-restart line when another session\'s install drifts the shared prefix, not only on a manually appended rebind', async () => {
+  it('prepends the kernel-restart line when another session\'s install drifts the shared prefix, not only on a manually appended rebind', async () => {
     // Unlike the test above (a direct log append standing in for a rebind),
     // this mutates conda-meta/history on disk directly — the same shared
     // prefix `install_science_packages` from a DIFFERENT session would
@@ -1878,8 +1924,7 @@ describe('scienceArtifactPresentation', () => {
 })
 
 describe('annotate_artifact', () => {
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('curates an already-captured artifact and returns a text receipt without file bytes or the internal attachment id', async () => {
+  it('curates an already-captured artifact and returns a text receipt without file bytes or the internal attachment id', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-success')
     const run = await runSuccessfully(ctx, session, 'science-annotate-run')
@@ -1913,8 +1958,7 @@ describe('annotate_artifact', () => {
     })
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('returns a model-visible error when one authorizing call is reused', async () => {
+  it('returns a model-visible error when one authorizing call is reused', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-reused-call')
     const run = await runSuccessfully(ctx, session, 'science-annotate-reused-call-run')
@@ -1934,8 +1978,7 @@ describe('annotate_artifact', () => {
     expect(second.content.some(block => block.type === 'text' && block.text.includes('already authorized a prior artifact annotation'))).toBe(true)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('omits producer wording when the stored producer run is not present in the current session', async () => {
+  it('omits producer wording when the stored producer run is not present in the current session', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-unknown-producer')
     const run = await runSuccessfully(ctx, session, 'science-annotate-known-run')
@@ -1965,8 +2008,7 @@ describe('annotate_artifact', () => {
     expect(text).not.toContain('produced by')
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('curates a captured non-image artifact into a clickable reference too, now that the presentation generalizes past image-only', async () => {
+  it('curates a captured non-image artifact into a clickable reference too, now that the presentation generalizes past image-only', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-text-success')
     const run = await runSuccessfully(ctx, session, 'science-annotate-text-run')
@@ -1987,8 +2029,7 @@ describe('annotate_artifact', () => {
     })
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('carries the curated version\'s store content reference in the presentation meta', async () => {
+  it('carries the curated version\'s store content reference in the presentation meta', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-no-name')
     const run = await runSuccessfully(ctx, session, 'science-annotate-no-name-run')
@@ -2031,8 +2072,7 @@ describe('annotate_artifact', () => {
     expect(result.content.some(block => block.type === 'text' && block.text.includes('no request/header is recorded'))).toBe(true)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('retitles one version for a repeat logical_name, retaining the artifactId', async () => {
+  it('retitles one version for a repeat logical_name, retaining the artifactId', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-versions')
     const run = await runSuccessfully(ctx, session, 'science-annotate-versions-run')
@@ -2062,8 +2102,7 @@ describe('annotate_artifact', () => {
     expect(artifacts?.at(0)?.title).toBe('v3')
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('curates an exact named version rather than defaulting to latest', async () => {
+  it('curates an exact named version rather than defaulting to latest', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-annotate-explicit-version')
     const run = await runSuccessfully(ctx, session, 'science-annotate-explicit-version-run')
@@ -2247,8 +2286,7 @@ describe('install_science_packages', () => {
     expect(result.content.some(block => block.type === 'text' && block.text.includes('configured micromamba executable path'))).toBe(true)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
+  it('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-success')
     const before = replayScience(session.events)?.environment
@@ -2260,26 +2298,40 @@ describe('install_science_packages', () => {
     // micromamba actually writing the requested package (mirrors
     // examples/headless-agent's own science fixture, prepareScienceFixture).
     const pandasMarker = join(root, 'fake-conda', 'conda-meta', 'pandas-2.2.0.json')
-    writeFileSync(join(root, 'fake-conda', 'bin', 'python'), `#!/bin/sh
-case " $* " in
-  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
-  *" -m "*)
-    if [ -f ${JSON.stringify(pandasMarker)} ]; then
-      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"},{"name":"pandas","version":"2.2.0"}]'
-    else
-      printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
-    fi
-    ;;
-  *" -c "*) printf 'dsh-科学-✓' ;;
-  *)
-    while [ "$#" -gt 2 ]; do shift; done
-    exec "${process.execPath}" "$1" "$2"
-    ;;
-esac
+    if (process.platform === 'win32') {
+      writeFileSync(`${fakeInterpreterPath(join(root, 'fake-conda'), 'python')}.science-test.mjs`, `
+import { existsSync } from 'node:fs'
+const args = process.argv.slice(2)
+if (args.includes('--version')) process.stdout.write('Fake Python 3.13.5')
+else if (args.includes('-m')) {
+  const packages = [{name:'pip',version:'24.0'},{name:'numpy',version:'1.26.4'}]
+  if (existsSync(${JSON.stringify(pandasMarker)})) packages.push({name:'pandas',version:'2.2.0'})
+  process.stdout.write(JSON.stringify(packages))
+} else process.stdout.write('dsh-科学-✓')
 `)
-    chmodSync(join(root, 'fake-conda', 'bin', 'python'), 0o700)
-    writeFileSync(join(root, 'fake-micromamba'), `#!/bin/sh\ntouch ${JSON.stringify(pandasMarker)}\nexit 0\n`)
-    chmodSync(join(root, 'fake-micromamba'), 0o755)
+      writeFileSync(join(root, 'fake-micromamba.science-test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pandasMarker)}, '{}')\n`)
+    } else {
+      writeFileSync(join(root, 'fake-conda', 'bin', 'python'), `#!/bin/sh
+  case " $* " in
+    *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
+    *" -m "*)
+      if [ -f ${JSON.stringify(pandasMarker)} ]; then
+        printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"},{"name":"pandas","version":"2.2.0"}]'
+      else
+        printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]'
+      fi
+      ;;
+    *" -c "*) printf 'dsh-科学-✓' ;;
+    *)
+      while [ "$#" -gt 2 ]; do shift; done
+      exec "${process.execPath}" "$1" "$2"
+      ;;
+  esac
+  `)
+      chmodSync(join(root, 'fake-conda', 'bin', 'python'), 0o700)
+      writeFileSync(join(root, 'fake-micromamba'), `#!/bin/sh\ntouch ${JSON.stringify(pandasMarker)}\nexit 0\n`)
+      chmodSync(join(root, 'fake-micromamba'), 0o755)
+    }
     const result = await ctx.tools.execute({
       signal: testSignal, callId: CallId('install-success'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['pandas'] },
@@ -2294,8 +2346,7 @@ esac
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('reports a redundant install as unchanged, appending no revision', async () => {
+  it('reports a redundant install as unchanged, appending no revision', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-redundant')
     const before = replayScience(session.events)?.environment
@@ -2404,8 +2455,7 @@ describe('scienceEdits submit', () => {
     await expect(service.previewChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('adds and removes ignorable user-only notes without queuing model input', async () => {
+  it('adds and removes ignorable user-only notes without queuing model input', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-notes')
     const run = await runSuccessfully(ctx, session, 'science-artifact-notes-run')
@@ -2435,8 +2485,7 @@ describe('scienceEdits submit', () => {
       .toThrow(/does not identify an active note/)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('rejects note writes for absent versions and invalid plain text', async () => {
+  it('rejects note writes for absent versions and invalid plain text', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-note-rejections')
     const run = await runSuccessfully(ctx, session, 'science-artifact-note-rejections-run')
@@ -2454,8 +2503,7 @@ describe('scienceEdits submit', () => {
     }
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('enforces the artifact note length cap at the RPC boundary independent of UI limits', async () => {
+  it('enforces the artifact note length cap at the RPC boundary independent of UI limits', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-note-length')
     const run = await runSuccessfully(ctx, session, 'science-artifact-note-length-run')
@@ -2471,8 +2519,7 @@ describe('scienceEdits submit', () => {
     })).toThrow(/artifact note must be at most 8192 characters/)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('admits a viewer edit through ScienceEditService.submit and queues the structured message on the live agent', async () => {
+  it('admits a viewer edit through ScienceEditService.submit and queues the structured message on the live agent', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-edit-submit')
     const run = await runSuccessfully(ctx, session, 'science-edit-submit-run')
@@ -2508,8 +2555,7 @@ describe('scienceEdits submit', () => {
     expect(followups[0]?.content.filter(block => block.type === 'image')).toHaveLength(1)
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('admits an element target without reading the artifact store or minting an image', async () => {
+  it('admits an element target without reading the artifact store or minting an image', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-edit-submit-element')
     const run = await runSuccessfully(ctx, session, 'science-edit-submit-element-run')
@@ -2539,8 +2585,7 @@ describe('scienceEdits submit', () => {
     expect(text?.type === 'text' && text.text).toContain('element("axes[0].title", kind=title, axes=0, label=null, current="Loss")')
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('rejects a non-image target without reading its (nonexistent) figure state', async () => {
+  it('rejects a non-image target without reading its (nonexistent) figure state', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-edit-submit-non-image')
     const run = await runSuccessfully(ctx, session, 'science-edit-submit-non-image-run')
@@ -2632,8 +2677,7 @@ describe('get_science_state artifact sanitization', () => {
     expect(value.artifacts[0]).not.toHaveProperty('parent')
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('returns the complete direct-edit count with only the configured number of recent operations', async () => {
+  it('returns the complete direct-edit count with only the configured number of recent operations', async () => {
     const { ctx } = await setup({ stateHistoryLimit: 1 })
     const session = scienceSession(ctx, 'science-state-direct-edits')
     const run = await runSuccessfully(ctx, session, 'science-state-direct-edits-run')
@@ -2656,8 +2700,7 @@ describe('get_science_state artifact sanitization', () => {
     })
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('omits the internal store version id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
+  it('omits the internal store version id, full fingerprint, tool call, and request-header sequence for a curated artifact', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-artifact')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
@@ -2705,8 +2748,7 @@ describe('get_science_state artifact sanitization', () => {
     expect(artifact).not.toHaveProperty('environmentFingerprintPreview')
   })
 
-  // POSIX-only fixture: createFakePythonPrefix lays down `<prefix>/bin/python`, a shape win32's executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('includes a run-auto artifact with no model title override, and its own bounded fields', async () => {
+  it('includes a run-auto artifact with no model title override, and its own bounded fields', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-artifact-auto')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })

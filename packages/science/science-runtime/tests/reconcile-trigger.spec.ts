@@ -30,6 +30,7 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -417,6 +418,7 @@ describe('ScienceRuntime reconciliation trigger', () => {
   })
 
   it('retries an incomplete event collection only after the configured delay on a later project resolution', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const root = tmp('.science-runtime-reconcile-trigger-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createControlledRuntimeHarness(
@@ -439,7 +441,7 @@ describe('ScienceRuntime reconciliation trigger', () => {
     persistence.listFailure = undefined
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-too-soon', cwd))
     expect(persistence.listSnapshotCalls).toBe(1)
-    await new Promise(resolve => setTimeout(resolve, 60))
+    clock.mockReturnValue(1_060)
     await bindFakePython(harness.runtime, createScienceSession(harness.ctx, 'reconcile-retry-later', cwd))
     await vi.waitFor(() => { expect(persistence.listSnapshotCalls).toBe(2) })
   })

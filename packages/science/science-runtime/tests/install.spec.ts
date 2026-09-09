@@ -161,7 +161,7 @@ describe('staticMicromamba', () => {
   it('resolves a configured regular executable path', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    await expect(staticMicromamba(executable)).resolves.toBe(realpathSync(executable))
+    await expect(staticMicromamba(executable)).resolves.toBe(realpathSync.native(executable))
   })
 
   it('rejects an absent path as INSTALLER_UNAVAILABLE', async () => {
@@ -174,16 +174,18 @@ describe('staticMicromamba', () => {
     const executable = makeExecutable(root)
     const link = join(root, 'link-to-micromamba')
     symlinkSync(executable, link)
-    await expect(staticMicromamba(link)).resolves.toBe(realpathSync(executable))
+    await expect(staticMicromamba(link)).resolves.toBe(realpathSync.native(executable))
   })
 
   it('rejects a non-executable regular file on POSIX', async () => {
-    if (process.platform === 'win32') return
     const root = makeRoot()
     const notExecutable = join(root, 'not-executable')
     writeFileSync(notExecutable, '#!/bin/sh\nexit 0\n')
     chmodSync(notExecutable, 0o600)
-    await expect(staticMicromamba(notExecutable)).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      await expect(staticMicromamba(notExecutable)).rejects.toMatchObject({ code: 'INSTALLER_UNAVAILABLE' })
+    } finally { platform.mockRestore() }
   })
 
   it('rejects a directory as not a regular executable', async () => {
@@ -201,14 +203,14 @@ describe('staticMicromamba', () => {
   it('propagates a non-missing-path lstat failure unchanged', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    staticFsFault.lstat = realpathSync(executable)
+    staticFsFault.lstat = realpathSync.native(executable)
     await expect(staticMicromamba(executable)).rejects.toThrow(/injected lstat failure/)
   })
 
   it('propagates a non-object rejection unchanged (not classified as a missing path)', async () => {
     const root = makeRoot()
     const executable = makeExecutable(root)
-    staticFsFault.lstatNonObject = realpathSync(executable)
+    staticFsFault.lstatNonObject = realpathSync.native(executable)
     await expect(staticMicromamba(executable)).rejects.toBe('injected non-object lstat failure')
   })
 })

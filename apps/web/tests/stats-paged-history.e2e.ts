@@ -9,7 +9,7 @@
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
@@ -99,9 +99,24 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await groupRow.click()
     const sessionRow = page.locator('[role="treeitem"]').nth(1)
     await sessionRow.waitFor({ timeout: 10_000 })
-    await sessionRow.click()
-    // Settled barrier: the newest recorded reply renders from the tail page.
-    await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    const inspect = scaffold.ctx.sessionPersistence.inspect.bind(scaffold.ctx.sessionPersistence)
+    let coldRead: Promise<void> | undefined
+    const inspection = vi.spyOn(scaffold.ctx.sessionPersistence, 'inspect').mockImplementation(async (id) => {
+      const result = await inspect(id)
+      if (id === SEED_ID) {
+        // The real browser must survive a cold read beyond the former 30-second transport bound.
+        coldRead ??= new Promise(resolve => setTimeout(resolve, 35_000))
+        await coldRead
+      }
+      return result
+    })
+    try {
+      await sessionRow.click()
+      await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 90_000 }).toBe(1)
+    } finally {
+      inspection.mockRestore()
+    }
+    await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
     // The tail page is partial (56 messages > one 50-message page): the first
     // turns are NOT loaded, yet the strip already reports the whole log —
     // the sessionStats projection, not the window fold.
@@ -119,7 +134,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     // settled turn — the loaded-window probe the scroll/perf lanes count now
     // that the strip is whole-log-scoped.
     expect(await page.locator('[data-chat-flow-key^="9:turn-tail"]').count()).toBe(TURNS)
-  }, 60_000)
+  }, 120_000)
 
   it('matches the paged-stats aria golden', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-stats-paged-aria'))

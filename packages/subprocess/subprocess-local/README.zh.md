@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-[`@deepseek-ai/dsh-subprocess`](../subprocess/README.zh.md) seam 的本地 Service Provider。`LocalSubprocessRuntime` 解析本地可执行文件，以显式 stdio spawn 普通 detached 进程树，并通过 `node-pty` 加平台进程检查实现终端进程。该实现没有任何配置：每项处置方式、限制、终端尺寸、宽限期与目录都来自调用方能力 seam（[`dsh-bash-local`](../../shell/bash-local/README.zh.md)、[`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.zh.md) 和 [`dsh-terminal-bash`](../../terminal/terminal-bash/README.zh.md)）。
+[`@deepseek-ai/dsh-subprocess`](../subprocess/README.zh.md) seam 的本地 Service Provider。`LocalSubprocessRuntime` 解析本地可执行文件，以显式 stdio spawn 普通 detached 进程树，并通过 `node-pty` 加平台进程检查实现终端进程。该实现没有任何配置：每项处置方式、限制、终端尺寸、宽限期与目录都来自调用方能力 seam（[`dsh-bash-local`](../../shell/bash-local/README.zh.md)、[`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.zh.md) 和 [`dsh-terminal-bash`](../../terminal/terminal-bash/README.zh.md)）。 普通托管子进程在 Windows 上请求隐藏控制台启动；终端会话仍采用独立的 PTY 行为。
 
 ## 行为
 

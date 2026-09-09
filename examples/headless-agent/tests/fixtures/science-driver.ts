@@ -25,6 +25,9 @@ let ctx: Context | undefined
 try {
   loadEnv(NAME)
   ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  const projectStore = ctx.scienceArtifactStore
+  const concurrentProjects = await Promise.all(Array.from({ length: 3 }, () => projectStore.openProject(process.cwd())))
+  const concurrentProjectCount = new Set(concurrentProjects.map(project => project.projectId)).size
   // Three idle kernels keep the main agent's first run at the default
   // filesystem thread-pool capacity throughout persistence and previews.
   const idleSessions = []
@@ -59,12 +62,26 @@ try {
     meta: { agentPreset: 'science', cwd: process.cwd() },
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
+  const artifactStore = ctx.scienceArtifactStore
+  const annotateVersion = artifactStore.annotateVersion.bind(artifactStore)
+  let renamedDuringCapture = false
+  artifactStore.annotateVersion = async (...args) => {
+    const version = await annotateVersion(...args)
+    if (!renamedDuringCapture) {
+      renamedDuringCapture = true
+      const session = ctx!.sessions.get(sessionId)
+      if (session === undefined) throw new Error(`${NAME}: capture session detached`)
+      session.append('session/title', { title: 'Science capture in progress', messageSeqs: [], source: { kind: 'user' } })
+    }
+    return version
+  }
   const result = await runFixtureTurn(ctx, {
     task: taskParts.join(' '),
     onEvent: (sessionId: string, event: SessionEvent) => {
       process.stdout.write(`${JSON.stringify({ type: 'session_event', sessionId, event })}\n`)
     },
   })
+  artifactStore.annotateVersion = annotateVersion
   const agent = ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`${NAME}: configured Science agent is not live`)
   const chart = foldScience(agent.session.events).artifacts.find(artifact => artifact.logicalName === 'plot.png')
@@ -220,13 +237,28 @@ try {
 
   await ctx.sessions.flush(agent.session)
 
+  const failedSession = ctx.sessions.create(SessionId('science-failed-probe-snapshot'), {
+    meta: { agentPreset: 'science', cwd: process.cwd() },
+  })
+  failedSession.append('science/mode-bound', {
+    version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'snapshot-r3' },
+  })
+  failedSession.append('science/environment-bound', {
+    version: 1,
+    environment: {
+      revision: 1, profileId: ScienceEnvironmentProfileId('fake'), configuredAt: 1, validatedAt: 1,
+      status: 'invalid', failureReason: 'interpreter probe failed', sandboxEnforcement: 'partial',
+      python: { language: 'python', configuredPrefix: join(process.cwd(), 'old-unavailable-prefix'),
+        capability: 'invalid', reason: 'interpreter probe failed' },
+    },
+  })
+  await ctx.sessions.flush(failedSession)
+
   // T5 six-path acceptance, path 6 ("restart, replay"): dispose the whole
   // Context and boot a fresh one against the same `DSH_SCIENCE_SNAPSHOT_ROOT`
   // (so the same on-disk `dshHome`/store), then resume the persisted session
-  // from durable storage. Everything from here on is read-only replay —
-  // proving the Session log and the project artifact store still agree on
-  // every version's provenance after a cold restart, not merely within one
-  // live process.
+  // from durable storage. Artifact provenance survives the restart, and a
+  // separate session retries its previously failed environment observation.
   await ctx.fiber.dispose()
   ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
   const resumed = await ctx.agents.resume({
@@ -234,6 +266,27 @@ try {
     agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
   })
   const resumedProjection = foldScience(resumed.agent.session.events)
+  const recovered = await ctx.agents.resume({
+    resumeSessionId: failedSession.id,
+    agentOptions: { provider: 'science-snapshot', model: 'science-snapshot' },
+  })
+  await ctx.systemPrompt.assemble({ agent: recovered.agent, signal: new AbortController().signal })
+  const recoveredEnvironment = foldScience(recovered.agent.session.events).environments.at(-1)
+  if (recoveredEnvironment?.status !== 'applied' || recoveredEnvironment.revision !== 2) {
+    throw new Error(`${NAME}: a resumed failed pre-run environment was not re-observed`)
+  }
+  const coldScience = ctx.sessionProjections.snapshot(resumed.agent.session).values.science
+  if (coldScience?.environment?.sandboxEnforcement !== 'full'
+    || coldScience.metrics.runCount !== resumedProjection.runs.length
+    || coldScience.metrics.artifactVersionCount !== resumedProjection.artifacts.length) {
+    throw new Error(`${NAME}: cold Science wire projection lost its environment, runs, or artifacts`)
+  }
+  await writeFile(join(process.cwd(), 'science-cold-history.json'), JSON.stringify({
+    concurrentProjectCount,
+    sandboxEnforcement: coldScience.environment.sandboxEnforcement,
+    metrics: coldScience.metrics,
+    recoveredEnvironment: { status: recoveredEnvironment.status, revision: recoveredEnvironment.revision },
+  }, undefined, 2))
   for (const [label, before] of [
     ['plot.png v1', chart], ['plot.png (continued)', continued],
     ['directly edited chart', directChart], ['saved-as copy', savedAs],

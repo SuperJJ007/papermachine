@@ -279,7 +279,7 @@ function ElementControl({ element, onStage, t }: {
   }
 }
 
-function DirectEditRow({ element, referenceable, added, onAddTarget, onRemoveTarget, onStage, disabled, blockedReason, t }: {
+function DirectEditRow({ element, referenceable, added = false, onAddTarget, onRemoveTarget, onStage, disabled, blockedReason, t }: {
   element: ScienceChartElement & { kind: DirectEditKind }
   /**
    * Whether this row names a catalog element the reference feature can
@@ -302,7 +302,7 @@ function DirectEditRow({ element, referenceable, added, onAddTarget, onRemoveTar
     <span className={css.directEditName}>{label}</span>
     <ElementControl element={element} onStage={onStage} t={t} />
     {referenceable && <button type="button" className={css.elementReference} data-selected={added || undefined}
-      aria-label={referenceButtonLabel(element, added ?? false, t)} aria-pressed={added} disabled={isDisabled}
+      aria-label={referenceButtonLabel(element, added, t)} aria-pressed={added} disabled={isDisabled}
       title={isDisabled ? blockedReason : undefined}
       onClick={added ? onRemoveTarget : onAddTarget}>{added ? '−' : '+'}</button>}
   </li>

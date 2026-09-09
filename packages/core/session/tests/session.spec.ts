@@ -11,7 +11,26 @@ import SessionStore, {
 } from '@deepseek-ai/dsh-session'
 import type { CreateSessionOptions, SessionEventType, SessionHeader, SessionSurface, TodoItem } from '@deepseek-ai/dsh-session'
 
+declare module '@deepseek-ai/dsh-session' {
+  interface SessionEventMap {
+    'test/ignorable-note': { text: string }
+  }
+  interface IgnorableSessionEventMap {
+    'test/ignorable-note': true
+  }
+}
+
 describe('Session', () => {
+  it('preserves an explicit ignorable marker through append and replay', () => {
+    const session = Session.create(SessionId('append-ignorable'))
+    const event = session.append('test/ignorable-note', { text: 'user-only note' }, { ignorable: true })
+    expect(event.ignorable).toBe(true)
+    const replayed = Session.create(SessionId('replay-ignorable'), structuredClone(session.events))
+    expect(replayed.events[0]).toEqual(event)
+    expect(session.append('turn/end', { turn: 1, reason: { kind: 'completed' } }))
+      .not.toHaveProperty('ignorable')
+  })
+
   it('exposes one stable readonly surface view', () => {
     const session = Session.create(SessionId('surface-view'))
     const surface = session.surface

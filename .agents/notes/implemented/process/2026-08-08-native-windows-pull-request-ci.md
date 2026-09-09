@@ -34,6 +34,8 @@ Post-boot profile watcher setup proceeds only while the root fiber and Loader ar
 
 Shiki disables lazy TextMate-regex compilation and warms each boot grammar before user content enters the unchanged per-line tokenization budget, so scheduler contention cannot publish a partial highlighted stream. The Codex real-product fixture is pinned to stable 0.147.0 schemas and selects an actually advertised command tool and argument shape, preserving the provider-owned protocol while proving unattended rejection and whole-tree exit on each host.
 
+Science lifecycle tests keep protocol and ownership assertions portable even when their original fixtures used a POSIX shell, FIFO, or chmod failure. Test-owned adapters and controlled failure observations cover those assertions on Windows; real platform integration remains separately exercised. A fixture limitation must not become a skip of supported runtime behavior, and simulated metadata does not substitute for native security acceptance.
+
 ## Alternatives considered
 
 **Make native Windows a dependency of `all checks passed`.** This gives the aggregate the highest-fidelity Windows verdict, but makes every merge wait for the slowest hosted job and for Windows capacity. The independent result keeps the signal automatic without changing the existing required path.

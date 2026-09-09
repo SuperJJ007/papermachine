@@ -99,9 +99,12 @@ function validEnvironment(value: unknown): boolean {
   const keys = ['revision', 'profileId', 'configuredAt', 'validatedAt', 'status']
   if (candidate['python'] !== undefined) keys.push('python')
   if (candidate['r'] !== undefined) keys.push('r')
+  if (candidate['sandboxEnforcement'] !== undefined) keys.push('sandboxEnforcement')
   const interpreters = [candidate['python'], candidate['r']].filter(value => value !== undefined)
   const capabilities = interpreters.map(value => (value as Record<string, unknown>)['capability'])
   return projectionExactKeys(candidate, keys)
+    && (candidate['sandboxEnforcement'] === undefined
+      || candidate['sandboxEnforcement'] === 'full' || candidate['sandboxEnforcement'] === 'partial')
     && safeInteger(candidate['revision'], 1)
     && typeof candidate['profileId'] === 'string'
     && candidate['profileId'].length > 0

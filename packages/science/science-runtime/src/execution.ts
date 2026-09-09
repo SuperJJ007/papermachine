@@ -214,10 +214,6 @@ export function assertPrefixReadOnly(prefix: string, policy: SandboxPolicy): voi
  * minimum: `'full'` accepts only a `'full'` report; `'partial'` accepts
  * either `'full'` or `'partial'`. The sandbox provider itself never sees
  * this comparison — it always reports the level it actually achieved.
- * Shared by every confinement site in this Runtime, including `install.ts`'s
- * `confineInstallArgv`, which cannot call {@link confineWithEnforcement}
- * itself (that helper also asserts the interpreter's prefix stays outside
- * the writable root, the opposite of what an install needs).
  * @param reported - enforcement level `SandboxProvider.confine` reported.
  * @param minimum - lowest level Science is configured to accept.
  * @returns whether `reported` meets or exceeds `minimum`.
@@ -252,6 +248,24 @@ export function confineWithEnforcement(
   minimumEnforcement: SandboxEnforcement,
 ): ConfinedArgv {
   assertPrefixReadOnly(canonicalPrefix, policy)
+  return confineRequiringEnforcement(sandbox, policy, argv, minimumEnforcement)
+}
+
+/**
+ * Confine a command and require the configured minimum enforcement.
+ * @param sandbox - provider that confines the command.
+ * @param policy - writable roots and session identity chosen by the caller.
+ * @param argv - direct command arguments.
+ * @param minimumEnforcement - lowest accepted enforcement level.
+ * @returns confined arguments and execution classification evidence.
+ * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when confinement is unavailable or insufficient.
+ */
+export function confineRequiringEnforcement(
+  sandbox: SandboxProvider,
+  policy: SandboxPolicy,
+  argv: readonly string[],
+  minimumEnforcement: SandboxEnforcement,
+): ConfinedArgv {
   let confined: ConfinedArgv
   try {
     confined = sandbox.confine(argv, policy)

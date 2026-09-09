@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Local Service Provider for the [`@deepseek-ai/dsh-subprocess`](../subprocess/README.md) seam. `LocalSubprocessRuntime` resolves local executables, spawns ordinary detached process trees with explicit stdio, and implements terminal processes through `node-pty` plus platform process inspection. It has no config: every disposition, limit, terminal dimension, grace, and directory arrives from the calling capability seams ([`dsh-bash-local`](../../shell/bash-local/README.md), [`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md), and [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)).
+Local Service Provider for the [`@deepseek-ai/dsh-subprocess`](../subprocess/README.md) seam. `LocalSubprocessRuntime` resolves local executables, spawns ordinary detached process trees with explicit stdio, and implements terminal processes through `node-pty` plus platform process inspection. It has no config: every disposition, limit, terminal dimension, grace, and directory arrives from the calling capability seams ([`dsh-bash-local`](../../shell/bash-local/README.md), [`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md), and [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)). Ordinary managed subprocesses request hidden Windows console startup; terminal sessions retain their separate PTY behavior.
 
 ## Behavior
 

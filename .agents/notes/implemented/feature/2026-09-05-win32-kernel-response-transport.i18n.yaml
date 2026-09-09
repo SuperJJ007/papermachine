@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-05-win32-kernel-response-transport.md
-2026-09-05-win32-kernel-response-transport.md: 7f303a75d6afea2f6f5a2a65f45f39f2ab4639ab
-2026-09-05-win32-kernel-response-transport.zh.md: 1aea9664c7c5e8f3c2ecb4c7d311cd353f9a48c9
+2026-09-05-win32-kernel-response-transport.md: d0365d42e1a90dcaff47c9efd068e6d096602534
+2026-09-05-win32-kernel-response-transport.zh.md: e40d50721571ffbe0168793618b0a745bda85bca

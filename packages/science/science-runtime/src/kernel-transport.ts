@@ -390,6 +390,9 @@ export class LoopbackTcpTransport implements KernelResponseTransport {
     })
     // Long-lived, for the same reason: see `pendingSockets`' own doc.
     this.server.on('connection', (socket: Socket) => {
+      // Queued and handed-off sockets retain an error owner during startup cleanup;
+      // token and frame consumers independently observe the same error event.
+      socket.on('error', () => { socket.destroy() })
       this.connectionSocket = socket
       this.pendingSockets.push(socket)
       this.drainPending()

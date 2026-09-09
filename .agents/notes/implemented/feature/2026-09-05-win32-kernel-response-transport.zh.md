@@ -24,12 +24,14 @@ Cooperative interrupt 没有获得任何新的 win32 机制。`SubprocessHandle.
 
 两处 pre-publication 的 win32 拒绝被直接移除：`index.ts` 中 `startRun` 的那段，以及 `environment.ts` 中 `prepareObservation` 的那段。`ScienceRuntimeErrorCode` 封闭 union 中的 `'KERNEL_UNSUPPORTED_PLATFORM'` 成员被移除(`types.ts`)，连同 `run.spec.ts` 中断言了这次改动所移除的那个 `startRun` 拒绝、且没有替代断言的调用点——preflight 拒绝一旦移除，win32 上的 `startRun` 调用就与 darwin/linux 完全一致，已经被该文件里其余所有与平台无关的测试覆盖到。`environment.ts` 中的那处拒绝，在本分支进行期间被同一 session 下的一条并行 PR(`#17`，"refuse Science onboarding on Windows"，已合并进 `main`)就地改写成了同一个 `KERNEL_UNSUPPORTED_PLATFORM` 代码下的另一段文案——这正是这片共享代码预期会产生的那种平凡冲突；把本分支重新接到那次合并之上时，按这次改动自身的既定设计意图保留了对该代码块的整段移除。`environment.spec.ts` 中对应的测试在那次调解后被改写而非删除：它仍然构造同一个 Windows 形态的 Conda 前缀(前缀根目录下的 `python.exe`，与 `WINDOWS_LAYOUT` 对应)并强制 `process.platform`，但现在断言 `bindEnvironment` 会完成(`status: 'applied'`)、且每个 probe spec 的 argv 都指向 `python.exe`——因为这个 harness 完全伪造的 subprocess provider 并不关心那个文件是不是真的可执行——这使该文件继续保留对 `environment.ts` 早已存在的 win32 候选选择分支(`WINDOWS_LAYOUT`)的唯一一处测试覆盖。
 
+每个已接受的 socket 从接受到销毁始终保留错误监听器，覆盖 token 解析前的排队阶段，以及 token 移交后仍可能发生启动清理的阶段。该监听器销毁故障 socket；token 和帧消费者仍会接收同一个错误事件并进行分类。缺少所请求 stdin 的子进程句柄在响应通道移交前就被拒绝。若这些所有者之间出现没有监听器的空档，启动失败清理期间的对端重置会变成 Host 未捕获异常。单元回归覆盖排队阶段和移交后的 socket 重置，组装 Runtime 的测试覆盖缺少 stdin 句柄时的启动拒绝。
+
 ## Alternatives considered
 
 - **用 Windows named pipe(`\\.\pipe\...`)代替 loopback TCP。** 否决：上文的 ACL/sandbox-token 不匹配是一种在没有真实 Windows 主机可供测试的情况下，这次改动无法承担的、貌似合理但未经验证的失败模式；loopback socket 完全绕开了整个 ACL 问题。
 - **全平台统一用一种 transport(全用 loopback TCP，淘汰 FIFO)。** 否决：这会无谓地触碰 sandbox 的 POSIX network policy，且没有任何行为收益，还会丢弃一个已经完全测试过、且与这次改动真正目标(让 win32 变得可能，而不是让 POSIX 变得不同)无关的机制。
 - **在同一次改动里加入基于 `CTRL_BREAK_EVENT` 的 win32 cooperative interrupt。** 作为独立范围被否决：它需要自己的进程组/控制台子系统设计工作,这不是这次改动任务书要求的；发布 win32 kernel execution 并不需要它——只需要诚实地记录 win32 上的中断总会丢失 kernel 状态，而这一点现在已经写进文档。
-- **更新 `tests/fixtures/kernel-set-assets*/` 下的 fake JS driver fixture,让它们能讲 TCP endpoint。** 这次改动否决：那些 fixture 使用同步的 `openSync()` FIFO 写入，与异步 TCP 不兼容，需要更大范围的重写；而且无论是既有测试还是新增测试，都没有针对它们强制使用 TCP transport；新增的 TCP-transport 测试直接运行真实随包发布的 `kernel_python.py`/`kernel_r.R` driver。
+- **让 fake JS driver 仅支持 FIFO。** 否决：这会导致 Windows 跳过已支持的执行、成果和图表路径。共享夹具同时支持经过 token 认证的 TCP 和 FIFO；协作中断状态机测试注入 provider 确认，原生 SIGINT 投递仍是 POSIX 专属测试。
 
 ## Consequences
 

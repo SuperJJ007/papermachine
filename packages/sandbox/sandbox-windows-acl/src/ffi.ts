@@ -132,6 +132,11 @@ export interface Win32Bindings {
   // the runner survives console Ctrl+C so the child handles its own and the
   // runner can clean up grants after the child exits.
   setConsoleCtrlHandler(handler: null, add: number): number
+  getConsoleWindow(): NativePtr | null
+  getConsoleCP(): number
+  allocConsole(): number
+  showWindow(window: NativePtr, command: number): number
+  setStdHandle(which: number, handle: NativePtr): number
   getStdHandle(stdHandle: number): NativePtr
 }
 
@@ -373,6 +378,7 @@ let cached: Win32Bindings | undefined
 function bindings(): Win32Bindings {
   if (cached !== undefined) return cached
   const kernel32 = koffi.load('kernel32.dll')
+  const user32 = koffi.load('user32.dll')
   const advapi32 = koffi.load('advapi32.dll')
 
   // Each binding shape is verified by verify/abi-probe.cpp against the real
@@ -426,6 +432,11 @@ function bindings(): Win32Bindings {
     assignProcessToJobObject: bind(kernel32, 'AssignProcessToJobObject', 'int', [PVOID, PVOID]),
     terminateProcess: bind(kernel32, 'TerminateProcess', 'int', [PVOID, 'uint32']),
     setConsoleCtrlHandler: bind(kernel32, 'SetConsoleCtrlHandler', 'int', [PVOID, 'int']),
+    getConsoleWindow: bind(kernel32, 'GetConsoleWindow', PVOID, []),
+    getConsoleCP: bind(kernel32, 'GetConsoleCP', 'uint32', []),
+    allocConsole: bind(kernel32, 'AllocConsole', 'int', []),
+    showWindow: bind(user32, 'ShowWindow', 'int', [PVOID, 'int']),
+    setStdHandle: bind(kernel32, 'SetStdHandle', 'int', ['int', PVOID]),
     getStdHandle: bind(kernel32, 'GetStdHandle', PVOID, ['int']),
   } as unknown as Win32Bindings
   return cached

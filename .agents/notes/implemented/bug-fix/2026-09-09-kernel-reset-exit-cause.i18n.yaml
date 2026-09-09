@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-09-kernel-reset-exit-cause.md
+2026-09-09-kernel-reset-exit-cause.md: 48e827e727f226f1663c6a6bc684225c487db2bb
+2026-09-09-kernel-reset-exit-cause.zh.md: 10ac2dfb47d5b74f57650e6f4d695f3040014cb4

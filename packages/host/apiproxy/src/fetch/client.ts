@@ -264,8 +264,8 @@ export function resolveApiOrigin(): string {
   return loc?.origin !== undefined && loc.origin !== 'null' ? loc.origin : INTERNAL_BASE
 }
 
-/** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
-const DEFAULT_TIMEOUT_MS = 30_000
+/** Default bound includes cold session inspection and preset composition on slower hosts. */
+const DEFAULT_TIMEOUT_MS = 120_000
 
 /** Whether a unary call uses the transport health deadline or only caller/connection cancellation. */
 type UnaryTimeoutPolicy = 'default' | 'caller-signal-only'

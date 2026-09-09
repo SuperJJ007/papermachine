@@ -7,8 +7,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { dirname, join, resolve } from 'node:path'
+import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { ProjectArtifactStoreError } from './errors.ts'
 import { ProjectId } from './ids.ts'
@@ -111,6 +111,8 @@ async function markerStillNamesProject(workspacePath: string, projectId: Project
  * a copy (fresh id, marker rewritten) only when the recorded path still
  * exists and still carries a marker naming the same project; otherwise it is
  * a move (same id, the store's recorded path is updated).
+ * Cross-process writer locks serialize each workspace's marker resolution and
+ * each project's recorded path, including concurrent first opens and moves.
  * @param workspacePath - the workspace directory to resolve; need not exist yet as a Science workspace.
  * @param dshHome - explicit harness-home override; omitted follows `DSH_HOME`, then `~/.dsh`.
  * @returns the resolved project identity and its store directory.
@@ -118,6 +120,12 @@ async function markerStillNamesProject(workspacePath: string, projectId: Project
  */
 export async function resolveProjectIdentity(workspacePath: string, dshHome?: string): Promise<ResolvedProjectIdentity> {
   const canonicalWorkspace = resolve(workspacePath)
+  const path = markerPath(canonicalWorkspace)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  return withFileLock(path, () => resolveWorkspaceIdentity(canonicalWorkspace, dshHome))
+}
+
+async function resolveWorkspaceIdentity(canonicalWorkspace: string, dshHome: string | undefined): Promise<ResolvedProjectIdentity> {
   const now = Date.now()
   const markerValue = await readJsonFile<unknown>(markerPath(canonicalWorkspace))
 
@@ -133,12 +141,24 @@ export async function resolveProjectIdentity(workspacePath: string, dshHome?: st
   const marker = decodeWorkspaceMarker(markerValue, markerPath(canonicalWorkspace))
   const projectId = ProjectId(marker.projectId)
   const storeRoot = storeRootForProject(projectId, dshHome)
+  await mkdir(storeRoot, { recursive: true, mode: 0o700 })
+  return withFileLock(storeProjectJsonPath(storeRoot), () =>
+    resolveStoredIdentity(canonicalWorkspace, marker, projectId, storeRoot, dshHome))
+}
+
+async function resolveStoredIdentity(
+  canonicalWorkspace: string,
+  marker: WorkspaceMarker,
+  projectId: ProjectId,
+  storeRoot: string,
+  dshHome: string | undefined,
+): Promise<ResolvedProjectIdentity> {
+  const now = Date.now()
   const storeRecordValue = await readJsonFile<unknown>(storeProjectJsonPath(storeRoot))
 
   if (storeRecordValue === undefined) {
     // The marker survived but the store side was never materialized (or was
     // lost) — materialize it fresh under the SAME id; the marker is authoritative.
-    await mkdir(storeRoot, { recursive: true, mode: 0o700 })
     await writeStoreProjectRecord(storeRoot, {
       projectId, createdAt: marker.createdAt, workspacePath: canonicalWorkspace, workspaceUpdatedAt: now,
     })

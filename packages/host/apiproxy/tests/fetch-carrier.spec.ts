@@ -445,6 +445,30 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.agentPresets.remove({ agentPreset: 'mine' })).result).toEqual({ ok: true, value: {} })
   })
 
+  it.each([35_000, 120_001])('bounds a %i ms cold history read with the unary budget', async (delayMs) => {
+    vi.useFakeTimers()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+      const controller = new AbortController()
+      setTimeout(() => { controller.abort(new DOMException('request timeout', 'TimeoutError')) }, milliseconds)
+      return controller.signal
+    })
+    try {
+      const api = fakeApi()
+      api.sessions.history = async (request) => {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        return { rpcId: request.rpcId, result: { ok: true, value: { events: [], hasMore: false } } }
+      }
+      const execution = client(api).sessions.history({ sessionId: 'cold' as never })
+      const assertion = delayMs < 120_000
+        ? expect(execution).resolves.toMatchObject({ result: { ok: true } })
+        : expect(execution).rejects.toThrow('request timeout')
+      await Promise.all([vi.advanceTimersByTimeAsync(delayMs), assertion])
+    } finally {
+      timeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('round-trips the native picker without the default unary timeout', async () => {
     const api = fakeApi()
     api.host.pickDirectory = async (request) => {
@@ -486,7 +510,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect(skills.result).toEqual({ ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } })
   })
 
-  it('lets host.pickDirectory finish after the 30-second default unary deadline', async () => {
+  it('lets host.pickDirectory finish after the 120-second default unary deadline', async () => {
     vi.useFakeTimers()
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
       const controller = new AbortController()
@@ -498,7 +522,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     try {
       const api = fakeApi()
       api.host.pickDirectory = async (request) => {
-        await new Promise(resolve => setTimeout(resolve, 30_001))
+        await new Promise(resolve => setTimeout(resolve, 120_001))
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/tmp/slow' } } }
       }
       const execution = client(api).host.pickDirectory({})
@@ -507,7 +531,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
       })
 
       await Promise.all([
-        vi.advanceTimersByTimeAsync(30_001),
+        vi.advanceTimersByTimeAsync(120_001),
         assertion,
       ])
       expect(timeoutSpy).not.toHaveBeenCalled()

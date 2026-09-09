@@ -14,6 +14,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import type {} from '@deepseek-ai/dsh-session-title'
 // Type-only: brings the `science/mode-bound` SessionEventMap merge into this program.
 import type {} from '@deepseek-ai/dsh-science-session/types'
+import { foldScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import {
   assertFixtureInventory,
   captureStableAria,
@@ -35,12 +36,28 @@ const DONE = 'SCIENCE_CHROME_DONE'
 /** One completed Science turn: a context-injection message ahead of a timed assistant reply. */
 function scienceFixture(): string {
   const session = Session.create(SessionId('science-transcript-chrome-source'))
-  const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
+  const eventTimeOrigin = Date.now() - 60_000
   session.append('turn/start', { turn: 1 })
   session.append('science/mode-bound', {
     version: 1,
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'science-chrome-browser' },
   })
+  session.append('science/environment-bound', { version: 1, environment: {
+    revision: 1, profileId: ScienceEnvironmentProfileId('science'), configuredAt: eventTimeOrigin + session.events.length * 1_000, validatedAt: eventTimeOrigin + session.events.length * 1_000,
+    status: 'applied', python: {
+      language: 'python', configuredPrefix: '/private/host/science', canonicalPrefix: '/private/host/science',
+      executable: '/private/host/science/bin/python', executableIdentity: 'dev:1-ino:2', languageVersion: '3.12.0',
+      condaHistorySha256: 'a'.repeat(64), bindingFingerprint: 'b'.repeat(64), packages: [],
+      packagesSha256: 'f'.repeat(64), packagesTruncated: false, capability: 'available',
+    }, r: {
+      language: 'r', configuredPrefix: '/private/host/science-r', canonicalPrefix: '/private/host/science-r',
+      executable: '/private/host/science-r/bin/R', executableIdentity: 'dev:1-ino:3', languageVersion: '4.4.0',
+      condaHistorySha256: 'a'.repeat(64), bindingFingerprint: 'b'.repeat(64), packages: [],
+      packagesSha256: 'f'.repeat(64), packagesTruncated: false, capability: 'available',
+    },
+  } })
+  const kernel = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprint: 'b'.repeat(64) }
+  session.append('science/kernel-state', { version: 1, kernel: { ...kernel, state: 'started', at: eventTimeOrigin + session.events.length * 1_000 } })
   const user = session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: 'Summarize the dataset.' }],
     source: { kind: 'user' },
@@ -77,13 +94,15 @@ function scienceFixture(): string {
     type: 'session',
     version: SESSION_FORMAT_VERSION,
     id: '{{sessionId}}',
-    createdAt: 0,
+    createdAt: eventTimeOrigin,
     cwd: '{{cwd}}',
     agentPreset: 'science',
   }
+  const events = session.events.map(event => ({ ...event, time: eventTimeOrigin + event.seq * 1_000 }))
+  foldScience(events)
   return [
     JSON.stringify(header),
-    ...session.events.map(event => JSON.stringify({ ...event, time: eventTimeOrigin + event.seq * 1_000 })),
+    ...events.map(event => JSON.stringify(event)),
     '',
   ].join('\n')
 }
@@ -92,13 +111,21 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
+  const allowResume = Promise.withResolvers<undefined>()
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, scienceFixture(), SEED_ID, 'science')
+    const cold = await scaffold.ctx.sessionProjectionCache.coldSnapshot(SessionId(SEED_ID))
+    expect(cold.values.science).toMatchObject({ kernels: [{ state: 'started' }] })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.route('**/api/**', async (route) => {
+      const request = route.request()
+      if (!request.url().endsWith('/session.history') && request.postData()?.includes(SEED_ID)) await allowResume.promise
+      await route.continue()
+    })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -118,6 +145,9 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await expect.poll(() => page.getByText('python · epoch 1 · started', { exact: true }).count()).toBe(1)
+    allowResume.resolve(undefined)
+    await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
 
     const centerCol = page.locator('[class*="centerCol"]')
     // The durable content the row would otherwise carry never reaches the flow.
@@ -131,6 +161,10 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     expect(await turnTail.getByText(/Ran for|TTFT|tok\/s/).count()).toBe(0)
     // The action row itself (copy/branch) is unaffected — only the metrics text drops.
     expect(await centerCol.getByRole('button', { name: 'Branch into a new conversation' }).count()).toBe(1)
+
+    expect(await centerCol.getByText('Latest kernel records', { exact: true }).count()).toBe(1)
+    await expect.poll(() => centerCol.getByText('python · epoch 1 · interrupted', { exact: true }).count()).toBe(1)
+    expect(await centerCol.getByText(/epoch 1 · live/).count()).toBe(0)
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')

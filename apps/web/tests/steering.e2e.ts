@@ -14,7 +14,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { holdReplayChunks, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/steering', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -291,6 +291,8 @@ describe('web e2e: composer shortcut follows the swapped busy behavior', () => {
 })
 
 describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
+  let releaseStream = (): void => {}
+  let releaseQuestion = (): void => {}
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -306,6 +308,8 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       replayOverride: STEER_ALL_OVERRIDE,
       paceMs: REPLAY_PACE_MS,
     })
+    releaseStream = holdReplayChunks(scaffold.ctx, () => true)
+    releaseQuestion = holdReplayChunks(scaffold.ctx, (_options, chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call')
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -317,6 +321,8 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
   }, 120_000)
 
   afterAll(async () => {
+    releaseStream()
+    releaseQuestion()
     await browser?.close()
     await scaffold?.close()
   })
@@ -327,8 +333,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(30_000)
 
-    // Call 0 streams a question-tool call; the fills must land inside the
-    // first replay window, before the question composer replaces the textarea.
+    // Hold the question stream until both messages have entered the queue.
     await input.fill(PROMPT)
     await input.press('Enter')
     await input.fill(STEER_ONE)
@@ -353,12 +358,14 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       { timeout: 10_000 },
     ).toBe(2)
     expect(await page.locator('[data-queue-dock]').count()).toBe(0)
+    releaseStream()
     // The reasoning row streams independently of the steering handoff. Wait
     // for the block to settle so the mid snapshot does not race its transient
     // visually-hidden Running label while the question keeps the turn open.
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ timeout: 10_000 })
     const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
+    releaseQuestion()
 
     // Answer the question; the step closes, the loop drains both steerings
     // into one next-step request, and the final reply obeys both markers.

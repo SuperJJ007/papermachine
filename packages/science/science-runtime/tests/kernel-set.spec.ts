@@ -6,7 +6,7 @@
  * detach/dispose teardown, and callback fidelity.
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,14 +30,21 @@ import {
   KernelSetQuarantinedError,
 } from '../src/kernel-set.ts'
 import type { AcquiredKernel, ScienceKernelEndedFact, ScienceKernelStartedFact } from '../src/kernel-set.ts'
-import { ensureSessionScratch, planKernelScratch } from '../src/scratch.ts'
+import { ensureSessionScratch } from '../src/scratch.ts'
 import type { ScienceSessionScratch } from '../src/scratch.ts'
-import { DirectSandbox, TEST_KERNEL_START_TIMEOUT_MS, attachScienceSession, createFakeSandboxRunner } from './harness.ts'
+import { DirectSandbox, TEST_KERNEL_START_TIMEOUT_MS, attachScienceSession, createFakeSandboxRunner, createFakePythonPrefix, createFakeRPrefix, fakeInterpreterPath } from './harness.ts'
 
 // Every case here spawns a real kernel subprocess through
 // LocalSubprocessRuntime; under full-suite concurrency, spawn and pipe I/O
 // contend for the OS scheduler and the default 5s timeout is not enough.
 vi.setConfig({ testTimeout: 30_000 })
+
+// Keep the Windows carrier exercised on every host; FIFO ownership has its
+// native coverage in kernel-process.spec.ts.
+vi.mock('../src/kernel-transport.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/kernel-transport.ts')>(),
+  selectKernelTransportKind: () => 'tcp',
+}))
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const ASSETS_ROOT = join(FIXTURES, 'kernel-set-assets')
@@ -53,18 +60,9 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-/**
- * A fake "interpreter" executable: discards every hardening flag
- * `interpreterArgv` prepends and forwards the trailing driver-path/fifo-path
- * pair to this Node process (see `kernel-process.spec.ts`'s identical fixture).
- */
+/** Create the shared probe/kernel adapter for the selected language. */
 function createFakeInterpreterPrefix(root: string, language: ScienceLanguage): string {
-  const prefix = join(root, `fake-${language}-conda`)
-  mkdirSync(join(prefix, 'bin'), { recursive: true })
-  const executable = join(prefix, 'bin', language === 'python' ? 'python' : 'Rscript')
-  writeFileSync(executable, `#!/bin/sh\nwhile [ "$#" -gt 2 ]; do shift; done\nexec "${process.execPath}" "$1" "$2"\n`)
-  chmodSync(executable, 0o755)
-  return prefix
+  return language === 'python' ? createFakePythonPrefix(root) : createFakeRPrefix(root)
 }
 
 /** Fabricate an already-observed available binding; `KernelSet`/`KernelProcess` never re-validate it. */
@@ -73,7 +71,7 @@ function fakeBinding(language: ScienceLanguage, prefix: string): ScienceInterpre
     language,
     configuredPrefix: prefix,
     canonicalPrefix: prefix,
-    executable: join(prefix, 'bin', language === 'python' ? 'python' : 'Rscript'),
+    executable: fakeInterpreterPath(prefix, language),
     executableIdentity: 'fake-identity',
     languageVersion: 'fake-1.0',
     condaHistorySha256: 'fake-history-sha',
@@ -304,6 +302,7 @@ async function createEnforcementHarness(
   await ctx.plugin(DirectSandbox)
   const sandbox = ctx.sandbox as DirectSandbox
   sandbox.enforcement = reportedEnforcement
+  sandbox.argvPrefix = [...createFakeSandboxRunner(root), '--']
   const started: Recorded<ScienceKernelStartedFact>[] = []
   const ended: Recorded<ScienceKernelEndedFact>[] = []
   const epochAllocator = createEpochAllocator()
@@ -346,10 +345,7 @@ async function createEnforcementHarness(
 }
 
 describe('KernelSet', () => {
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends an idle kernel with reason idle after kernelIdleTimeoutMs of no activity', async () => {
+  it('ends an idle kernel with reason idle after kernelIdleTimeoutMs of no activity', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle')
@@ -361,10 +357,7 @@ describe('KernelSet', () => {
     await expect(kernel.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('resets the idle timer on a completed execution, extending life past the original deadline', async () => {
+  it('resets the idle timer on a completed execution, extending life past the original deadline', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-reset')
@@ -390,10 +383,7 @@ describe('KernelSet', () => {
     expect(harness.ended[0]?.fact.reason).toBe('idle')
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('never fires the idle timer while a run is in flight (disarmed) and rearms only after it completes', async () => {
+  it('never fires the idle timer while a run is in flight (disarmed) and rearms only after it completes', async () => {
     vi.useFakeTimers()
     const harness = await createHarness({ kernelIdleTimeoutMs: 1_000 })
     const { session, sessionScratch } = await harness.session('kernel-idle-disarm')
@@ -416,10 +406,7 @@ describe('KernelSet', () => {
     expect(harness.ended[0]?.fact.reason).toBe('idle')
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('is a no-op to disarm or reset a language with no live kernel, and disarm is idempotent on a live one', async () => {
+  it('is a no-op to disarm or reset a language with no live kernel, and disarm is idempotent on a live one', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-disarm-noop')
     expect(() => { harness.kernelSet.disarmIdleTimer(session, 'python') }).not.toThrow()
@@ -430,10 +417,7 @@ describe('KernelSet', () => {
     expect(() => { harness.kernelSet.disarmIdleTimer(session, 'python') }).not.toThrow()
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('lets python and r kernels coexist independently for one session', async () => {
+  it('lets python and r kernels coexist independently for one session', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-coexist')
     const environment = harness.environment(1, ['python', 'r'])
@@ -449,10 +433,7 @@ describe('KernelSet', () => {
     expect(harness.started).toHaveLength(2)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('returns the same live kernel on a second acquire with the same environment revision (no respawn)', async () => {
+  it('returns the same live kernel on a second acquire with the same environment revision (no respawn)', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-reuse')
     const environment = harness.environment(1, ['python'])
@@ -463,10 +444,7 @@ describe('KernelSet', () => {
     expect(harness.epochAllocator.calls).toHaveLength(1)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends a stale-revision live kernel with environment-rebound and spawns a fresh epoch', async () => {
+  it('ends a stale-revision live kernel with environment-rebound and spawns a fresh epoch', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-rebind')
     const { process: first } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
@@ -481,10 +459,7 @@ describe('KernelSet', () => {
     await expect(first.exited).resolves.toMatchObject({ cause: 'commanded' })
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends the stale kernel exactly once when two concurrent acquire calls race onto the same rebind decision', async () => {
+  it('ends the stale kernel exactly once when two concurrent acquire calls race onto the same rebind decision', async () => {
     // Both calls fetch the same live (stale-revision) kernel reference
     // before either has a chance to remove it from entry.kernels: whichever
     // reaches endKernel first tears it down for real; the other's endKernel
@@ -504,10 +479,7 @@ describe('KernelSet', () => {
     expect(harness.ended.filter(entry => entry.fact.reason === 'environment-rebound')).toHaveLength(1)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('keeps entry.spawning bookkeeping consistent when two concurrent acquire calls race to spawn the same (session, language)', async () => {
+  it('keeps entry.spawning bookkeeping consistent when two concurrent acquire calls race to spawn the same (session, language)', async () => {
     // Out-of-contract concurrent use (this module's own doc: "unspecified
     // interleaving" outside the single-caller-per-session discipline), kept
     // safe rather than corrupting registry bookkeeping: both spawns succeed
@@ -527,10 +499,7 @@ describe('KernelSet', () => {
     expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('fails loud when the injected epoch allocator returns a non-increasing epoch', async () => {
+  it('fails loud when the injected epoch allocator returns a non-increasing epoch', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-epoch-regression')
     harness.epochAllocator.sequence = [1, 1]
@@ -539,10 +508,7 @@ describe('KernelSet', () => {
       .rejects.toThrow(KernelEpochRegressionError)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends every live kernel with session-end on detach', async () => {
+  it('ends every live kernel with session-end on detach', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-detach')
     const environment = harness.environment(1, ['python', 'r'])
@@ -560,10 +526,7 @@ describe('KernelSet', () => {
     expect(harness.ended).toHaveLength(0)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('rejects acquire on an exact Session object already detached', async () => {
+  it('rejects acquire on an exact Session object already detached', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-detached-acquire')
     const environment = harness.environment(1, ['python'])
@@ -574,10 +537,7 @@ describe('KernelSet', () => {
       .rejects.toThrow(KernelSetDetachedError)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends every live kernel across every session with service-disposed on disposeAll', async () => {
+  it('ends every live kernel across every session with service-disposed on disposeAll', async () => {
     const harness = await createHarness()
     const a = await harness.session('kernel-dispose-a')
     const b = await harness.session('kernel-dispose-b')
@@ -591,10 +551,7 @@ describe('KernelSet', () => {
     expect(harness.ended.every(entry => entry.fact.reason === 'service-disposed')).toBe(true)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('removes an uncommanded crash from the registry and reports reason crash', async () => {
+  it('removes an uncommanded crash from the registry and reports reason crash', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-crash')
     const environment = harness.environment(1, ['python'])
@@ -608,10 +565,7 @@ describe('KernelSet', () => {
     expect(harness.started).toHaveLength(2)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('removes an uncommanded protocol violation from the registry and reports reason protocol', async () => {
+  it('removes an uncommanded protocol violation from the registry and reports reason protocol', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-protocol')
     const environment = harness.environment(1, ['python'])
@@ -622,10 +576,7 @@ describe('KernelSet', () => {
     expect(harness.ended[0]?.fact.reason).toBe('protocol')
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('quarantines a same-id successor session until the predecessor kernel tree is proven quiescent', async () => {
+  it('quarantines a same-id successor session until the predecessor kernel tree is proven quiescent', async () => {
     const harness = await createHarness()
     const original = attachScienceSession(harness.ctx, 'kernel-quarantine')
     const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
@@ -644,10 +595,7 @@ describe('KernelSet', () => {
     expect(harness.started).toHaveLength(2)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('refuses a same-id successor entry that would clobber a predecessor entry racing to register its own kernel', async () => {
+  it('refuses a same-id successor entry that would clobber a predecessor entry racing to register its own kernel', async () => {
     const harness = await createHarness()
     const original = attachScienceSession(harness.ctx, 'kernel-conflict')
     const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
@@ -672,10 +620,7 @@ describe('KernelSet', () => {
     expect(rejected[0]?.reason).toBeInstanceOf(KernelSetConflictError)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered', async () => {
+  it('discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered', async () => {
     // trackedSpawn's own syncBusyRegistration call can itself be the one
     // that throws the conflict (a different entry already claimed byId):
     // spawnKernel's real subprocess spawn already started before that call
@@ -733,10 +678,7 @@ describe('KernelSet', () => {
     expect(settled.every(result => result.status === 'fulfilled')).toBe(true)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child)', async () => {
+  it('withholds onKernelEnded and same-id quarantine release until eventual quiescence is proven (straggler child)', async () => {
     const harness = await createHarness()
     const { subprocess: wrapped, proveQuiescence } = wrapWithUnprovenQuiescence(harness.ctx.subprocess)
     const started: Recorded<ScienceKernelStartedFact>[] = []
@@ -779,10 +721,7 @@ describe('KernelSet', () => {
     expect(started).toHaveLength(2)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('drains an in-flight teardown for the same (session, language) before a concurrent acquire proceeds', async () => {
+  it('drains an in-flight teardown for the same (session, language) before a concurrent acquire proceeds', async () => {
     const harness = await createHarness()
     const { subprocess: wrapped, proveQuiescence } = wrapWithUnprovenQuiescence(harness.ctx.subprocess)
     const kernelSet = new KernelSet({
@@ -816,10 +755,7 @@ describe('KernelSet', () => {
     expect(second).not.toBe(first)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('ends the fresh kernel and fails acquire when onKernelStarted throws, leaving nothing registered', async () => {
+  it('ends the fresh kernel and fails acquire when onKernelStarted throws, leaving nothing registered', async () => {
     const harness = await createHarness()
     const startedCalls: Session[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
@@ -853,12 +789,14 @@ describe('KernelSet', () => {
     expect(startedCalls).toHaveLength(2)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('aggregates a vetoed onKernelStarted with a subsequent teardown failure while discarding the unregistered kernel', async () => {
+  it('aggregates a vetoed onKernelStarted with a subsequent teardown failure while discarding the unregistered kernel', async () => {
     const startError = new Error('kernel-set.spec.ts: injected onKernelStarted failure (discard aggregate)')
-    let plannedDirectory: string | undefined
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the intercepted kernel as its receiver below.
+    const originalEnd = KernelProcess.prototype.end
+    const end = vi.spyOn(KernelProcess.prototype, 'end').mockImplementationOnce(async function (this: KernelProcess, reason) {
+      await originalEnd.call(this, reason)
+      throw new Error('injected transport teardown failure')
+    })
     const harness = await createHarness()
     const kernelSet = new KernelSet({
       subprocess: harness.ctx.subprocess,
@@ -868,13 +806,7 @@ describe('KernelSet', () => {
       kernelIdleTimeoutMs: 1_800_000,
       kernelStartTimeoutMs: TEST_KERNEL_START_TIMEOUT_MS,
       nextEpoch: createEpochAllocator().fn,
-      onKernelStarted: (_session, fact) => {
-        // Also make the fresh kernel's own discard-time teardown fail: its
-        // response FIFO cannot be unlinked once the containing directory
-        // loses write access, so discardUnregisteredKernel's own
-        // process.end() call rejects too.
-        plannedDirectory = planKernelScratch(sessionScratch, fact.language, fact.kernelEpoch).directory
-        chmodSync(plannedDirectory, 0o500)
+      onKernelStarted: () => {
         throw startError
       },
       onKernelEnded: () => {},
@@ -884,14 +816,11 @@ describe('KernelSet', () => {
     try {
       await expect(kernelSet.acquire(session, 'python', environment, sessionScratch)).rejects.toThrow(AggregateError)
     } finally {
-      if (plannedDirectory !== undefined) chmodSync(plannedDirectory, 0o700)
+      end.mockRestore()
     }
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws', async () => {
+  it('lets a retry spawn cleanly against a production-shaped epoch allocator after onKernelStarted throws', async () => {
     const harness = await createHarness()
     // Production-shaped, unlike `createEpochAllocator`'s monotonic counter
     // (which never rewinds and so cannot reproduce this bug): derives the
@@ -931,10 +860,7 @@ describe('KernelSet', () => {
     expect(facts[0]?.kernelEpoch).toBe(1)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('does not reject the caller when onKernelEnded throws, and registry bookkeeping still completes', async () => {
+  it('does not reject the caller when onKernelEnded throws, and registry bookkeeping still completes', async () => {
     const harness = await createHarness()
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const endedCalls: Session[] = []
@@ -968,24 +894,20 @@ describe('KernelSet', () => {
     expect(third).toBe(second)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('completes registry cleanup even when the teardown itself rejects', async () => {
+  it('completes registry cleanup even when the teardown itself rejects', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-teardown-rejects')
     const environment = harness.environment(1, ['python'])
-    const { process: kernel, epoch } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
-    const planned = planKernelScratch(sessionScratch, 'python', epoch)
-    // Removing the response FIFO during teardown needs write access on its
-    // PARENT directory: chmodding it after READY makes end()'s own unlink
-    // fail, which propagates out of teardown() and rejects endKernel's
-    // returned settlement.
-    chmodSync(planned.directory, 0o500)
+    const { process: kernel } = await harness.kernelSet.acquire(session, 'python', environment, sessionScratch)
+    const originalEnd = kernel.end.bind(kernel)
+    const end = vi.spyOn(kernel, 'end').mockImplementationOnce(async (reason) => {
+      await originalEnd(reason)
+      throw new Error('injected transport teardown failure')
+    })
     try {
       await expect(harness.kernelSet.retireForEscalation(session, 'python')).rejects.toThrow()
     } finally {
-      chmodSync(planned.directory, 0o700)
+      end.mockRestore()
     }
     // Registry cleanup still completed despite the rejection: a fresh
     // acquire for the same (session, language) sees no leftover ending state.
@@ -993,10 +915,7 @@ describe('KernelSet', () => {
     expect(fresh).not.toBe(kernel)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('passes onKernelStarted/onKernelEnded exactly the durable kernel-state facts', async () => {
+  it('passes onKernelStarted/onKernelEnded exactly the durable kernel-state facts', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-facts')
     const environment = harness.environment(1, ['python'])
@@ -1036,10 +955,7 @@ describe('KernelSet', () => {
     )
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('captures startedAt after the READY handshake completes, not at spawn request', async () => {
+  it('captures startedAt after the READY handshake completes, not at spawn request', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const harness = await createHarness()
     const kernelSet = new KernelSet({
@@ -1063,10 +979,7 @@ describe('KernelSet', () => {
     expect(started[0]?.fact.startedAt).toBeGreaterThanOrEqual(beforeSpawn + 300)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('pairs every started kernel with exactly one ended notification, one reason each', async () => {
+  it('pairs every started kernel with exactly one ended notification, one reason each', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-pairing')
     const environmentA = harness.environment(1, ['python', 'r'])
@@ -1088,10 +1001,7 @@ describe('KernelSet', () => {
     )
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('returns the acquired kernel\'s own epoch, matching the started fact, on both a fresh spawn and a reuse', async () => {
+  it('returns the acquired kernel\'s own epoch, matching the started fact, on both a fresh spawn and a reuse', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-acquired-epoch')
     const environment = harness.environment(1, ['python'])
@@ -1103,10 +1013,7 @@ describe('KernelSet', () => {
     expect(reused.process).toBe(fresh.process)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('retires the exact live kernel with reason run-escalation, and is a no-op with no live kernel', async () => {
+  it('retires the exact live kernel with reason run-escalation, and is a no-op with no live kernel', async () => {
     const harness = await createHarness()
     const { session, sessionScratch } = await harness.session('kernel-retire-escalation')
     await expect(harness.kernelSet.retireForEscalation(session, 'python')).resolves.toBeUndefined()
@@ -1120,10 +1027,7 @@ describe('KernelSet', () => {
     expect(fresh.process).not.toBe(kernel)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('retires a kernel that finishes spawning after detach already fired (the spawn-vs-teardown race)', async () => {
+  it('retires a kernel that finishes spawning after detach already fired (the spawn-vs-teardown race)', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
     const harness = await createHarness()
@@ -1164,10 +1068,7 @@ describe('KernelSet', () => {
     expect(successorKernel.process).toBeInstanceOf(KernelProcess)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('does not touch a pending acquisition belonging to a different session when detach fires for one of two concurrent spawns', async () => {
+  it('does not touch a pending acquisition belonging to a different session when detach fires for one of two concurrent spawns', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
     const harness = await createHarness()
@@ -1207,10 +1108,7 @@ describe('KernelSet', () => {
     expect(betaReused.process).toBe(betaKernel.process)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('is a no-op via endIfStillLive when a pending spawn fails (never registers) after detach already fired', async () => {
+  it('is a no-op via endIfStillLive when a pending spawn fails (never registers) after detach already fired', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
     const harness = await createHarness()
@@ -1230,21 +1128,16 @@ describe('KernelSet', () => {
     const environment = harness.environment(1, ['python'])
     const acquiring = kernelSet.acquire(original.session, 'python', environment, originalScratch)
 
-    // The no-ready driver never sends READY: this spawn is still in flight
-    // when detach fires, and will reject on its own (READY timeout) without
-    // ever registering a live kernel — endIfStillLive's own live===undefined
-    // no-op path, distinct from the sibling test's "live and must be ended" case.
+    // Either connection or READY can consume the startup budget. Neither
+    // failure publishes a kernel after the owning session has detached.
     original.detach()
     kernelSet.detach(original.session)
-    await expect(acquiring).rejects.toThrow(KernelProtocolError)
+    await expect(acquiring).rejects.toThrow()
     expect(started).toHaveLength(0)
     expect(ended).toHaveLength(0)
   })
 
-  // POSIX-only fixture: createFakeInterpreterPrefix lays down
-  // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-  // executable-layout lookup never finds.
-  it.skipIf(process.platform === 'win32')('awaits an in-flight spawn before disposeAll settles, and retires whatever it registers', async () => {
+  it('awaits an in-flight spawn before disposeAll settles, and retires whatever it registers', async () => {
     const started: Recorded<ScienceKernelStartedFact>[] = []
     const ended: Recorded<ScienceKernelEndedFact>[] = []
     const harness = await createHarness()
@@ -1273,10 +1166,7 @@ describe('KernelSet', () => {
   })
 
   describe('minimumEnforcement forwarding', () => {
-    // POSIX-only fixture: createFakeInterpreterPrefix lays down
-    // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-    // executable-layout lookup never finds.
-    it.skipIf(process.platform === 'win32')('spawns a fresh kernel through acquire() against a partial-reporting sandbox when the configured minimum is partial', async () => {
+    it('spawns a fresh kernel through acquire() against a partial-reporting sandbox when the configured minimum is partial', async () => {
       const harness = await createEnforcementHarness('partial', 'partial')
       const { session, sessionScratch } = await harness.session('kernel-enforcement-acquire-partial')
       const { process: kernel } = await harness.kernelSet.acquire(session, 'python', harness.environment(1, ['python']), sessionScratch)
@@ -1290,10 +1180,7 @@ describe('KernelSet', () => {
         .rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
     })
 
-    // POSIX-only fixture: createFakeInterpreterPrefix lays down
-    // `<prefix>/bin/python` (or `Rscript`), a shape win32's
-    // executable-layout lookup never finds.
-    it.skipIf(process.platform === 'win32')('starts an isolated recovery kernel through startIsolated() against a partial-reporting sandbox when the configured minimum is partial', async () => {
+    it('starts an isolated recovery kernel through startIsolated() against a partial-reporting sandbox when the configured minimum is partial', async () => {
       const harness = await createEnforcementHarness('partial', 'partial')
       const { session, sessionScratch } = await harness.session('kernel-enforcement-isolated-partial')
       const kernel = await harness.kernelSet.startIsolated(

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
-import { scienceProjectionSchema } from '../src/projection.ts'
+import {
+  applyScienceProjectionState, emptyScienceProjectionState, scienceProjectionSchema, scienceProjectionStateSchema,
+} from '../src/projection.ts'
 import { scienceProjectionWitnessEvent } from '../src/projection-witness.ts'
 import {
   event,
@@ -12,6 +14,24 @@ import {
 
 describe('Science projection wire schema', () => {
   const clientReplay = (events: readonly SessionEvent[]) => toClientScienceProjection(replayScience(events))
+
+  it.each(['full', 'partial'] as const)('accepts a replayed %s sandbox binding on the wire', (sandboxEnforcement) => {
+    const events = legalEvents().map(entry => entry.type === 'science/environment-bound'
+      ? { ...entry, data: { ...entry.data, environment: { ...entry.data.environment, sandboxEnforcement } } }
+      : entry)
+    const client = clientReplay(events)
+    expect(client?.environment?.sandboxEnforcement).toBe(sandboxEnforcement)
+    expect(scienceProjectionSchema.parse(JSON.parse(JSON.stringify(client)))).toEqual(client)
+    const checkpoint = events.reduce(applyScienceProjectionState, emptyScienceProjectionState())
+    expect(scienceProjectionStateSchema.parse(JSON.parse(JSON.stringify(checkpoint)))).toEqual(checkpoint)
+  })
+
+  it.each(['none', '', null, 1, false, {}])('rejects invalid sandbox enforcement %j', (sandboxEnforcement) => {
+    const client = clientReplay(legalEvents())!
+    expect(scienceProjectionSchema.safeParse({
+      ...client, environment: { ...client.environment!, sandboxEnforcement },
+    }).success).toBe(false)
+  })
 
   it('accepts decoded members and derived metrics without re-running strict provenance', () => {
     const events = legalEvents()

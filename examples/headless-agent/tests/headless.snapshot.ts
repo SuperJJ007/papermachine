@@ -119,7 +119,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
       const write = (): void => {
         if (keepAlives-- > 0) {
           response.write(': keep-alive\n\n')
-          setTimeout(write, 60)
+          setTimeout(write, 400)
           return
         }
         response.end([
@@ -129,7 +129,7 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
           '',
         ].join('\n\n'))
       }
-      setTimeout(write, 60)
+      setTimeout(write, 400)
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -376,6 +376,7 @@ describe('headless stream-json snapshots', () => {
     let rawModelView: string | undefined
     let rawChartPreview: string | undefined
     let rawSourceAgreement: string | undefined
+    let rawColdHistory: string | undefined
     const runtimeRoot = await mkdtemp(join(process.cwd(), '.science-snapshot-runtime-'))
     try {
       const result = await runLoaderSmoke({
@@ -399,10 +400,16 @@ describe('headless stream-json snapshots', () => {
           rawModelView = await readFile(join(cwd, 'science-model-view.json'), 'utf8').catch(() => undefined)
           rawChartPreview = await readFile(join(cwd, 'science-chart-preview.json'), 'utf8').catch(() => undefined)
           rawSourceAgreement = await readFile(join(cwd, 'science-source-agreement.json'), 'utf8').catch(() => undefined)
+          rawColdHistory = await readFile(join(cwd, 'science-cold-history.json'), 'utf8').catch(() => undefined)
         },
       })
 
       expect(result.stderr).toBe('')
+      if (rawColdHistory === undefined) throw new Error('science driver did not capture cold wire history')
+      const coldHistory = `${rawColdHistory}\n`
+      const coldHistoryExpected = join(scienceToolsScenarioDir, 'cold-history.expected.json')
+      if (refreshing) await writeFile(coldHistoryExpected, coldHistory)
+      expect(coldHistory).toBe(await readFile(coldHistoryExpected, 'utf8'))
       if (rawModelView === undefined) throw new Error(`science adapter did not capture a model request; stdout:\n${result.stdout}`)
       // Both artifacts normalize against the same minted identities, so the
       // model view and the durable stream name the same run and chart.

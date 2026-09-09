@@ -28,9 +28,10 @@
 //        trapSigint false/absent: SIGINT is installed as a no-op listener, so
 //        the process survives it and keeps sleeping.
 
-const { closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
+const { existsSync, closeSync, openSync, readFileSync, writeFileSync, writeSync } = require('node:fs')
 const { join } = require('node:path')
 const { createInterface } = require('node:readline')
+const { createConnection } = require('node:net')
 
 const PROTOCOL_VERSION = 2
 const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
@@ -41,19 +42,24 @@ if (fifoPath === undefined) {
   process.exit(2)
 }
 
-let fifoFd = openSync(fifoPath, 'w')
+const tcp = fifoPath.startsWith('tcp:') ? fifoPath.split(':') : undefined
+const socket = tcp === undefined ? undefined : createConnection({ host: tcp[1], port: Number(tcp[2]) })
+const fifoFd = socket === undefined ? openSync(fifoPath, 'w') : undefined
+if (socket !== undefined) socket.write(`${tcp[3]}\n`)
 let fifoClosed = false
 const runActions = new Map()
 
 function send(frame) {
   if (fifoClosed) return
-  writeSync(fifoFd, `${frame}\n`)
+  if (socket === undefined) writeSync(fifoFd, `${frame}\n`)
+  else socket.write(`${frame}\n`)
 }
 
 function closeFifo() {
   if (fifoClosed) return
   fifoClosed = true
-  closeSync(fifoFd)
+  if (socket === undefined) closeSync(fifoFd)
+  else socket.end()
 }
 
 send(`READY\t${PROTOCOL_VERSION}\t${process.pid}`)
@@ -140,6 +146,14 @@ function handleRun(runId, sourcePath, stdoutPath, stderrPath, artifactDir) {
   }
   if (kind === 'close-fifo') {
     closeFifo()
+    return
+  }
+  if (kind === 'wait-file') {
+    const poll = () => {
+      if (existsSync(action.releasePath)) send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
+      else setTimeout(poll, 10)
+    }
+    poll()
     return
   }
   if (kind === 'sleep') {

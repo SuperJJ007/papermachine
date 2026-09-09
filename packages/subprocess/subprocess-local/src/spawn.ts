@@ -365,6 +365,8 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     // `detached` gives teardown a tree root on POSIX (its own process group);
     // Windows terminates by root pid through taskkill /T instead.
     detached: platform !== 'win32',
+    // Managed pipe-based work never requests a visible console window.
+    windowsHide: true,
   })
 
   const collectStream = (mode: SubprocessOutputMode, stream: Readable | null, label: string): OutputCollector | undefined => {

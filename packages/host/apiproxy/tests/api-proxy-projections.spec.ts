@@ -336,6 +336,31 @@ describe('session/projection push frame', () => {
     return frames
   }
 
+  it('publishes constructor-seed projections when a cold session attaches after history was read', async () => {
+    const { ctx, session } = await harness(true)
+    const unit = lastUserUnit()
+    ctx.sessionProjections.register({ ...unit,
+      apply: (state, event) => event.type === 'session/end-seed' ? { text: 'resumed' } : unit.apply(state, event),
+    })
+    seedMessages(session, 1)
+    const proxy = api(ctx)
+    const abort = new AbortController()
+    const frames: MuxFrame[] = []
+    const drained = (async () => {
+      for await (const envelope of proxy.events.mux(request({}), abort.signal)) frames.push(envelope.payload)
+    })()
+    const restored = ctx.sessions.create(SessionId('late-resume'), { seed: session.events })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    abort.abort()
+    await drained
+    expect(frames).toContainEqual({ type: 'session/subscribed', sessionId: restored.id, lastSeq: 1 })
+    expect(frames).toContainEqual({
+      type: 'session/projection', sessionId: restored.id, key: 'test/last-user', value: { text: 'resumed' }, seq: 1,
+    })
+    expect(frames.some(frame => frame.type === 'session/event' && frame.sessionId === restored.id)).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('broadcasts a frame per changed unit with the causing seq, and none for same-reference applies', async () => {
     const { ctx, session } = await harness(true)
     ctx.sessionProjections.register(lastUserUnit())

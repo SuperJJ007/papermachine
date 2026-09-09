@@ -10,12 +10,19 @@
  * downstream kernel-restart machinery.
  */
 
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+
+// Exercise the Windows response transport on every host so fake drivers
+// cannot pass locally while accepting only POSIX FIFO endpoints.
+vi.mock('../src/kernel-transport.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/kernel-transport.ts')>(),
+  selectKernelTransportKind: () => 'tcp',
+}))
 import {
   authorizePythonRun,
   authorizeRun,
@@ -160,7 +167,7 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
     // Drift the digest (so the cheap check fires) and, separately, make the
     // re-observation itself fail: the interpreter this binding named is gone.
     writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-09-06 <==\n+lifelines-0.29.0\n')
-    unlinkSync(join(prefix, 'bin', 'python'))
+    unlinkSync(process.platform === 'win32' ? join(prefix, 'python.exe') : join(prefix, 'bin', 'python'))
 
     await expect(runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
@@ -176,18 +183,7 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
     // The session is not stuck: restoring the prefix lets a later run through
     // on the same original revision, since the digest now matches again.
     writeFileSync(join(prefix, 'conda-meta', 'history'), '==> 2026-08-13 <==\n+python-3.13.5\n')
-    writeFileSync(join(prefix, 'bin', 'python'), `#!/bin/sh
-case " $* " in
-  *" --version "*) printf 'Fake Python 3.13.5\\n' ;;
-  *" -m "*) printf '[{"name":"pip","version":"24.0"},{"name":"numpy","version":"1.26.4"}]' ;;
-  *" -c "*) printf 'dsh-科学-✓' ;;
-  *)
-    while [ "$#" -gt 2 ]; do shift; done
-    exec "${process.execPath}" "$1" "$2"
-    ;;
-esac
-`)
-    chmodSync(join(prefix, 'bin', 'python'), 0o700)
+    createFakePythonPrefix(join(prefix, '..'))
     const recovered = await runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-drift-unusable-3'), signal: new AbortController().signal,

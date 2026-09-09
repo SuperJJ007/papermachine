@@ -36,6 +36,8 @@ import {
 } from '../src/scratch.ts'
 
 const fsFault = vi.hoisted(() => ({
+  directorySyncError: undefined as unknown, directorySyncs: 0, directoryCloses: 0,
+  emulatePosixModes: false, modePath: '', mode: 0,
   mkdir: '', mkdirError: undefined as unknown, lstat: '', lstatError: undefined as unknown,
   lstatRemaining: Number.POSITIVE_INFINITY, rm: '', rmError: undefined as unknown,
   ownerOpen: '', ownerOpenCalls: 0, ownerOpenError: undefined as unknown,
@@ -55,7 +57,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         fsFault.lstatRemaining -= 1
         throw fsFault.lstatError
       }
-      return original.lstat(path, options as never)
+      const entry = await original.lstat(path, options as never)
+      if (fsFault.emulatePosixModes) {
+        const mode = path === fsFault.modePath ? fsFault.mode : entry.isDirectory() ? 0o700 : 0o600
+        Object.defineProperty(entry, 'mode', { value: (entry.mode & ~0o777) | mode })
+      }
+      return entry
     },
     rm: async (path: Parameters<typeof original.rm>[0], options?: Parameters<typeof original.rm>[1]) => {
       if (path === fsFault.rm) throw fsFault.rmError
@@ -66,6 +73,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       flags: Parameters<typeof original.open>[1],
       mode?: Parameters<typeof original.open>[2],
     ) => {
+      if (fsFault.emulatePosixModes && flags === 0 && lstatSync(path).isDirectory()) {
+        return {
+          sync: async () => {
+            fsFault.directorySyncs += 1
+            if (fsFault.directorySyncError !== undefined) throw fsFault.directorySyncError
+          },
+          close: async () => { fsFault.directoryCloses += 1 },
+        } as unknown as Awaited<ReturnType<typeof original.open>>
+      }
       if (path === fsFault.ownerOpen && fsFault.ownerOpenError !== undefined) throw fsFault.ownerOpenError
       if (path === fsFault.ownerOpen && flags === 'wx') {
         fsFault.ownerOpenCalls += 1
@@ -81,6 +97,11 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  fsFault.directorySyncError = undefined
+  fsFault.directorySyncs = 0
+  fsFault.directoryCloses = 0
+  fsFault.emulatePosixModes = false
+  fsFault.modePath = ''
   fsFault.mkdir = ''
   fsFault.mkdirError = undefined
   fsFault.lstat = ''
@@ -334,9 +355,7 @@ describe('Science Runtime private scratch', () => {
     expectPrivateDirectory(second.userLibrary)
   })
 
-  // requireExecutable's rejection below relies on a chmod-set executable bit
-  // (0o700), which Windows does not enforce the same way as POSIX permission bits.
-  it.skipIf(process.platform === 'win32')('rejects escaping cleanup paths and invalid configured executables', async () => {
+  it('rejects escaping cleanup paths and invalid configured executables', async () => {
     const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-errors-'))
     roots.push(root)
     const session = await sessionWithId('science-scratch-errors')
@@ -363,7 +382,7 @@ describe('Science Runtime private scratch', () => {
     await expect(canonicalWithin(root, outside)).resolves.toBe(outside)
     const regular = join(root, 'regular')
     writeFileSync(regular, 'x')
-    await expect(requireExecutable(regular)).rejects.toThrow(/not executable/)
+    if (process.platform !== 'win32') await expect(requireExecutable(regular)).rejects.toThrow(/not executable/)
     chmodSync(regular, 0o700)
     await expect(requireExecutable(regular)).resolves.toBeUndefined()
     const link = join(root, 'link')
@@ -375,21 +394,13 @@ describe('Science Runtime private scratch', () => {
     expect(existsSync(rollback.directory)).toBe(false)
   })
 
-  // Relies on chmodSync-based permission-denial simulation (marker/directory
-  // mode bits), which Windows does not enforce the same way as POSIX permission bits.
-  it.skipIf(process.platform === 'win32')('fails closed for non-private managed marker and directory entries', async () => {
-    const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-private-'))
+  it('rejects invalid managed entries and propagates non-existing-directory creation failures', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-entry-'))
     roots.push(root)
     const dshHome = join(root, 'dsh-home')
-    const session = await sessionWithId('science-scratch-private')
+    const session = await sessionWithId('science-scratch-entry')
     const scratch = await ensureSessionScratch(dshHome, session)
     const marker = join(dshHome, 'science', 'v1', 'owners', `${sessionScratchKey(session)}.json`)
-    chmodSync(marker, 0o644)
-    await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
-    chmodSync(marker, 0o600)
-    chmodSync(scratch.home, 0o755)
-    await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
-    chmodSync(scratch.home, 0o700)
     unlinkSync(marker)
     symlinkSync(join(root, 'outside-marker'), marker)
     await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/regular file/)
@@ -400,19 +411,6 @@ describe('Science Runtime private scratch', () => {
     rmSync(scratch.state, { recursive: true })
     writeFileSync(scratch.state, 'not a directory')
     await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/private directory/)
-
-    const permissionRoot = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-permission-'))
-    roots.push(permissionRoot)
-    const permissionHome = join(permissionRoot, 'dsh-home')
-    await ensureSessionScratch(permissionHome, await sessionWithId('science-scratch-permission-first'))
-    const science = join(permissionHome, 'science')
-    const descriptor = openSync(science, 'r')
-    try {
-      fchmodSync(descriptor, 0o000)
-      await expect(ensureSessionScratch(permissionHome, await sessionWithId('science-scratch-permission-second'))).rejects.toThrow()
-    } finally {
-      fchmodSync(descriptor, 0o700)
-    }
 
     const injectedHome = join(root, 'injected-home')
     mkdirSync(join(injectedHome, 'science'), { recursive: true, mode: 0o700 })
@@ -432,6 +430,80 @@ describe('Science Runtime private scratch', () => {
     await expect(ensureSessionScratch(markerHome, markerSession)).rejects.toThrow(/marker access failure/)
     fsFault.lstatError = 'injected non-Error marker failure'
     await expect(ensureSessionScratch(markerHome, markerSession)).rejects.toBe('injected non-Error marker failure')
+  })
+
+  it.each([false, true])('closes the POSIX directory durability handle when sync fails: %s', async (fails) => {
+    const root = mkdtempSync(join(process.cwd(), '.science-directory-sync-'))
+    roots.push(root)
+    const session = await sessionWithId('science-directory-sync')
+    fsFault.emulatePosixModes = true
+    fsFault.directorySyncError = fails ? new Error('injected directory sync failure') : undefined
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const created = ensureSessionScratch(join(root, 'dsh-home'), session)
+      if (fails) await expect(created).rejects.toBe(fsFault.directorySyncError)
+      else await created
+      expect(fsFault.directorySyncs).toBeGreaterThan(0)
+      expect(fsFault.directoryCloses).toBe(fsFault.directorySyncs)
+    } finally { platform.mockRestore() }
+  })
+
+  it('applies POSIX privacy and executable policy to recorded filesystem modes on every host', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-scratch-mode-policy-'))
+    roots.push(root)
+    const dshHome = join(root, 'dsh-home')
+    const session = await sessionWithId('science-mode-policy')
+    const scratch = await ensureSessionScratch(dshHome, session)
+    const executable = join(root, 'interpreter')
+    writeFileSync(executable, '')
+    // Windows lstat synthesizes mode bits; supply POSIX metadata while retaining real files and types.
+    fsFault.emulatePosixModes = true
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      fsFault.modePath = join(dshHome, 'science', 'v1', 'owners', `${sessionScratchKey(session)}.json`)
+      fsFault.mode = 0o644
+      await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
+      fsFault.modePath = scratch.home
+      fsFault.mode = 0o755
+      await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
+      fsFault.modePath = ''
+      await expect(ensureSessionScratch(dshHome, session)).resolves.toMatchObject({ home: scratch.home })
+      await expect(requireExecutable(executable)).rejects.toThrow(/not executable/)
+      fsFault.modePath = executable
+      fsFault.mode = 0o700
+      await expect(requireExecutable(executable)).resolves.toBeUndefined()
+    } finally { platform.mockRestore() }
+  })
+
+  // Relies on chmodSync-based permission-denial simulation (marker/directory
+  // mode bits), which Windows does not enforce the same way as POSIX permission bits.
+  it.skipIf(process.platform === 'win32')('fails closed for non-private managed marker and directory entries', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-private-'))
+    roots.push(root)
+    const dshHome = join(root, 'dsh-home')
+    const session = await sessionWithId('science-scratch-private')
+    const scratch = await ensureSessionScratch(dshHome, session)
+    const marker = join(dshHome, 'science', 'v1', 'owners', `${sessionScratchKey(session)}.json`)
+    chmodSync(marker, 0o644)
+    await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
+    chmodSync(marker, 0o600)
+    chmodSync(scratch.home, 0o755)
+    await expect(ensureSessionScratch(dshHome, session)).rejects.toThrow(/not private/)
+    chmodSync(scratch.home, 0o700)
+    const permissionRoot = mkdtempSync(join(process.cwd(), '.science-runtime-scratch-permission-'))
+    roots.push(permissionRoot)
+    const permissionHome = join(permissionRoot, 'dsh-home')
+    await ensureSessionScratch(permissionHome, await sessionWithId('science-scratch-permission-first'))
+    const science = join(permissionHome, 'science')
+    const descriptor = openSync(science, 'r')
+    try {
+      fchmodSync(descriptor, 0o000)
+      await expect(ensureSessionScratch(permissionHome, await sessionWithId('science-scratch-permission-second'))).rejects.toThrow()
+    } finally {
+      fchmodSync(descriptor, 0o700)
+    }
+
+
   })
 
   it('skips the POSIX mode-bit privacy check on win32, trusting ACL inheritance instead', async () => {

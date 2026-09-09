@@ -11,7 +11,7 @@ Python SDK 的运行时载体包（分发名 `deepseek-harness-runtime-bin`，�
 - **exe（生产）**——单文件 Node 可执行程序 `dsh-jsonrpc-agent-pkg-<platform>-<arch>`（platform：`linux`/`macos`；arch：`x64`/`arm64`），以及匹配目标平台的 ripgrep `-rg` 伴随文件。macOS 构建还会随附 `node-pty` 在该平台使用的原生 `-spawn-helper` 伴随文件。目标机器无需安装 Node。这是唯一随 wheel 包分发的载体；本包不发布 sdist。
 - **node（仅限开发）**——`runtime/node/` 下的完整部署闭包（`package.json` + `node_modules/`），在系统 Node >= 22.19 上以 `node runtime/node/node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js` 执行。它是当前检出的源码构建，仅用于仓库本地的开发与验证；不会被自动选中，也不进入分发物。
 
-两种载体承载相同的内容，且只定义一次：本包根目录的 [package.json](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk-runtime/package.json) 是 single-exe 流水线的部署根目录——一份零代码的纯依赖 manifest，其依赖闭包既是编译进 exe 的插件集，也是物化到 `runtime/node/` 的文件树。往分发物里加插件，就是在那里加一行依赖再重新构建。
+两种载体承载相同的内容，且只定义一次：本包根目录的 [package.json](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk-runtime/package.json) 是 single-exe 流水线的部署根目录——一份零代码的纯依赖 manifest，其依赖闭包既是编译进 exe 的插件集，也是物化到 `runtime/node/` 的文件树。往分发物里加插件，就是在那里加一行依赖再重新构建。 生产部署允许开发工具因不在此闭包内而不使用对应补丁；匹配到的运行时补丁仍必须成功应用。
 
 内置插件集合包含 `@deepseek-ai/dsh-mcp-client`，因此外部 Cordis 配置可以连接 stdio 或 Streamable HTTP MCP server，并向模型提供这些 server 的工具。wheel 包不包含 MCP server 程序或凭据：stdio 配置需要提供可执行程序及其参数，Streamable HTTP 配置需要提供 URL 和请求头。该桥接仅支持 MCP 工具，尚不支持 MCP Resources 与 Prompts。
 

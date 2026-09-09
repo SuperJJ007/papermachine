@@ -298,9 +298,8 @@ export class KernelProcess {
     private readonly handle: SubprocessHandle,
     private readonly transport: KernelResponseTransport,
     readStream: Readable,
+    stdin: Writable,
   ) {
-    const stdin = handle.stdin
-    if (stdin === undefined) throw new Error('science-runtime: kernel process was not spawned with a stdin pipe')
     this.stdin = stdin
 
     const exitResolvers = Promise.withResolvers<KernelExitFact>()
@@ -391,8 +390,10 @@ export class KernelProcess {
         // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
         env: { ...kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch), ...confined.env },
       })
+      const stdin = handle.stdin
+      if (stdin === undefined) throw new Error('science-runtime: kernel process was not spawned with a stdin pipe')
       const readStream = await transport.connect(handle, kernelStartTimeoutMs, signal)
-      const kernel = new KernelProcess(handle, transport, readStream)
+      const kernel = new KernelProcess(handle, transport, readStream, stdin)
       await kernel.awaitReady(kernelStartTimeoutMs, signal)
       return kernel
     } catch (error) {
@@ -674,6 +675,11 @@ export class KernelProcess {
   }
 
   private onFifoError(error: unknown): void {
+    // Windows can report process death as a TCP reset rather than clean EOF.
+    if (error instanceof Error && 'code' in error && error.code === 'ECONNRESET') {
+      void this.onFifoEnd()
+      return
+    }
     this.onStreamError('kernel response channel', error)
   }
 
@@ -690,7 +696,7 @@ export class KernelProcess {
   }
 
   private onStreamError(source: string, error: unknown): void {
-    if (this.exitSettled) return
+    if (this.exitSettled || this.commandedReason !== undefined) return
     this.failProtocol(error instanceof Error
       ? new KernelProtocolError(`science-runtime: ${source} failed: ${error.message}`)
       : new KernelProtocolError(`science-runtime: ${source} failed`))

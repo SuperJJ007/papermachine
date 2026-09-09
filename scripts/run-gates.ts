@@ -422,7 +422,9 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
-    webSnapshotGate(validatedBuild),
+    // The HMR browser owner rewrites shared client source and build outputs.
+    // Its restoration must not overlap any other consumer of those files.
+    webSnapshotGate(['node-compat', 'publint', 'lint-and-duplication', 'snapshot', 'doc-typecheck', 'node-next-types', 'built-bin-smoke']),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },

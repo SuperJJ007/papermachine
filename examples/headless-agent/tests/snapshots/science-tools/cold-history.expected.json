@@ -1,0 +1,16 @@
+{
+  "concurrentProjectCount": 1,
+  "sandboxEnforcement": "full",
+  "metrics": {
+    "runCount": 5,
+    "successfulRunCount": 5,
+    "artifactCount": 6,
+    "artifactVersionCount": 8,
+    "kernelCount": 2,
+    "outcomeRevision": 0
+  },
+  "recoveredEnvironment": {
+    "status": "applied",
+    "revision": 2
+  }
+}

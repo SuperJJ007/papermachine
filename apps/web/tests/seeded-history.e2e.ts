@@ -481,6 +481,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await page.getByRole('button', { name: 'Access mode, current: Workspace Write' }).click()
     await page.getByRole('menuitem', { name: 'Read Only' }).click()
     await page.getByRole('button', { name: 'Access mode, current: Read Only' }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => page.getByRole('button', { name: 'Access mode, current: Read Only' }).isEnabled()).toBe(true)
     // Scoped to the row itself, so unrelated page text that happens to read
     // `permission` (a future resident slash menu) cannot satisfy or break it.
     const row = page.locator('[data-variant="others"]').filter({ hasText: 'preset read-only' })

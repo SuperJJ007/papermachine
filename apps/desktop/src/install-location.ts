@@ -8,7 +8,7 @@
  */
 
 import { readFile, rm } from 'node:fs/promises'
-import { basename, isAbsolute, join, win32 as win32Path } from 'node:path'
+import { isAbsolute, join, posix as posixPath, win32 as win32Path } from 'node:path'
 import { writeFileAtomic } from './atomic-write.ts'
 import { HarnessHomeSpaceError } from './harness-home.ts'
 
@@ -107,19 +107,20 @@ export function hasNonAsciiCharacters(path: string): boolean {
  * @param chosen - the directory `dialog.showOpenDialog` returned.
  * @param platform - `process.platform`; darwin's and win32's default
  *   filesystems are case-insensitive, so the basename comparison on those
- *   platforms ignores case, and win32 paths are parsed with `node:path`'s
- *   `win32` module regardless of the host this runs on.
+ *   platforms ignores case. Path parsing and joining use win32 or POSIX
+ *   semantics for the requested platform regardless of the executing host.
  * @returns the path to validate and, if accepted, persist as the new Harness home.
  */
 export function resolveChosenInstallLocationPath(chosen: string, platform: NodeJS.Platform): string {
   const isWindows = platform === 'win32'
-  const name = isWindows ? win32Path.basename(chosen) : basename(chosen)
+  const paths = isWindows ? win32Path : posixPath
+  const name = paths.basename(chosen)
   const caseInsensitive = isWindows || platform === 'darwin'
   const alreadyNamed = caseInsensitive
     ? name.toLowerCase() === INSTALL_LOCATION_SUBDIRECTORY_NAME.toLowerCase()
     : name === INSTALL_LOCATION_SUBDIRECTORY_NAME
   if (alreadyNamed) return chosen
-  return isWindows ? win32Path.join(chosen, INSTALL_LOCATION_SUBDIRECTORY_NAME) : join(chosen, INSTALL_LOCATION_SUBDIRECTORY_NAME)
+  return paths.join(chosen, INSTALL_LOCATION_SUBDIRECTORY_NAME)
 }
 
 /** `dialog.showMessageBox` options built by {@link installLocationConfirmationDialog}. */

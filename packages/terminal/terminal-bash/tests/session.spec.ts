@@ -148,6 +148,46 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
 }
 
 describe('LocalPtySession readiness and output', () => {
+  it('answers split cursor queries from tracked terminal coordinates', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = makeSession(terminal, new FakeInspector(), config())
+    terminal.emitData('ab\x1b[6')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(terminal.writes).toEqual([])
+    terminal.emitData('n\x1b[4;5H\x1b[6n')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(terminal.writes).toEqual(['\x1b[1;3R', '\x1b[4;5R'])
+    await session.close('query test complete')
+  })
+
+  it('allows teardown to close a PTY with an in-flight protocol response', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const writing = Promise.withResolvers<undefined>()
+    terminal.write = () => writing.promise
+    const session = makeSession(terminal, new FakeInspector(), config())
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(10)
+    await session.close('close during response')
+    writing.reject(new Error('PTY already closed'))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(session.status().kind).toBe('exited')
+  })
+
+  it('fails a pending send when a terminal query response cannot be written', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const session = makeSession(terminal, new FakeInspector(), config())
+    const pending = session.startSend({ text: '', submit: false })
+    const rejected = expect(pending.done).rejects.toThrow('write failed')
+    terminal.throwWrite = true
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(10)
+    await rejected
+    await expect(session.close('failed query')).rejects.toThrow('write failed')
+  })
+
   it('lets queued terminal output run before the first post-write readiness poll', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

@@ -89,10 +89,7 @@ async function captureFiles(
 }
 
 describe('ScienceRuntime.saveArtifactAs', () => {
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('duplicates a captured version into a brand-new artifact, reusing its blob and inheriting title/caption', async () => {
+  it('duplicates a captured version into a brand-new artifact, reusing its blob and inheriting title/caption', async () => {
     const root = tmp('.science-save-as-basic-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -152,10 +149,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(artifacts?.map(a => a.version)).toEqual([1])
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('records the session\'s last started turn as producerTurn, unaffected by a turn that starts afterward', async () => {
+  it('records the session\'s last started turn as producerTurn, unaffected by a turn that starts afterward', async () => {
     const root = tmp('.science-save-as-producer-turn-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -178,10 +172,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(savedStore).toMatchObject({ producerTurn: 1 })
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('omits producerTurn when no turn has started in this session yet', async () => {
+  it('omits producerTurn when no turn has started in this session yet', async () => {
     const root = tmp('.science-save-as-no-turn-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -199,10 +190,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(savedStore?.producerTurn).toBeUndefined()
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('carries no caption forward when the source has none', async () => {
+  it('carries no caption forward when the source has none', async () => {
     const root = tmp('.science-save-as-no-caption-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -218,10 +206,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(saved.caption).toBeUndefined()
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('preserves addressable figure state for a duplicated chart PNG', async () => {
+  it('preserves addressable figure state for a duplicated chart PNG', async () => {
     const root = tmp('.science-save-as-chart-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -250,10 +235,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(savedFigureState).toEqual({ ...sourceFigureState, versionId: saved.versionId })
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('rejects a newLogicalName already used in the project', async () => {
+  it('rejects a newLogicalName already used in the project', async () => {
     const root = tmp('.science-save-as-conflict-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -281,10 +263,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     })).rejects.toMatchObject({ code: 'ARTIFACT_VERSION_NOT_FOUND' })
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('resolves a source version this session has never itself loaded, from anywhere in the owning project', async () => {
+  it('resolves a source version this session has never itself loaded, from anywhere in the owning project', async () => {
     const root = tmp('.science-save-as-cross-session-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
@@ -330,10 +309,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     expect(savedStore).toMatchObject({ environmentRevision: undefined, environmentFingerprint: undefined, contentOrigin: 'import' })
   })
 
-  // POSIX-only fixture: captureFiles spawns a run through createFakePythonPrefix,
-  // which lays down `<prefix>/bin/python`, a shape win32's executable-layout
-  // lookup never finds.
-  it.skipIf(process.platform === 'win32')('propagates a store failure other than a logical-name conflict unchanged', async () => {
+  it('propagates a store failure other than a logical-name conflict unchanged', async () => {
     const root = tmp('.science-save-as-store-failure-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })

@@ -1553,6 +1553,42 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
   }
 
+  /** Resolve a Science content session and its optional store before authorizing a read. */
+  async function scienceContentSession(
+    sessionId: SessionId,
+    failureMessage: (error: unknown) => string,
+    unavailableMessage: string,
+  ): Promise<RpcResult<{ state: SessionReadState; store: ScienceArtifactStore }>> {
+    const loaded = await contentSession(sessionId, failureMessage)
+    if (!loaded.ok) return loaded
+    const store = ctx.get('scienceArtifactStore')
+    return store === undefined
+      ? { ok: false, error: { code: 'internal', message: unavailableMessage, details: {} } }
+      : { ok: true, value: { state: loaded.value, store } }
+  }
+
+  /** Authorize one artifact version while preserving each reader's diagnostics. */
+  async function scienceReadableArtifact(
+    sessionId: SessionId,
+    versionId: VersionId,
+    operation: 'artifact' | 'chart state',
+  ): Promise<RpcResult<{ artifact: AuthorizedScienceArtifact; store: ScienceArtifactStore }>> {
+    const failureMessage = (error: unknown): string => `Science ${operation} authorization unavailable for session "${sessionId}": ${String(error)}`
+    const loaded = await scienceContentSession(sessionId, failureMessage,
+      `Science ${operation} reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store`)
+    if (!loaded.ok) return loaded
+    const { state, store } = loaded.value
+    let artifact: AuthorizedScienceArtifact | undefined
+    try {
+      artifact = await authorizedScienceArtifact(state, versionId, store)
+    } catch (error: unknown) {
+      return { ok: false, error: { code: 'internal', message: failureMessage(error), details: {} } }
+    }
+    return artifact === undefined
+      ? { ok: false, error: { code: 'science-artifact-error', message: 'Science artifact version is not referenced by this session.', details: { reason: 'VERSION_NOT_REFERENCED' } } }
+      : { ok: true, value: { artifact, store } }
+  }
+
   /** One attachment family's finder/reader/wire-encoding trio for {@link readReferencedAttachment}. */
   interface ReferencedAttachmentKind<Ref> {
     /** Authorizes `attachmentId` against the session's own event log, mirroring `ctx.sessionAttachments`'s image/text finder pair. */
@@ -2737,34 +2773,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async scienceArtifact(request) {
         const { sessionId } = request.payload
         const versionId = VersionId(String(request.payload.versionId))
-        const loaded = await contentSession(sessionId, error => `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`)
+        const loaded = await scienceReadableArtifact(sessionId, versionId, 'artifact')
         if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
-        const state = loaded.value
-        const store = ctx.get('scienceArtifactStore')
-        if (store === undefined) {
-          return err(request, {
-            code: 'internal',
-            message: 'Science artifact reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
-            details: {},
-          })
-        }
-        let artifact: AuthorizedScienceArtifact | undefined
-        try {
-          artifact = await authorizedScienceArtifact(state, versionId, store)
-        } catch (error: unknown) {
-          return err(request, {
-            code: 'internal',
-            message: `Science artifact authorization unavailable for session "${sessionId}": ${String(error)}`,
-            details: {},
-          })
-        }
-        if (artifact === undefined) {
-          return err(request, {
-            code: 'science-artifact-error',
-            message: 'Science artifact version is not referenced by this session.',
-            details: { reason: 'VERSION_NOT_REFERENCED' },
-          })
-        }
+        const { artifact, store } = loaded.value
         try {
           const data = await store.readBlob(artifact.projectId, artifact.sha256)
           return ok(request, {
@@ -2847,17 +2858,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async scienceVersions(request) {
         const { sessionId, versionIds } = request.payload
-        const loaded = await contentSession(sessionId, error => `Science version batch unavailable for session "${sessionId}": ${String(error)}`)
+        const loaded = await scienceContentSession(
+          sessionId,
+          error => `Science version batch unavailable for session "${sessionId}": ${String(error)}`,
+          'Science version reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
+        )
         if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
-        const state = loaded.value
-        const store = ctx.get('scienceArtifactStore')
-        if (store === undefined) {
-          return err(request, {
-            code: 'internal',
-            message: 'Science version reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
-            details: {},
-          })
-        }
+        const { state, store } = loaded.value
         try {
           // logicalName has no home on AuthorizedScienceArtifact (only the
           // download endpoint needs it, fetched there post-blob-read), and
@@ -2929,34 +2936,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async scienceChartState(request) {
         const { sessionId } = request.payload
         const versionId = VersionId(String(request.payload.versionId))
-        const loaded = await contentSession(sessionId, error => `Science chart state authorization unavailable for session "${sessionId}": ${String(error)}`)
+        const loaded = await scienceReadableArtifact(sessionId, versionId, 'chart state')
         if (!loaded.ok) return { rpcId: request.rpcId, result: loaded }
-        const state = loaded.value
-        const store = ctx.get('scienceArtifactStore')
-        if (store === undefined) {
-          return err(request, {
-            code: 'internal',
-            message: 'Science chart state reads are unavailable: this deployment does not mount @deepseek-ai/dsh-science-artifact-store',
-            details: {},
-          })
-        }
-        let artifact: AuthorizedScienceArtifact | undefined
-        try {
-          artifact = await authorizedScienceArtifact(state, versionId, store)
-        } catch (error: unknown) {
-          return err(request, {
-            code: 'internal',
-            message: `Science chart state authorization unavailable for session "${sessionId}": ${String(error)}`,
-            details: {},
-          })
-        }
-        if (artifact === undefined) {
-          return err(request, {
-            code: 'science-artifact-error',
-            message: 'Science artifact version is not referenced by this session.',
-            details: { reason: 'VERSION_NOT_REFERENCED' },
-          })
-        }
+        const { artifact, store } = loaded.value
         // Not an error: most versions (every non-PNG artifact, and a PNG
         // never captured with a live figure object) simply have no chart
         // state to edit — see this RPC's own JSDoc.
@@ -3944,6 +3926,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }),
           ctx.on('session/created', (session: Session) => {
             subscribeSession(queue, session)
+            // Constructor seed events are not published, so an earlier cold
+            // history response cannot learn their derived values from changes.
+            const baseline = projectionsFor(ctx, session)
+            if (baseline !== undefined) {
+              for (const [key, value] of Object.entries(baseline.values)) {
+                queue.push(frame({ type: 'session/projection', sessionId: session.id, key, value, seq: baseline.asOfSeq }))
+              }
+            }
             // The subscribe frame clears the client's task mirror, and a
             // session born after the stream opened missed the baseline loop.
             // Unowned tasks are visible to it from birth, so without this it

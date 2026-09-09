@@ -101,3 +101,7 @@ D10 removes the owned Science `workspaceFiles`/`workspaceFile` methods; their pr
 ## Consequences
 
 The ledger supplies scope and decision ownership for reviewing rc patches without replacing each Note’s rationale. Seven existing Notes retain independent authorization, environment, lifecycle, or configuration decisions; this ledger cross-links them without archiving or rewriting their decisions. Generated outputs, script registrations, and caller fixtures remain coupled to their owning patches. Actual commands, unexecuted checks, and phase ownership are recorded in the [P2 execution record](../../../migrations/0.1.5/P2.md).
+
+## Upstream feedback
+
+Migration PLAN §7 lists the generic retry-context fix (item 1, implemented in five source lines), windowless ACL console initialization (item 2), and the upstream optional-chain issue (item 6). Item 7 adds the headless driver's default-preset mount and durable `meta.agentPreset`, plus `subprocess-local/tests/spawn-runner.spec.ts`'s ambient `NoDefaultCurrentDirectoryInExePath` assumption. All remain unsubmitted; this closeout neither edits PLAN nor sends upstream messages. The spawn-runner test can be checked with that ambient variable absent while preserving its expected child-process behavior.

@@ -101,3 +101,7 @@ D10 删除 Science 自有 `workspaceFiles`/`workspaceFile`，删除前 commit �
 ## Consequences
 
 台账为逐项复核 rc 补丁提供范围和决定归属，不替代各 Note 的理由。七篇已有 Note 继续拥有独立的权限、环境、生命周期或配置决定；本台账只交叉链接，不归档或改写其决定。生成结果、脚本登记和调用点 fixture 随其所属补丁一起维护。真实命令结果、未执行项与阶段归属记录在 [P2 执行记录](../../../migrations/0.1.5/P2.md)。
+
+## 上游回馈
+
+迁移 PLAN §7 列出通用重试上下文修复（第 1 项，以五行源码落地）、无窗口 ACL 控制台初始化（第 2 项）及上游可选链问题（第 6 项）。第 7 项补充 headless 驱动挂载默认 preset 并持久记录 `meta.agentPreset`，以及 `subprocess-local/tests/spawn-runner.spec.ts` 对宿主 `NoDefaultCurrentDirectoryInExePath` 的假设。以上均未提交上游；本次收尾不修改 PLAN，也不发送上游消息。spawn-runner 测试可在移除该宿主变量后验证，保持其预期子进程行为。

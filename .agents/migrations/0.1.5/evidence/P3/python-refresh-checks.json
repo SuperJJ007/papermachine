@@ -1,0 +1,50 @@
+[
+  {
+    "command": [
+      "/opt/miniconda3/bin/python",
+      "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+      "--scenario",
+      "sdk-snapshot",
+      "--exe",
+      "/Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64",
+      "--update-snapshots"
+    ],
+    "exitCode": 0
+  },
+  {
+    "command": [
+      "/opt/miniconda3/bin/python",
+      "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+      "--scenario",
+      "sdk-restart",
+      "--exe",
+      "/Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64",
+      "--update-snapshots"
+    ],
+    "exitCode": 0
+  },
+  {
+    "command": [
+      "/opt/miniconda3/bin/python",
+      "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+      "--scenario",
+      "sdk-minimal",
+      "--exe",
+      "/Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64",
+      "--update-snapshots"
+    ],
+    "exitCode": 0
+  },
+  {
+    "command": [
+      "/opt/miniconda3/bin/python",
+      "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+      "--scenario",
+      "sdk-minimal-in-history",
+      "--exe",
+      "/Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64",
+      "--update-snapshots"
+    ],
+    "exitCode": 0
+  }
+]

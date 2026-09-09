@@ -1,0 +1,482 @@
+$ tsx scripts/run-oxlint.ts .
+packages/client/ui-science/src/client/science-attachment-loader.ts:80:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:80:24: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:80:52: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/src/client/science-attachment-loader.ts:81:15: error typescript(no-unsafe-member-access): Unsafe member access .ok on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:81:45: error typescript(no-unsafe-member-access): Unsafe member access .error on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:81:67: error typescript(no-unsafe-member-access): Unsafe member access .error on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:82:3: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/science-attachment-loader.ts:82:17: error typescript(no-unsafe-member-access): Unsafe member access .value on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:93:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:94:26: error typescript(no-unsafe-member-access): Unsafe member access .mediaType on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:94:60: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type Uint8Array<ArrayBufferLike>.
+packages/client/ui-science/src/client/science-attachment-loader.ts:94:66: error typescript(no-unsafe-member-access): Unsafe member access .data on an `error` typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:107:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-attachment-loader.ts:108:61: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type AllowSharedBufferSource | undefined.
+packages/client/ui-science/src/client/science-attachment-loader.ts:108:67: error typescript(no-unsafe-member-access): Unsafe member access .data on an `error` typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:33:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:33:26: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:33:56: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:34:17: error typescript(no-unsafe-member-access): Unsafe member access .ok on an `error` typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:34:47: error typescript(no-unsafe-member-access): Unsafe member access .error on an `error` typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:34:69: error typescript(no-unsafe-member-access): Unsafe member access .error on an `error` typed value.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:35:5: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/science-chart-state-loader.ts:35:19: error typescript(no-unsafe-member-access): Unsafe member access .value on an `error` typed value.
+packages/client/ui-science/src/client/version-summaries.ts:37:5: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/version-summaries.ts:37:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/version-summaries.ts:37:40: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/src/client/version-summaries.ts:34:28: error typescript(require-await): Function has no 'await' expression.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:36:116: error typescript(no-unsafe-member-access): Unsafe member access .loadFailed on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:49:16: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:49:23: error typescript(no-unsafe-member-access): Unsafe member access .open on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:50:21: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:50:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:50:28: error typescript(no-unsafe-member-access): Unsafe member access .openNamed on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:54:50: error typescript(no-unsafe-member-access): Unsafe member access .loading on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:61:93: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactImage.tsx:61:100: error typescript(no-unsafe-member-access): Unsafe member access .lightbox on an `error` typed value.
+packages/client/ui-science/src/client/ArtifactContent.tsx:292:109: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:68:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:69:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:69:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:69:27: error typescript(no-unsafe-member-access): Unsafe member access .find on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:69:40: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:69:45: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:70:8: error typescript(no-unsafe-call): Unsafe call of a(n) `any` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:70:13: error typescript(no-unsafe-member-access): Unsafe member access .blocks on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:70:40: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:70:70: error typescript(no-unsafe-member-access): Unsafe member access .callId on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:71:18: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:72:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:72:22: error typescript(no-unsafe-assignment): Unsafe spread of an error typed value in an array.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:73:11: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:73:35: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:73:64: error typescript(no-unsafe-member-access): Unsafe member access .seq on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:73:80: error typescript(no-unsafe-member-access): Unsafe member access .seq on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:74:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:74:23: error typescript(no-unsafe-assignment): Unsafe spread of an error typed value in an array.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:74:61: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:74:90: error typescript(no-unsafe-member-access): Unsafe member access .turn on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:74:109: error typescript(no-unsafe-member-access): Unsafe member access .turn on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:75:8: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:75:13: error typescript(no-unsafe-member-access): Unsafe member access .blocks on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:75:40: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:75:59: error typescript(no-unsafe-call): Unsafe call of a(n) `any` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:75:65: error typescript(no-unsafe-member-access): Unsafe member access .text on an `any` value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:76:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:76:29: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:77:8: error typescript(no-unsafe-assignment): Unsafe spread of an error typed value in an array.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:77:22: error typescript(no-unsafe-member-access): Unsafe member access .blocks on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:77:60: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:77:79: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:77:85: error typescript(no-unsafe-member-access): Unsafe member access .text on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:80:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:81:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:80:21: error typescript(no-unsafe-member-access): Unsafe member access .turn on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:81:16: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:81:77: error typescript(no-unsafe-member-access): Unsafe member access .turn on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:81:103: error typescript(no-unsafe-member-access): Unsafe member access .step on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:82:22: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:82:52: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:82:101: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type SteeringMessageNode | UserMessageNode.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:83:19: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:83:55: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type string.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:83:61: error typescript(no-unsafe-member-access): Unsafe member access .text on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:89:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:89:16: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:89:30: error typescript(no-unsafe-member-access): Unsafe member access .nodes on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:89:40: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:90:3: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:90:16: error typescript(no-unsafe-member-access): Unsafe member access .kind on an `error` typed value.
+packages/client/ui-science/src/client/ScienceArtifactProvenance.tsx:90:71: error typescript(no-unsafe-member-access): Unsafe member access .data on an `error` typed value.
+packages/client/ui-science/src/client/ScienceDetailsTabs.tsx:56:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsTabs.tsx:56:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsTabs.tsx:60:22: error typescript(no-unsafe-assignment): Unsafe spread of an error typed value in an array.
+packages/client/ui-science/src/client/ScienceDetailsTabs.tsx:60:35: error typescript(no-unsafe-member-access): Unsafe member access .artifacts on an `error` typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:244:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:244:15: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:244:44: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:247:28: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type string | Request | URL.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:253:3: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceHeaderAction.tsx:49:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceHeaderAction.tsx:49:39: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/ScienceHeaderAction.tsx:53:67: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceGlobalToggle.tsx:23:39: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceHeroAction.tsx:25:39: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceEmptyDetails.tsx:17:97: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:152:40: error typescript(no-unsafe-member-access): Unsafe member access .set on an `error` typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:152:54: error typescript(no-unsafe-member-access): Unsafe member access .path on an `error` typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:153:15: error typescript(no-unsafe-member-access): Unsafe member access .path on an `error` typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:153:48: error typescript(no-unsafe-member-access): Unsafe member access .path on an `error` typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:213:13: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/settings-card-controller.ts:234:11: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceOutcomeRow.tsx:111:17: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-trace-model.ts:310:7: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-trace-model.ts:316:56: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:143:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:143:17: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:143:40: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:143:49: error typescript(no-unsafe-member-access): Unsafe member access .nodes on an `any` value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:144:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:144:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:144:44: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:144:53: error typescript(no-unsafe-member-access): Unsafe member access .turnTimings on an `any` value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:145:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:145:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:560:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:560:35: error typescript(no-unsafe-member-access): Unsafe member access .then on an `error` typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:560:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:562:18: error typescript(no-unsafe-member-access): Unsafe member access .ok on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:562:33: error typescript(no-unsafe-argument): Unsafe argument of type any assigned to a parameter of type SetStateAction<WorkspaceEntry[]>.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:562:40: error typescript(no-unsafe-member-access): Unsafe member access .value on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:563:43: error typescript(no-unsafe-argument): Unsafe argument of type any assigned to a parameter of type RemoteError<keyof RemoteErrorDetailsMap>.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:563:50: error typescript(no-unsafe-member-access): Unsafe member access .error on an `any` value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:154:62: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type readonly string[].
+packages/client/ui-science/src/client/ScienceTraceView.tsx:154:62: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:154:71: error typescript(no-unsafe-member-access): Unsafe member access .artifacts on an `error` typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:154:97: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:154:106: error typescript(no-unsafe-member-access): Unsafe member access .versionId on an `any` value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:156:90: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type readonly ConversationNode[].
+packages/client/ui-science/src/client/ScienceTraceView.tsx:156:97: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type ScienceClientProjection.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:156:106: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number; }>.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:174:30: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type Iterable<unknown> | null | undefined.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:174:30: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:174:39: error typescript(no-unsafe-member-access): Unsafe member access .artifacts on an `error` typed value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:174:65: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:174:74: error typescript(no-unsafe-member-access): Unsafe member access .artifactId on an `any` value.
+packages/client/ui-science/src/client/ScienceTraceView.tsx:176:22: error typescript(no-unsafe-member-access): Unsafe member access .outcome on an `error` typed value.
+packages/client/ui-science/src/client/science-turn-artifacts.ts:87:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/science-turn-artifacts.ts:87:16: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/science-turn-artifacts.ts:87:22: error typescript(no-unsafe-member-access): Unsafe member access .turn on an `error` typed value.
+packages/client/ui-science/src/client/science-turn-artifacts.ts:88:3: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/science-turn-artifacts.ts:88:37: error typescript(no-unsafe-member-access): Unsafe member access .artifacts on an `error` typed value.
+packages/client/ui-science/src/client/science-artifact-url-loader.ts:26:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/science-artifact-url-loader.ts:39:34: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type string | Request | URL.
+packages/client/ui-science/src/client/science-artifact-url-loader.ts:39:34: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/science-artifact-url-loader.ts:39:63: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:621:44: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:634:152: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:640:56: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:738:3: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:827:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:827:34: error typescript(no-unsafe-member-access): Unsafe member access .then on an `error` typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:827:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:829:18: error typescript(no-unsafe-member-access): Unsafe member access .ok on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:829:32: error typescript(no-unsafe-argument): Unsafe argument of type any assigned to a parameter of type SetStateAction<{ mediaType: string; byteCount: number; data: Uint8Array<ArrayBufferLike>; } | undefined>.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:829:39: error typescript(no-unsafe-member-access): Unsafe member access .value on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:829:84: error typescript(no-unsafe-argument): Unsafe argument of type any assigned to a parameter of type RemoteError<keyof RemoteErrorDetailsMap>.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:829:91: error typescript(no-unsafe-member-access): Unsafe member access .error on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1176:57: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1188:314: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1291:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1291:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1292:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1292:17: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:20: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:36: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:51: error typescript(no-unsafe-member-access): Unsafe member access .nodes on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:63: error typescript(no-unsafe-member-access): Unsafe member access .nodes on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:74: error typescript(no-unsafe-member-access): Unsafe member access .chat on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1300:85: error typescript(no-unsafe-member-access): Unsafe member access .chat on an `any` value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1314:31: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1315:16: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1315:60: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/src/client/ScienceDetailsView.tsx:1315:85: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/ScienceArtifactProvenance.client.spec.tsx:100:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/ScienceArtifactProvenance.client.spec.tsx:100:15: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceArtifactProvenance.client.spec.tsx:101:52: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:31:47: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:31:65: error typescript(no-unsafe-member-access): Unsafe member access .toString on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:31:47: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:31:54: error typescript(no-unsafe-member-access): Unsafe member access .from on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:42:74: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:42:92: error typescript(no-unsafe-member-access): Unsafe member access .toString on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:42:74: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:42:81: error typescript(no-unsafe-member-access): Unsafe member access .from on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:74:74: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:74:91: error typescript(no-unsafe-member-access): Unsafe member access .toString on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:74:74: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:74:81: error typescript(no-unsafe-member-access): Unsafe member access .from on an `error` typed value.
+packages/client/ui-science/tests/science-attachment-loader.client.spec.ts:93:36: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/ScienceArtifactProvenance.client.spec.tsx:295:55: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceDetailsView.library.client.spec.tsx:433:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/ScienceDetailsView.library.client.spec.tsx:435:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-turn-artifacts.client.spec.tsx:113:39: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/science-turn-artifacts.client.spec.tsx:115:39: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/science-turn-artifacts.client.spec.tsx:120:39: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:190:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:190:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:208:25: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:209:39: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:218:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:218:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:230:25: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:76:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:76:17: error typescript(no-unsafe-call): Unsafe construction of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:77:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:77:9: error typescript(no-unsafe-member-access): Unsafe member access .register on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:77:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:251:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:251:18: error typescript(no-unsafe-member-access): Unsafe member access .mockReturnValue on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:263:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:263:18: error typescript(no-unsafe-member-access): Unsafe member access .mockReturnValue on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:275:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:275:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:313:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:313:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:336:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:336:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:379:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:379:20: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:391:27: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:413:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:413:20: error typescript(no-unsafe-member-access): Unsafe member access .mockReturnValue on an `error` typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:423:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/settings-card-controller.client.spec.ts:423:20: error typescript(no-unsafe-member-access): Unsafe member access .mockReturnValue on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:137:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:138:58: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:139:9: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:142:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:146:10: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:147:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:147:53: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:158:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:27: error typescript(no-unsafe-argument): Unsafe argument of type error typed assigned to a parameter of type Iterable<readonly [unknown, unknown]> | null | undefined.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:27: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:63: error typescript(no-unsafe-member-access): Unsafe member access .map on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:27: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:33: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:76: error typescript(no-unsafe-return): Unsafe return of a value of type `any[]`.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:83: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:161:102: error typescript(no-unsafe-member-access): Unsafe member access .component on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:166:56: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:166:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:166:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:167:45: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:167:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:167:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:168:45: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:168:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:168:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:55: error typescript(no-unsafe-member-access): Unsafe member access .map on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:71: error typescript(no-unsafe-assignment): Unsafe assignment of an any value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:93: error typescript(no-unsafe-assignment): Unsafe assignment of an any value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:81: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:171:108: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:65: error typescript(no-unsafe-member-access): Unsafe member access .map on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:78: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:173:84: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:176:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:176:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:177:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:177:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:178:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:178:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:179:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:179:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:183:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:186:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:186:49: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:187:25: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:188:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:188:34: error typescript(no-unsafe-member-access): Unsafe member access [1] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:205:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:212:18: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:212:18: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:217:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:13: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:57: error typescript(no-unsafe-member-access): Unsafe member access .find on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:221:85: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:222:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:223:9: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:223:15: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:231:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:234:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:234:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:57: error typescript(no-unsafe-member-access): Unsafe member access .map on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:18: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:70: error typescript(no-unsafe-return): Unsafe return of a value of type `any`.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:235:76: error typescript(no-unsafe-member-access): Unsafe member access .options on an `any` value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:240:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:243:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:243:57: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:243:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:243:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:244:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:245:7: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:245:13: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:251:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:254:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:254:64: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:254:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:254:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:255:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:261:31: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:266:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:266:59: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:266:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:266:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:267:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:268:7: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:268:15: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:278:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:281:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:281:64: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:281:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:281:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:282:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:283:31: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:288:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:288:59: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:288:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:288:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:289:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:290:7: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:290:15: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:298:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:302:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:302:59: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:302:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:302:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:303:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:304:7: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:304:15: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:311:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:314:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:314:57: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:314:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:314:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:315:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:316:12: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:316:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:321:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:324:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:324:69: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:324:23: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:324:29: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:325:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:325:64: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:325:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:325:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:326:45: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:327:33: error typescript(no-unsafe-member-access): Unsafe member access .component on an `error` typed value.
+packages/client/ui-science/tests/replant.client.spec.ts:6:16: error typescript(no-confusing-void-expression): Returning a void expression from an arrow function shorthand is forbidden. help: Add braces to the arrow function.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:345:31: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:364:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:367:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:367:62: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:367:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:367:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:368:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:369:29: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:402:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:405:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:405:62: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:405:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:405:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:406:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:407:33: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:79:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:79:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:89:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:89:10: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:93:22: error typescript(no-unsafe-assignment): Unsafe spread of an any value in an array.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:94:53: error typescript(no-unsafe-member-access): Unsafe member access .key on an `error` typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:95:42: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:95:47: error typescript(no-unsafe-member-access): Unsafe member access .key on an `error` typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:98:34: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:98:39: error typescript(no-unsafe-member-access): Unsafe member access .key on an `error` typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:99:26: error typescript(no-unsafe-return): Unsafe return of a value of type error.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:99:56: error typescript(no-unsafe-return): Unsafe return of a value of type `any[]`.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:119:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:124:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:125:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:128:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:128:35: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:130:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:132:3: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceChartEditPanel.client.spec.tsx:641:58: error typescript(no-unsafe-assignment): Unsafe spread of an error typed value in an array.
+packages/client/ui-science/tests/ScienceChartEditPanel.client.spec.tsx:641:61: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:421:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:424:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:424:62: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:424:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:424:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:425:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:426:33: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:432:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:435:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:435:52: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:435:19: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:435:25: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:436:16: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:437:29: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/real-composition.client.spec.tsx:142:8: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:446:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:449:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:449:64: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:449:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:449:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:450:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:456:31: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:475:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:478:11: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:478:64: error typescript(no-unsafe-member-access): Unsafe member access [0] on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:478:21: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:478:27: error typescript(no-unsafe-member-access): Unsafe member access .entries on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:479:18: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:482:31: error typescript(no-unsafe-member-access): Unsafe member access .inject on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:504:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:507:49: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:526:18: error typescript(no-unsafe-assignment): Unsafe array destructuring of a tuple element with an error typed value.
+packages/client/ui-science/tests/plugin-registration.client.spec.ts:529:49: error typescript(no-unsafe-member-access): Unsafe member access .mock on an `error` typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:196:32: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:196:40: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:197:34: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:197:42: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:228:40: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:228:48: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:282:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:325:19: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:326:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:343:29: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:350:19: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:351:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/ScienceSettingsCard.client.spec.tsx:271:5: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceSettingsCard.client.spec.tsx:271:18: error typescript(no-unsafe-member-access): Unsafe member access .mockImplementation on an `error` typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:383:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-artifact-image.client.spec.tsx:25:103: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-artifact-image.client.spec.tsx:44:101: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-artifact-image.client.spec.tsx:60:103: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-artifact-image.client.spec.tsx:77:117: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-artifact-image.client.spec.tsx:81:119: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-details-view-fixtures.client.ts:206:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-details-view-fixtures.client.ts:207:5: error typescript(no-unsafe-assignment): Unsafe assignment of an error typed value.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:421:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/ScienceDetailsView.tab.client.spec.tsx:299:40: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceDetailsView.tab.client.spec.tsx:299:67: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/ScienceDetailsView.tab.client.spec.tsx:300:35: error typescript(no-unsafe-call): Unsafe call of a(n) `error` type typed value.
+packages/client/ui-science/tests/ScienceDetailsView.tab.client.spec.tsx:300:62: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since the receiver accepts the original type of the expression.
+packages/client/ui-science/tests/ScienceDetailsView.tab.client.spec.tsx:374:63: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:569:17: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:569:17: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:591:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:592:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:603:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:634:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:641:45: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:662:21: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+packages/client/ui-science/tests/science-trace.client.spec.tsx:688:18: error typescript(no-unnecessary-type-assertion): This assertion is unnecessary since it does not change the type of the expression.
+[ELIFECYCLE] Command failed with exit code 1.

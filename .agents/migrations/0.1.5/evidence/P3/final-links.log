@@ -1,0 +1,3 @@
+verify-md-links: broken relative cross-links found:
+  packages/science/tool-science/README.md:87  ../../../docs/tool-catalog.md#deepseek-aidsh-tool-science  (no such anchor in target)
+  packages/science/tool-science/README.zh.md:87  ../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science  (no such anchor in target)

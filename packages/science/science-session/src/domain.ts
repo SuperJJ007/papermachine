@@ -83,7 +83,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Records one immutable Science artifact version by project-store reference. */
     'science/artifact-saved': ScienceArtifactSavedEvent
     /**
-     * Adds a user-only artifact note that older readers may skip.
+     * Adds a required-on-read user-only artifact note.
      * @param artifactId - Logical artifact that owns the note.
      * @param artifactVersion - Version visible when the note was added.
      * @param text - Plain user-authored note text.
@@ -91,7 +91,7 @@ declare module '@deepseek-ai/dsh-session/types' {
      */
     'science/artifact-note-added': ScienceArtifactNoteAddedEvent
     /**
-     * Removes one prior user-only artifact note that older readers may skip.
+     * Removes one prior required-on-read user-only artifact note.
      * @param artifactId - Logical artifact that owns the note.
      * @param noteSeq - Sequence of the note-add event being removed.
      * @param removedAt - Epoch milliseconds when the removal committed.
@@ -102,16 +102,9 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** Records one whole-value persistent Science kernel lifecycle transition. */
     'science/kernel-state': ScienceKernelStateEvent
   }
-
-  interface IgnorableSessionEventMap {
-    /** User-only artifact-note addition; absent notes do not affect an agent run. */
-    'science/artifact-note-added': true
-    /** User-only artifact-note removal; absent notes do not affect an agent run. */
-    'science/artifact-note-removed': true
-  }
 }
 
-/** The seven required Science event types owned by this package. */
+/** The seven Science events folded into model-visible state; user notes have their own projection. */
 export type ScienceDomainEventType =
   | 'science/mode-bound'
   | 'science/environment-bound'

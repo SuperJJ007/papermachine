@@ -1,0 +1,405 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 10s ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: sync hooks: ✔️(pre-push, pre-commit, pre-merge-commit)
+. postinstall: Done
+Done in 5.5s using pnpm v11.7.0
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+ ❯ |thread-safe| packages/science/science-session/tests/persistence.spec.ts (20 tests | 20 failed) 260ms
+     × reopens all nine required V3 events and retains both projections and sequence references 157ms
+     × refuses V0 science/mode-bound on read and write without publishing a successor 10ms
+     × refuses V0 science/environment-bound on read and write without publishing a successor 3ms
+     × refuses V0 science/kernel-state on read and write without publishing a successor 5ms
+     × refuses V0 science/run-started on read and write without publishing a successor 4ms
+     × refuses V0 science/run-finished on read and write without publishing a successor 3ms
+     × refuses V0 science/artifact-saved on read and write without publishing a successor 3ms
+     × refuses V0 science/outcome-published on read and write without publishing a successor 3ms
+     × refuses V0 science/artifact-note-added on read and write without publishing a successor 6ms
+     × refuses V0 science/artifact-note-removed on read and write without publishing a successor 3ms
+     × reopens all nine required V3 events and retains both projections and sequence references 19ms
+     × refuses V0 science/mode-bound on read and write without publishing a successor 5ms
+     × refuses V0 science/environment-bound on read and write without publishing a successor 6ms
+     × refuses V0 science/kernel-state on read and write without publishing a successor 3ms
+     × refuses V0 science/run-started on read and write without publishing a successor 3ms
+     × refuses V0 science/run-finished on read and write without publishing a successor 3ms
+     × refuses V0 science/artifact-saved on read and write without publishing a successor 7ms
+     × refuses V0 science/outcome-published on read and write without publishing a successor 7ms
+     × refuses V0 science/artifact-note-added on read and write without publishing a successor 4ms
+     × refuses V0 science/artifact-note-removed on read and write without publishing a successor 5ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 20 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > reopens all nine required V3 events and retains both projections and sequence references
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > reopens all nine required V3 events and retains both projections and sequence references
+TypeError: Cannot read properties of undefined (reading 'version')
+ ❯ packages/science/science-session/tests/persistence.spec.ts:69:30
+     67|     try {
+     68|       const restored = await reader.read()
+     69|       expect(restored.header.version).toBe(3)
+       |                              ^
+     70|       expect(restored.events).toEqual(session.snapshotEvents())
+     71|       expect(replayScience(restored.events)).toEqual(replayScience(ses…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/mode-bound on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-kvyCDl/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/environment-bound on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-LeWVQK/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/kernel-state on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-NORZPH/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/run-started on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-e0pI4h/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/run-finished on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-7MnY6J/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/artifact-saved on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-2Kh2Jk/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/outcome-published on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-Srm9IH/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/artifact-note-added on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-4bm0wh/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (none) > refuses V0 science/artifact-note-removed on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: SessionFormatError: released v0 physical header has unexpected member \"isSeeded\" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-DptwJg/_no-cwd/science-v0-refusal/session.jsonl)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/mode-bound on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-uK14We/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/environment-bound on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-DfAo2k/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/kernel-state on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-vShMuJ/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/run-started on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-9615Qd/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/run-finished on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-SkhhWJ/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/artifact-saved on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-hGi2mX/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/outcome-published on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-rN1VM5/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/artifact-note-added on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-xyEHkc/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/20]⎯
+
+ FAIL  |thread-safe| packages/science/science-session/tests/persistence.spec.ts > Science session storage (zstd) > refuses V0 science/artifact-note-removed on read and write without publishing a successor
+AssertionError: expected [Function] to throw error matching /science\// but got 'session "science-v0-refusal": stored …'
+
+- Expected:
+/science\//
+
++ Received:
+"session \"science-v0-refusal\": stored log is corrupt: Error: corrupt Zstandard session log: first frame is not exactly one header line (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/science-session-format-Na04ox/_no-cwd/science-v0-refusal/session.jsonl.zstd)"
+
+ ❯ packages/science/science-session/tests/persistence.spec.ts:100:59
+     98|     const before = await stat(path)
+     99|     for (const access of ['read', 'write'] as const) {
+    100|       await expect(ctx.sessionPersistence.open(id, access)).rejects.to…
+       |                                                           ^
+    101|       expect(await readFile(path)).toEqual(bytes)
+    102|       expect(await stat(path)).toMatchObject({ dev: before.dev, ino: b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/20]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  20 failed | 3 passed (23)
+   Start at  01:17:30
+   Duration  1.02s (transform 946ms, setup 366ms, import 747ms, tests 264ms, environment 0ms)

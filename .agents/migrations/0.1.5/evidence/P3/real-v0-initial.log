@@ -1,0 +1,18 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /science\//. Input:
+
+'session "session-1a5d6edd-66ff-4690-b1b6-5609250ce96b": stored log is corrupt: Error: corrupt session log "/var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/_no-cwd/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd": header id "session-1a5d6edd-66ff-4690-b1b6-5609250ce96b" and cwd identify "/var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/--Users-superjj-PaperMachine-Biology--/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/_no-cwd/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd)'
+
+    at file:///Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work/real-v0.mjs:34:14 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'session "session-1a5d6edd-66ff-4690-b1b6-5609250ce96b": stored log is corrupt: Error: corrupt session log "/var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/_no-cwd/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd": header id "session-1a5d6edd-66ff-4690-b1b6-5609250ce96b" and cwd identify "/var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/--Users-superjj-PaperMachine-Biology--/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd" (raw log: /var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p3-real-v0-ZVTuiq/_no-cwd/session-1a5d6edd-66ff-4690-b1b6-5609250ce96b/session.jsonl.zstd)',
+  expected: /science\//,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v24.14.0

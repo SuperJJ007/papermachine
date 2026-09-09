@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { applyScienceArtifactNotes, scienceArtifactNotesSchema } from '../src/artifact-notes.ts'
-import { ScienceArtifactId } from '../src/index.ts'
+import { decodeScienceDomainEvent, ScienceArtifactId } from '../src/index.ts'
 
 function noteEvent<T extends 'science/artifact-note-added' | 'science/artifact-note-removed'>(
   type: T,
   seq: number,
   data: Extract<SessionEvent, { type: T }>['data'],
 ): Extract<SessionEvent, { type: T }> {
-  return { type, seq, time: seq * 10, data, ignorable: true } as Extract<SessionEvent, { type: T }>
+  return { type, seq, time: seq * 10, data } as Extract<SessionEvent, { type: T }>
 }
 
 describe('user-only artifact-note projection', () => {
@@ -17,6 +17,8 @@ describe('user-only artifact-note projection', () => {
       version: 1, artifactId: ScienceArtifactId('artifact-1'), artifactVersion: 3,
       text: 'Keep this label', createdAt: 1_000,
     })
+    expect(decodeScienceDomainEvent(added)).toBeUndefined()
+    expect(() => decodeScienceDomainEvent({ ...added, ignorable: true })).toThrow('required, not ignorable')
     const notes = applyScienceArtifactNotes([], added)
     expect(notes).toEqual([{
       seq: 7, artifactId: ScienceArtifactId('artifact-1'), version: 3,
@@ -34,9 +36,12 @@ describe('user-only artifact-note projection', () => {
     ]
     const unrelated = { type: 'turn/start', seq: 9, time: 90, data: { turn: 2 } } as SessionEvent
     expect(applyScienceArtifactNotes(state, unrelated)).toBe(state)
-    expect(applyScienceArtifactNotes(state, noteEvent('science/artifact-note-removed', 10, {
+    const removed = noteEvent('science/artifact-note-removed', 10, {
       version: 1, artifactId: artifact1, noteSeq: 7, removedAt: 300,
-    }))).toEqual([state[1]])
+    })
+    expect(decodeScienceDomainEvent(removed)).toBeUndefined()
+    expect(() => decodeScienceDomainEvent({ ...removed, ignorable: true })).toThrow('required, not ignorable')
+    expect(applyScienceArtifactNotes(state, removed)).toEqual([state[1]])
   })
 
   it('rejects empty, overlong, and structurally extended note projection values', () => {

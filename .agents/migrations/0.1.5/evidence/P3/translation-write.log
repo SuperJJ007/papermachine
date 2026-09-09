@@ -1,0 +1,5 @@
+verify-translation-pairing: recorded .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.i18n.yaml
+verify-translation-pairing: recorded docs/user/papermachine-0.1.3-release-notes.i18n.yaml
+verify-translation-pairing: recorded packages/science/science-session/README.i18n.yaml
+verify-translation-pairing: recorded packages/science/tool-science/README.i18n.yaml
+verify-translation-pairing: 4 record(s) written; run the check to validate the pairs.

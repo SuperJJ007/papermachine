@@ -1,0 +1,1178 @@
+╭──────────────────────────────────────╮
+│ lefthook  v2.1.9   hook:  [1mpre-commit[m │
+╰──────────────────────────────────────╯
+┃  translation pairing (staged records) ❯
+verify-translation-pairing: 5 named staged pair(s) consistent; the corpus-wide check still runs in doc-sync.
+
+│  archived agent notes (skip) no matching staged files
+┃  lint (staged) ❯
+
+┃  third-party notices (staged) ❯
+gen-third-party-notices: wrote THIRD_PARTY_NOTICES.md.
+
+┃  whitespace (staged) ❯
+.agents/migrations/0.1.5/evidence/P3/adjacent-tests.log:12: new blank line at EOF.
+.agents/migrations/0.1.5/evidence/P3/build.log:7: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:8: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/apps/desktop/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:9: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/apps/cli/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:10: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/apps/desktop-host/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:11: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/loader/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:12: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/logger-console/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:13: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/schemastery/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:14: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/gateway/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:15: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/session-controller/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:16: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/remotes/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:17: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:18: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/workspace-files/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:19: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:20: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/connection/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:21: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/file-upload/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:22: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/hmr/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:23: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/locale/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:24: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/code-runtime/code-runtime-worker-thread/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:25: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/modules/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:26: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/store/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:27: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/resources/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:28: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-attachment/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:29: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-agent-preset/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:30: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-brand-papermachine/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:31: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-brand-official/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:32: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-approval/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:33: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-chat/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:34: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-commands/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:35: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:36: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-directory-picker-browse/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:37: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-dockkit/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:38: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-directory-picker-native/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:39: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-deliverables/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:40: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-goal/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:41: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-input-trigger/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:42: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-layout/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:43: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-message-feedback/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:44: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-model-selection/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:45: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-jobs/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:46: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-permission-presets/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:47: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-open-in-app/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:48: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-plan/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:49: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-primitives/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:50: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-reference/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:51: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-renderer/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:52: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-schedule/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:53: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-science/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:54: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:55: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:56: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-models/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:57: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-general/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:58: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-plugin-inventory/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:59: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-plugins/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:60: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:61: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-files/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:62: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-right/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:63: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:64: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-slots/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:65: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-skill/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:66: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-theme/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:67: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-subagent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:68: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-tool/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:69: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-trajectory/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:70: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-user-questions/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:71: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-workflow-run/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:72: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:73: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/web/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:74: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:75: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-default-model/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:76: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-loop/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:77: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/scope/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:78: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:79: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/time-context/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:80: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/boot/app-boot/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:81: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/inspector/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:82: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:83: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/webworker-packer/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:84: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/code-runtime-python/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:85: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/webworker-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:86: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/cordis-client-runner/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:87: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/client-ui-agent-team/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:88: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/ui-cordis/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:89: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-fs/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:90: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-browse/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:91: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-native/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:92: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/open-in-app/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:93: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/user-approval/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:94: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-retry/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:95: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/goal-round-driver/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:96: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/goal/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:97: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/schedule/schedule/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:98: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-log-export/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:99: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:100: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-policy/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:101: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:102: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-catalog/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:103: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v0-to-v1/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:104: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v1-to-v2/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:105: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v2-to-v3/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:106: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-persistence-jsonl/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:107: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:108: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:109: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/tool-science/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:110: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/settings/settings/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:111: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:112: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/subprocess-local/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:113: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/registry/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:114: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:115: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/llm-mock-server/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:116: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/workflow-worker-thread/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:117: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/timer/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:118: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/cosmokit/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:119: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/hmr/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:120: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/include/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:121: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/cordis/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:122: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/settings-controller/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:123: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/group/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:124: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/acp-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:125: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/base/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:126: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/attachment/attachment/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:127: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/headless/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:128: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/attachment/attachment-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:129: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/acp/acp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:130: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/science-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:131: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/sdk-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:132: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/code-runtime/code-runtime/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:133: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction-basic/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:134: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/command-compact/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:135: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/sdk-minimal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:136: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/web-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:137: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction-tool-result-pruner/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:138: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/authorization/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:139: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-tool-presentation/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:140: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/credentials/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:141: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/credentials-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:142: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/tools/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:143: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/system-prompt/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:144: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/agent-instructions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:145: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/file-reference/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:146: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/tmux-context/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:147: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/session-reference/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:148: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/file-reference-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:149: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:150: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/boot/cmdline/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:151: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:152: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team-web-profile/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:153: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/tool-agent-team/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:154: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team-profile/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:155: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/subprocess-e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:156: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:157: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/tool-cordis/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:158: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:159: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/cordis-host-runner/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:160: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/feedback/message-feedback/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:161: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:162: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-fs-search/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:163: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-observation-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:164: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/guard/timeout-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:165: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hook-protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:166: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-str-replace-editor/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:167: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hooks-codex/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:168: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hooks-claude-code/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:169: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/guard/repeat-tool-reminder/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:170: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:171: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:172: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/plugin-inventory/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:173: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/webserver/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:174: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-auto/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:175: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/identity/anonymous-user-id/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:176: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/frontend-static/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:177: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/permission-presets/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:178: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/tool-ask-user/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:179: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/commands/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:180: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:181: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/user-questions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:182: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/tool-jobs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:183: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/jobs-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:184: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/deepseek-llm-api-extensions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:185: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:186: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:187: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/plugin-package-inventory-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:188: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/jobs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:189: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/token-meter/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:190: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/lsp-stdio/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:191: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/mcp/mcp-client/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:192: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/command-goal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:193: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/lsp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:194: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/tool-goal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:195: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/runtime-diagnostics/invariants/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:196: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/plan/plan-mode/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:197: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/tool-lsp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:198: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/preset/agent-presets/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:199: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:200: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/server/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:201: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/client/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:202: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/preset/persona/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:203: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-query-sqlite/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:204: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/tool-session-query/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:205: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-query/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:206: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:207: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:208: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-attachment-index/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:209: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:210: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-persistence/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:211: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-checkpoint-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:212: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-projection-cache/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:213: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-projection/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:214: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-stats/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:215: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-telemetry/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:216: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:217: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-all-prompts-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:218: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-first-prompt-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:219: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-telemetry-otel/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:220: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-turn-outline/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:221: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:222: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-artifact-store/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:223: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/bash-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:224: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/settings/settings-file/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:225: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/bash-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:226: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/pwsh-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:227: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/pwsh-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:228: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-bash/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:229: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/shell-env/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:230: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-pwsh/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:231: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/shell/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:232: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-pwsh-persistent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:233: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-bash-persistent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:234: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill-badge/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:235: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/tool-skill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:236: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:237: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-domain/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:238: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:239: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill-filesystem/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:240: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-sqlite/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:241: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-json/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:242: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/terminal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:243: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/terminal-bash/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:244: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/tool-terminal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:245: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:246: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-dsh-sdk/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:247: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-acp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:248: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-codex/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:249: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-claude-code/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:250: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-fork-in-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:251: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-in-process-driver/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:252: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent-control/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:253: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:254: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/generator/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:255: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/subprocess/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:256: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/win32-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:257: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/todo/tool-todo/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:258: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/loader/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:259: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:260: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:261: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:262: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/llm-replay/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:263: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:264: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/loader-smoke/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:265: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/session-snapshot/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:266: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/tool-web/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:267: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:268: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-exa/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:269: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:270: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-fetch-http/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:271: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/webhook/webhook/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:272: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-perplexity/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:273: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/tool-workflow/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:274: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/webhook/webhook-github/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:275: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:276: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/tool-ralph/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:277: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/atomic-write/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:278: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/workflow/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:279: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/byte-size/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:280: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/brand/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:281: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workspace/workspace/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:282: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/crypto/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:283: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/home-paths/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:284: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/http-proxy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:285: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/deque/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:286: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/launch-environment/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:287: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/native-command/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:288: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/output-retention/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:289: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/package-manifest/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:290: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/timeout/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:291: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/time/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:292: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/workspace-path/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:293: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/values/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2385: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2386: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/apps/cli/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2387: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/loader/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2388: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/schemastery/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2389: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/logger-console/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2390: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/remotes/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2391: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/gateway/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2392: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/session-controller/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2393: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2394: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/workspace-files/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2395: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/boot/app-boot/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2396: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/code-runtime/code-runtime-worker-thread/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2397: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2398: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/connection/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2399: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/file-upload/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2400: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/hmr/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2401: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/locale/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2402: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/modules/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2403: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/resources/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2404: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/store/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2405: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-agent-preset/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2406: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-approval/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2407: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-attachment/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2408: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-brand-official/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2409: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-brand-papermachine/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2410: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-chat/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2411: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-commands/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2412: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2413: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-deliverables/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2414: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-directory-picker-browse/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2415: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-directory-picker-native/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2416: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-dockkit/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2417: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-goal/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2418: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-input-trigger/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2419: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-jobs/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2420: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-layout/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2421: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-message-feedback/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2422: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-model-selection/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2423: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-open-in-app/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2424: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-permission-presets/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2425: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-plan/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2426: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-primitives/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2427: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-reference/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2428: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-renderer/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2429: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-schedule/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2430: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-science/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2431: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2432: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2433: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-general/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2434: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-models/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2435: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-plugin-inventory/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2436: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-settings-plugins/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2437: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2438: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2439: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-files/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2440: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-right/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2441: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-skill/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2442: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-subagent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2443: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-slots/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2444: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-theme/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2445: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-trajectory/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2446: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-tool/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2447: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-workflow-run/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2448: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-user-questions/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2449: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2450: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/client/web/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2451: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/time-context/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2452: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-default-model/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2453: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-loop/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2454: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2455: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/scope/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2456: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2457: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/cordis-client-runner/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2458: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/ui-cordis/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2459: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-fs/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2460: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/goal/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2461: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/goal-round-driver/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2462: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-native/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2463: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-browse/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2464: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/open-in-app/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2465: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/user-approval/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2466: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-retry/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2467: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2468: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-policy/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2469: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/schedule/schedule/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2470: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2471: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-session/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2472: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/tool-science/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2473: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2474: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/client-ui-agent-team/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2475: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/code-runtime-python/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2476: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/inspector/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2477: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/webworker-packer/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2478: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/webworker-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2479: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2480: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-catalog/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2481: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v1-to-v2/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2482: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v0-to-v1/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2483: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-format-v2-to-v3/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2484: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-persistence-jsonl/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2485: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/settings/settings/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2486: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-log-export/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2487: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2488: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/subprocess-local/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2489: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/registry/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2490: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/workflow-worker-thread/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2491: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2492: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/llm-mock-server/tsdown.config.ts
+.agents/migrations/0.1.5/evidence/P3/build.log:2493: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/cordis/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2494: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/cosmokit/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2495: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/timer/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2496: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/group/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2497: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/hmr/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2498: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/api/settings-controller/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2499: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/acp/acp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2500: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/attachment/attachment-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2501: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/attachment/attachment/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2502: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/boot/cmdline/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2503: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/base/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2504: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/science-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2505: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/vendor/include/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2506: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/sdk-minimal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2507: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/web-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2508: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/acp-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2509: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/sdk-app/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2510: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/code-runtime/code-runtime/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2511: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/bundle/headless/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2512: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction-basic/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2513: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/compaction-tool-result-pruner/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2514: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/agent-instructions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2515: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/compaction/command-compact/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2516: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/file-reference/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2517: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/session-reference/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2518: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/file-reference-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2519: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/context/tmux-context/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2520: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/tools/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2521: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/agent-tool-presentation/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2522: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2523: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/cordis-host-runner/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2524: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/subprocess-e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2525: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2526: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/feedback/message-feedback/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2527: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2528: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/core/system-prompt/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2529: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/extensions/tool-cordis/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2530: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/authorization/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2531: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/credentials/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2532: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/credentials/credentials-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2533: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2534: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2535: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2536: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/fs-observation-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2537: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-str-replace-editor/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2538: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/command-goal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2539: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2540: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hooks-codex/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2541: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hooks-claude-code/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2542: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/hooks/hook-protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2543: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/directory-picker-auto/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2544: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/frontend-static/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2545: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/webserver/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2546: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/host/plugin-inventory/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2547: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/commands/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2548: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/permission-presets/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2549: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/tool-ask-user/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2550: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/identity/anonymous-user-id/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2551: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/interaction/user-questions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2552: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/tool-jobs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2553: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/jobs/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2554: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/jobs/jobs-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2555: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/guard/repeat-tool-reminder/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2556: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2557: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2558: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/deepseek-llm-api-extensions/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2559: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2560: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/plan/plan-mode/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2561: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/guard/timeout-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2562: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/lsp-stdio/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2563: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/lsp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2564: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/preset/persona/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2565: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/preset/agent-presets/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2566: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/token-meter/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2567: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/llm/plugin-package-inventory-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2568: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2569: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/runtime-diagnostics/invariants/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2570: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/lsp/tool-lsp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2571: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2572: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team-profile/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2573: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/agent-team-web-profile/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2574: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/client/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2575: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/experimental/tool-agent-team/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2576: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/server/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2577: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-checkpoint-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2578: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-attachment-index/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2579: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2580: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/science/science-artifact-store/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2581: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-persistence/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2582: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-projection/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2583: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/fs/tool-fs-search/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2584: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-projection-cache/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2585: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2586: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-telemetry-otel/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2587: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-stats/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2588: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-telemetry/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2589: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-first-prompt-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2590: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-turn-outline/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2591: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/settings/settings-file/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2592: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2593: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session/session-title-all-prompts-llm/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2594: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/goal/tool-goal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2595: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/sdk/protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2596: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2597: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/pwsh-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2598: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/tool-skill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2599: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill-badge/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2600: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/pwsh-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2601: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/bash-sandbox/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2602: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/bash-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2603: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/shell/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2604: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-bash-persistent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2605: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-bash/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2606: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/skill/skill-filesystem/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2607: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2608: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/shell-env/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2609: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-pwsh/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2610: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/shell/tool-pwsh-persistent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2611: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-json/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2612: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-sqlite/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2613: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/storage/storage-domain/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2614: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill-policy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2615: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill-local/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2616: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/spill/spill/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2617: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/mcp/mcp-client/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2618: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-query-sqlite/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2619: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2620: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-claude-code/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2621: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-acp/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2622: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-fork-in-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2623: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-codex/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2624: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-dsh-sdk/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2625: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-in-process-driver/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2626: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/session-query/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2627: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/win32-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2628: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subprocess/subprocess/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2629: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/session-query/tool-session-query/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2630: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2631: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent-control/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2632: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/terminal-bash/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2633: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/generator/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2634: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/tool-terminal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2635: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/todo/tool-todo/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2636: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/loader/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2637: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/typert/protocol/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2638: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/byte-size/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2639: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/brand/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2640: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/crypto/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2641: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/deque/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2642: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/launch-environment/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2643: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/atomic-write/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2644: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/home-paths/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2645: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/http-proxy/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2646: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/output-retention/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2647: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/time/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2648: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/native-command/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2649: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/values/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2650: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/timeout/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2651: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/workspace-path/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2652: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/tool-web/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2653: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-fetch-http/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2654: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-deepseek/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2655: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2656: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-exa/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2657: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/util/package-manifest/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2658: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/web/web-search-perplexity/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2659: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/webhook/webhook/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2660: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/webhook/webhook-github/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2661: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/tool-workflow/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2662: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/tool-ralph/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2663: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workflow/workflow/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2664: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/workspace/workspace/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2665: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2666: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/llm-replay/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2667: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/terminal/terminal/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2668: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/session-snapshot/package.json
+.agents/migrations/0.1.5/evidence/P3/build.log:2669: trailing whitespace.
++ℹ config file: /Users/superjj/ccproj/pm-replant/packages/test-support/loader-smoke/package.json
+.agents/migrations/0.1.5/evidence/P3/focused-initial.log:406: new blank line at EOF.
+.agents/migrations/0.1.5/evidence/P3/focused.log:12: new blank line at EOF.
+.agents/migrations/0.1.5/evidence/P3/headless-refresh.log:11: new blank line at EOF.
+.agents/migrations/0.1.5/evidence/P3/science-tests-final.log:22: trailing whitespace.
++File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+.agents/migrations/0.1.5/evidence/P3/science-tests.log:22: trailing whitespace.
++File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+.agents/migrations/0.1.5/evidence/P3/sdk-refresh.log:11: new blank line at EOF.
+.agents/migrations/0.1.5/evidence/P3/snapshots-final.log:26: new blank line at EOF.
+
+exit status 2
+┃  vendor manifest guard ❯
+
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 2.64 seconds)
+✓ translation pairing (staged records) (0.60 seconds)
+✓ lint (staged) (1.61 seconds)
+✓ third-party notices (staged) (0.30 seconds)
+✓ vendor manifest guard (0.03 seconds)
+✗ whitespace (staged) (0.02 seconds)

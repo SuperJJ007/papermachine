@@ -1,0 +1,157 @@
+build-exe-for-python-sdk: targets: node24-macos-arm64
+build-exe-for-python-sdk: staging: /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+build-exe-for-python-sdk: runtime dependency closure: /private/tmp/pm-node-v24.14.0/bin/node /Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work/p3-pnpm.mjs run verify-runtime-closure
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 11m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: Done
+Done in 1.4s using pnpm v11.7.0
+$ tsx scripts/verify-runtime-closure.ts
+verify-runtime-closure: 4 agent presets and 133 workspace packages form a closed runtime dependency graph.
+build-exe-for-python-sdk: skipping pnpm run build (--skip-build)
+build-exe-for-python-sdk: deploy: /private/tmp/pm-node-v24.14.0/bin/node /Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work/p3-pnpm.mjs --filter dsh-python-runtime-closure deploy --legacy --prod --config.node-linker=hoisted --config.auto-install-peers=false --config.link-workspace-packages=true /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+[WARN] Shared workspace lockfile detected but configuration forces legacy deploy implementation.
+.                                        | [WARN] A pnpm-lock.yaml file exists. The current configuration prohibits to read or write a lockfile
+Packages are cloned from the content-addressable store to the virtual store.
+  Content-addressable store is at: /Users/superjj/Library/pnpm/store/v11
+  Virtual store is at:             python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/node_modules/.pnpm
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 1113, reused 0, downloaded 0, added 0
+[WARN] The following patches were not used: app-builder-lib@26.15.3
+[WARN] 3 deprecated subdependencies found: node-domexception@1.0.0, prebuild-install@7.1.3, tsconfck@3.1.6
+[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.
+.                                        | +543 ++++++++++++++++++++++++++++++++
+Progress: resolved 1212, reused 329, downloaded 0, added 17
+Progress: resolved 1212, reused 454, downloaded 0, added 188
+Progress: resolved 1212, reused 509, downloaded 0, added 525
+Progress: resolved 1212, reused 509, downloaded 1, added 525
+Progress: resolved 1212, reused 509, downloaded 4, added 529
+[WARN] GET https://registry.npmjs.org/powershell-utils/-/powershell-utils-0.2.1.tgz error (ECONNRESET). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 1212, reused 509, downloaded 8, added 533
+Progress: resolved 1212, reused 509, downloaded 11, added 536
+Progress: resolved 1212, reused 509, downloaded 13, added 538
+Progress: resolved 1212, reused 509, downloaded 15, added 540
+Progress: resolved 1212, reused 509, downloaded 16, added 540
+Progress: resolved 1212, reused 509, downloaded 16, added 541
+Progress: resolved 1212, reused 509, downloaded 17, added 541
+Progress: resolved 1212, reused 509, downloaded 17, added 542
+[WARN] GET https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.3.3.tgz error (23). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 1212, reused 509, downloaded 18, added 542
+Progress: resolved 1212, reused 509, downloaded 18, added 543, done
+.../runtime/node/node_modules/koffi install$ node ./cnoke.cjs -P . -D src/koffi --prebuild --release
+.../runtime/node/node_modules/koffi install: Done
+.../@deepseek-ai/dsh-subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+.../@deepseek-ai/dsh-subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: Done
+build-exe-for-python-sdk: restored legacy deploy hoists: @deepseek-ai/dsh, @deepseek-ai/dsh-bash-local, @deepseek-ai/dsh-hook-protocol, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-shell
+build-exe-for-python-sdk: injected pkg config into /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/package.json
+build-exe-for-python-sdk: pkg node24-macos-arm64: /private/tmp/pm-node-v24.14.0/bin/node /Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work/p3-pnpm.mjs exec pkg /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node --sea --targets node24-macos-arm64 --output /Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 13m ago)
+Lockfile is up to date, resolution step is skipped
+Packages: -678
+--------------------------------------------------------------------------------
+
+devDependencies:
+- @deepseek-ai/dsh-agent 0.1.5-alpha.1
+- @deepseek-ai/dsh-package-manifest 0.1.5-alpha.1
+- @deepseek-ai/dsh-tool-session-query 0.1.5-alpha.1
+- @deepseek-ai/dsh-web-fetch-http 0.1.5-alpha.1
+- @stylistic/eslint-plugin 5.10.0
+- @testing-library/dom 10.4.1
+- @testing-library/react 16.3.2
+- @types/js-yaml 4.0.9
+- @types/jsdom 28.0.3
+- @types/mdast 4.0.4
+- @types/node 22.20.0
+- @types/spdx-expression-parse 4.0.0
+- @vitest/coverage-v8 4.1.8
+- @yao-pkg/pkg 6.21.0
+- @yarnpkg/cli-dist 4.17.1
+- eslint-plugin-sonarjs 4.1.0
+- execa 10.0.0
+- fast-check 4.8.0
+- istanbul-lib-report 3.0.1
+- js-yaml 4.2.0
+- jscpd 5.0.12
+- jsdom 29.1.1
+- lefthook 2.1.9
+- lightningcss 1.32.0
+- mdast-util-from-markdown 2.0.3
+- mdast-util-gfm 3.1.0
+- mermaid 11.16.0
+- micromark-extension-gfm 3.0.0
+- oxlint 1.76.0
+- oxlint-tsgolint 7.0.2001
+- publint 0.3.21
+- smol-toml 1.7.1
+- spdx-expression-parse 5.0.0
+- tsdown 0.22.2
+- tsx 4.22.4
+- typescript 6.0.3
+- vite-tsconfig-paths 6.1.1
+- vitest 4.1.8
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: node:internal/modules/package_json_reader:301
+. postinstall:   throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+. postinstall:         ^
+. postinstall: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'lefthook' imported from /Users/superjj/ccproj/pm-replant/scripts/install-lefthook.mjs
+. postinstall:     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+. postinstall:     at packageResolve (node:internal/modules/esm/resolve:768:81)
+. postinstall:     at moduleResolve (node:internal/modules/esm/resolve:859:18)
+. postinstall:     at defaultResolve (node:internal/modules/esm/resolve:991:11)
+. postinstall:     at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+. postinstall:     at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+. postinstall:     at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+. postinstall:     at #resolve (node:internal/modules/esm/loader:701:17)
+. postinstall:     at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+. postinstall:     at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+. postinstall:   code: 'ERR_MODULE_NOT_FOUND'
+. postinstall: }
+. postinstall: Node.js v24.14.0
+. postinstall: Failed
+[ELIFECYCLE] Command failed with exit code 1.
+[ERROR] Command failed with exit code 1: /private/tmp/pm-node-v24.14.0/bin/node '/Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/bin/pnpm.mjs' install --production
+
+pnpm: Command failed with exit code 1: /private/tmp/pm-node-v24.14.0/bin/node '/Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/bin/pnpm.mjs' install --production
+    at getFinalError (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:34109:14)
+    at makeError (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:36416:21)
+    at getSyncResult (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38260:10)
+    at spawnSubprocessSync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38220:14)
+    at execaCoreSync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38150:23)
+    at callBoundExeca (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40678:23)
+    at boundExeca (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40655:49)
+    at sync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40814:10)
+    at runPnpmCli (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:245099:5)
+    at runDepsStatusCheck (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:246833:7)
+/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596
+        reject(new Error(`build-exe-for-python-sdk: ${label} failed (${cause}): ${printable}`))
+               ^
+
+Error: build-exe-for-python-sdk: pkg node24-macos-arm64 failed (exit code 1): /private/tmp/pm-node-v24.14.0/bin/node /Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work/p3-pnpm.mjs exec pkg /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node --sea --targets node24-macos-arm64 --output /Users/superjj/ccproj/pm-replant/dist-exe/deepseek-harness-sdk-runtime-macos-arm64
+    at ChildProcess.<anonymous> (/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596:16)
+    at Object.onceWrapper (node:events:623:26)
+    at ChildProcess.emit (node:events:508:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+
+Node.js v24.14.0

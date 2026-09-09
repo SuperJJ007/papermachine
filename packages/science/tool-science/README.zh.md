@@ -112,7 +112,7 @@ Use run_python or run_r to execute source in the session's bound Science environ
 
 #### 模型看到的内容
 
-什么也看不到。`ScienceEditService.addArtifactNote` 与 `removeArtifactNote` 是用户侧 viewer 状态的专用 Host Remote。添加操作校验 session 内可见的确切 store `ScienceArtifactId` 与版本、裁剪纯文本，并以 `SCIENCE_EDIT_INVALID_REQUEST` 拒绝超过 8,192 字符的内容；删除操作要求活跃添加事件的序号确实属于该 artifact。两者只追加可忽略的非 surface 事件，不排入 agent follow-up。
+什么也看不到。`ScienceEditService.addArtifactNote` 与 `removeArtifactNote` 是用户侧 viewer 状态的专用 Host Remote。添加操作校验 session 内可见的确切 store `ScienceArtifactId` 与版本、裁剪纯文本，并以 `SCIENCE_EDIT_INVALID_REQUEST` 拒绝超过 8,192 字符的内容；删除操作要求活跃添加事件的序号确实属于该 artifact。两者只追加必读的非 surface 事件，不排入 agent follow-up。
 
 #### Token 影响
 

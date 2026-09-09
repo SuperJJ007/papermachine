@@ -112,7 +112,7 @@ Append-only; the message follows the reusable request prefix like any other user
 
 #### What the model sees
 
-Nothing. `ScienceEditService.addArtifactNote` and `removeArtifactNote` are dedicated Host Remotes for user-only viewer state. Add validates an exact session-visible store `ScienceArtifactId` and version, trims plain text, and rejects more than 8,192 characters with `SCIENCE_EDIT_INVALID_REQUEST`; remove requires the active add-event sequence to belong to that artifact. Both append ignorable non-surface events and queue no agent follow-up.
+Nothing. `ScienceEditService.addArtifactNote` and `removeArtifactNote` are dedicated Host Remotes for user-only viewer state. Add validates an exact session-visible store `ScienceArtifactId` and version, trims plain text, and rejects more than 8,192 characters with `SCIENCE_EDIT_INVALID_REQUEST`; remove requires the active add-event sequence to belong to that artifact. Both append required-on-read non-surface events and queue no agent follow-up.
 
 #### Token effect
 

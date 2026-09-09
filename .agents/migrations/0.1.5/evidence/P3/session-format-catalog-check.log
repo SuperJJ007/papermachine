@@ -1,0 +1,46 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 13m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+devDependencies: skipped
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: node:internal/modules/package_json_reader:301
+. postinstall:   throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+. postinstall:         ^
+. postinstall: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'lefthook' imported from /Users/superjj/ccproj/pm-replant/scripts/install-lefthook.mjs
+. postinstall:     at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+. postinstall:     at packageResolve (node:internal/modules/esm/resolve:768:81)
+. postinstall:     at moduleResolve (node:internal/modules/esm/resolve:859:18)
+. postinstall:     at defaultResolve (node:internal/modules/esm/resolve:991:11)
+. postinstall:     at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+. postinstall:     at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+. postinstall:     at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+. postinstall:     at #resolve (node:internal/modules/esm/loader:701:17)
+. postinstall:     at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+. postinstall:     at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+. postinstall:   code: 'ERR_MODULE_NOT_FOUND'
+. postinstall: }
+. postinstall: Node.js v24.14.0
+. postinstall: Failed
+[ELIFECYCLE] Command failed with exit code 1.
+[ERROR] Command failed with exit code 1: /private/tmp/pm-node-v24.14.0/bin/node '/Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/bin/pnpm.mjs' install --production
+
+pnpm: Command failed with exit code 1: /private/tmp/pm-node-v24.14.0/bin/node '/Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/bin/pnpm.mjs' install --production
+    at getFinalError (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:34109:14)
+    at makeError (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:36416:21)
+    at getSyncResult (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38260:10)
+    at spawnSubprocessSync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38220:14)
+    at execaCoreSync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:38150:23)
+    at callBoundExeca (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40678:23)
+    at boundExeca (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40655:49)
+    at sync (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:40814:10)
+    at runPnpmCli (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:245099:5)
+    at runDepsStatusCheck (file:///Users/superjj/Library/pnpm/store/v11/links/@/pnpm/11.7.0/8c331c0d88cc547da3af5afe3709ff2ab54cf917ede98c38575c216c4dadd425/node_modules/pnpm/dist/pnpm.mjs:246833:7)

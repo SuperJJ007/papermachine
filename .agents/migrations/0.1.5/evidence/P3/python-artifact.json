@@ -1,0 +1,73 @@
+{
+  "target": "node24-macos-arm64",
+  "embeddedNode": "24.21.0",
+  "bytes": 271420304,
+  "sha256": "f7f87f73953844d66930b1b9af1447f3c885cdc43e2a6d956a076d9b767d1eb5",
+  "expectedFilesUnchanged": true,
+  "expectedFiles": [
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/result.json",
+      "sha256": "0bc77ca7def1ed5c34ca623b7b08be2d717cf08271784b5b25ff2b4a3ac6ccae"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.1.v2.jsonl",
+      "sha256": "e5b8bb5021fe35d4e8ed71b322b49afd40c4211b215be8e16b60cbc58dc85f1c"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.1.v3.jsonl",
+      "sha256": "84a91a7f343971ae206a21ebffec8bce7b4c9e7304e8724dc0779eb00e9fa23e"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.2.v2.jsonl",
+      "sha256": "a60ac14c55663cabc88ff79be07e92001325b96035b328652483ee73bc604235"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.2.v3.jsonl",
+      "sha256": "3dc4035bb7f1abb18548f0b2cc6abe48dce3630e3d38da2cb7115722e559b583"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.v2.jsonl",
+      "sha256": "527187eece07d5f44a340957fa6c6266468b2dfabe320a7dfe806fa4307b8427"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/advanced/session.v3.jsonl",
+      "sha256": "d5e093ba4a5d71a223d3e27ae1d72aac89a6948266239c96b446047a7e6f9c8f"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/minimal/model-visible.json",
+      "sha256": "16098359248a72eb482c2246c5cc5395cffa80370e49c5d43f5302978eebbbe2"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/minimal/win-x64/model-visible.json",
+      "sha256": "335b981378dae73fd3ec75fb9507164ae699eab60fe6d426a57515b76b50cf64"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/minimal-in-history/prompt-history.json",
+      "sha256": "1c34c0bed7c9957289ea8c7732a3428e86f6fd4b462a737427ddcd22731a977d"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/requests.json",
+      "sha256": "1f8f7d8992b747531873ee8c6110c94456b5d43ab9a4defb38c87cc427160e35"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/result.json",
+      "sha256": "7584bf02f4134854180e0cf5eb14ce5af282d461405c3c0c321c63645b6f4919"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/session.1.v2.jsonl",
+      "sha256": "450dda3c33e71d5e5c70f12c251b6c0017c2e27135906e94e019e8e171af920a"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/session.1.v3.jsonl",
+      "sha256": "b06b9915e7d3e6da93a283ee99a062ef2c307ca9bdc818014f8a5857f8f30151"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/session.2.v2.jsonl",
+      "sha256": "dba52bed4c883b59989ab0ff1755b2b2bb040bb1e1e2660517cb2c406958815c"
+    },
+    {
+      "path": "scripts/snapshots/python-sdk-single-exe/restart/session.2.v3.jsonl",
+      "sha256": "7fce84502f4d3e2fe6138b8e7e717eb044db37a13962b767d265ff956e9160d8"
+    }
+  ]
+}

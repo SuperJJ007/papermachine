@@ -607,9 +607,9 @@ export function decodeScienceKernelState(value: unknown): ScienceKernelState {
 }
 
 /**
- * Test whether a string names one of the seven required Science event types.
+ * Test whether a string names a Science model-state event.
  * @param type - Session event type to test.
- * @returns whether the type belongs to the Science domain.
+ * @returns whether the type contributes to the Science model-state fold.
  */
 export function isScienceDomainEventType(type: string): type is ScienceDomainEventType {
   return type === 'science/mode-bound'
@@ -624,10 +624,12 @@ export function isScienceDomainEventType(type: string): type is ScienceDomainEve
 /**
  * Decode one Science event and ignore unrelated event types.
  * @param event - Session event from durable replay.
- * @returns the decoded Science event, or `undefined` for another domain.
+ * @returns the decoded model-state event, or `undefined` for user notes and unrelated events.
  */
 export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDomainEvent | undefined {
-  if (event.ignorable === true && isScienceDomainEventType(event.type)) {
+  if (event.ignorable === true && (isScienceDomainEventType(event.type)
+    || event.type === 'science/artifact-note-added'
+    || event.type === 'science/artifact-note-removed')) {
     throw new Error('Science domain events must be required, not ignorable')
   }
   switch (event.type) {

@@ -2473,6 +2473,7 @@ describe('scienceEdits submit', () => {
       type: 'science/artifact-note-added',
       data: { artifactId: artifact.artifactId, artifactVersion: artifact.version, text: 'Inspect axis label' },
     })
+    expect(added).not.toHaveProperty('ignorable')
     expect(followup).not.toHaveBeenCalled()
     if (added?.type !== 'science/artifact-note-added') throw new Error('expected note-add event')
 
@@ -2482,6 +2483,7 @@ describe('scienceEdits submit', () => {
       type: 'science/artifact-note-removed',
       data: { artifactId: artifact.artifactId, noteSeq: added.seq },
     })
+    expect(session.snapshotEvents().at(-1)).not.toHaveProperty('ignorable')
     expect(() => service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
       .toThrow(/does not identify an active note/)
   })

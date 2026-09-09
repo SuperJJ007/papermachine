@@ -662,7 +662,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * Adds a user-only artifact note that older readers may skip.
+ * Adds a required-on-read user-only artifact note.
  * @param artifactId - Logical artifact that owns the note.
  * @param artifactVersion - Version visible when the note was added.
  * @param text - Plain user-authored note text.
@@ -679,7 +679,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * Removes one prior user-only artifact note that older readers may skip.
+ * Removes one prior required-on-read user-only artifact note.
  * @param artifactId - Logical artifact that owns the note.
  * @param noteSeq - Sequence of the note-add event being removed.
  * @param removedAt - Epoch milliseconds when the removal committed.

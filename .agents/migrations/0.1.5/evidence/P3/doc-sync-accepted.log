@@ -1,0 +1,269 @@
+$ tsx scripts/run-gates.ts doc-sync
+run-gates: doc-sync running 34 gate(s) with 4 worker(s) from 10 available CPU(s), doc-sync cap 4.
+run-gates: start doc-typecheck
+run-gates: start documentation build
+run-gates: start doc graphs
+run-gates: start markdown links
+
+== FAILED markdown links (21.96s) ==
+command: pnpm run verify-md-links
+outcome: exit 1
+$ tsx scripts/verify-md-links.ts
+verify-md-links: broken relative cross-links found:
+  packages/science/tool-science/README.md:87  ../../../docs/tool-catalog.md#deepseek-aidsh-tool-science  (no such anchor in target)
+  packages/science/tool-science/README.zh.md:87  ../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science  (no such anchor in target)
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start type equivalence
+
+== FAILED doc graphs (22.50s) ==
+command: pnpm run verify-doc-graphs
+outcome: exit 1
+$ tsx scripts/gen-doc-graphs.ts --check
+/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:737
+    throw new Error([
+          ^
+
+Error: missing service role classification: scienceArtifactStore, scienceEdits, scienceReads, scienceRuntime, sessionAttachments
+    at assertServiceRolesComplete (/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:737:11)
+    at renderCapabilitySeams (/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:745:3)
+    at renderDocs (/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:1469:49)
+    at main (/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:1520:16)
+    at <anonymous> (/Users/superjj/ccproj/pm-replant/scripts/gen-doc-graphs.ts:1544:3)
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.0
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start cordis catalog
+run-gates: PASS type equivalence (19.24s)
+run-gates: start Cordis inspect catalog
+run-gates: PASS Cordis inspect catalog (7.34s)
+run-gates: start verify-mermaid
+run-gates: PASS cordis catalog (30.23s)
+run-gates: start scoped events
+run-gates: PASS documentation build (53.44s)
+run-gates: start translation pairing
+run-gates: PASS verify-mermaid (10.38s)
+run-gates: start markdown wrap
+run-gates: PASS markdown wrap (9.13s)
+run-gates: start client catalog
+run-gates: PASS scoped events (18.45s)
+run-gates: start export jsdoc
+run-gates: PASS client catalog (3.59s)
+run-gates: start tool catalog
+
+== FAILED translation pairing (18.50s) ==
+command: pnpm run verify-translation-pairing
+outcome: exit 1
+$ tsx scripts/verify-translation-pairing.ts
+verify-translation-pairing: bilingual pairing rules violated (see docs/i18n/README.md):
+  docs/persistence-catalog.md: out of sync — content no longer matches the pair's last confirmed-consistent state in docs/persistence-catalog.i18n.yaml (bring the other side along, then re-record with --write)
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start config catalog
+
+== FAILED tool catalog (1.81s) ==
+command: pnpm run verify-tool-catalog
+outcome: exit 1
+$ tsx scripts/gen-tool-catalog.ts --check
+/Users/superjj/ccproj/pm-replant/scripts/gen-tool-catalog.ts:625
+    throw new Error(
+          ^
+
+Error: gen-tool-catalog: 1 tool package(s) not in the boot manifest: tool-science. Add each to TOOL_PACKAGES in scripts/gen-tool-catalog.ts so its schema is catalogued.
+    at assertManifestComplete (/Users/superjj/ccproj/pm-replant/scripts/gen-tool-catalog.ts:625:11)
+    at collectToolCatalog (/Users/superjj/ccproj/pm-replant/scripts/gen-tool-catalog.ts:662:3)
+    at main (/Users/superjj/ccproj/pm-replant/scripts/gen-tool-catalog.ts:763:32)
+    at <anonymous> (/Users/superjj/ccproj/pm-replant/scripts/gen-tool-catalog.ts:797:9)
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.0
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start persistence catalog
+
+== FAILED config catalog (1.88s) ==
+command: pnpm run verify-config-catalog
+outcome: exit 1
+$ tsx scripts/gen-config-catalog.ts --check
+/Users/superjj/ccproj/pm-replant/scripts/gen-config-catalog.ts:96
+  throw new Error(
+        ^
+
+Error: gen-config-catalog: 2 violation(s):
+  @deepseek-ai/dsh-science-artifact-store: config declaration references 'ReadonlyMap' (via packages/science/science-artifact-store/src/schema.ts), which is neither declared in the package, imported, nor a known global type.
+  @deepseek-ai/dsh-science-runtime (packages/science/science-runtime/src/index.ts): schema expression is not a statically walkable schemastery call.
+    at report (/Users/superjj/ccproj/pm-replant/scripts/gen-config-catalog.ts:96:9)
+    at collectConfigCatalog (/Users/superjj/ccproj/pm-replant/scripts/gen-config-catalog.ts:766:3)
+    at main (/Users/superjj/ccproj/pm-replant/scripts/gen-config-catalog.ts:855:26)
+    at <anonymous> (/Users/superjj/ccproj/pm-replant/scripts/gen-config-catalog.ts:878:3)
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.0
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start Session format catalog
+run-gates: PASS Session format catalog (0.59s)
+run-gates: start public repository links
+run-gates: PASS persistence catalog (1.76s)
+run-gates: start doc refs
+
+== FAILED doc refs (1.36s) ==
+command: pnpm run verify-doc-refs
+outcome: exit 1
+$ tsx scripts/verify-doc-refs.ts
+verify-doc-refs: broken documentation references found in source comments (target does not exist):
+  packages/science/science-session/src/transition.ts:242  .agents/notes/implemented/architecture/2026-09-02-science-artifact-event-slimming.md
+  packages/science/science-runtime/src/execution.ts:43  .agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md
+  packages/science/science-runtime/src/index.ts:885  .agents/notes/implemented/feature/2026-09-01-science-package-install.md
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start subsystem pages
+run-gates: PASS export jsdoc (5.85s)
+run-gates: start package paths
+run-gates: PASS public repository links (2.67s)
+run-gates: start tsconfig paths
+
+== FAILED subsystem pages (0.72s) ==
+command: pnpm run verify-subsystem-pages
+outcome: exit 1
+$ tsx scripts/verify-subsystem-pages.ts
+verify-subsystem-pages: package-group documentation violations found:
+  packages/science/README.md: package group has no group README declaring subsystem ownership
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start config source ownership
+run-gates: PASS tsconfig paths (0.48s)
+run-gates: start package README Summaries
+
+== FAILED package README Summaries (0.49s) ==
+command: pnpm run verify-package-readme-summaries
+outcome: exit 1
+$ tsx scripts/verify-package-readme-summaries.ts
+verify-package-readme-summaries: violations found:
+  packages/client/ui-science/README.md: missing `## Summary`
+  packages/science/science-artifact-store/README.md: missing `## Summary`
+  packages/science/science-runtime/README.md: missing `## Summary`
+  packages/science/science-session/README.md: missing `## Summary`
+  packages/science/tool-science/README.md: missing `## Summary`
+  packages/session/session-attachment-index/README.md: missing `## Summary`
+  packages/util/byte-size/README.md: missing `## Summary`
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start package README model experience
+run-gates: PASS package paths (1.03s)
+run-gates: start agent note classification
+run-gates: PASS config source ownership (0.79s)
+run-gates: start agent note format
+run-gates: PASS agent note classification (0.45s)
+run-gates: start archived agent notes
+run-gates: PASS agent note format (0.49s)
+run-gates: start skill invocation metadata
+run-gates: PASS skill invocation metadata (0.53s)
+run-gates: start translation prompt
+run-gates: PASS archived agent notes (0.74s)
+run-gates: start doc budgets
+run-gates: PASS translation prompt (0.56s)
+run-gates: start documentation standard tests
+run-gates: PASS doc budgets (0.54s)
+run-gates: start documentation site checks
+
+== FAILED documentation standard tests (1.47s) ==
+command: pnpm exec vitest run scripts/doc-standard.spec.ts
+outcome: exit 1
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+ ❯ |thread-safe| scripts/doc-standard.spec.ts (12 tests | 2 failed) 124ms
+     × maps package README kinds to their documentation standards 67ms
+     × keeps every package README on the summary, contents, and Dev Note skeleton 40ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |thread-safe| scripts/doc-standard.spec.ts > dsh-doc skill consolidation > maps package README kinds to their documentation standards
+AssertionError: packages/client/ui-science/README.md: YAML frontmatter: expected null not to be null
+ ❯ readFrontmatter scripts/doc-standard.spec.ts:99:50
+     97|   const source = readFileSync(resolve(root, file), 'utf8')
+     98|   const match = /^---\n([\s\S]*?)\n---\n/u.exec(source)
+     99|   expect(match, `${file}: YAML frontmatter`).not.toBeNull()
+       |                                                  ^
+    100|   const metadata = load(match?.[1] ?? '')
+    101|   expect(metadata, `${file}: frontmatter object`).toBeTypeOf('object')
+ ❯ scripts/doc-standard.spec.ts:199:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |thread-safe| scripts/doc-standard.spec.ts > dsh-doc skill consolidation > keeps every package README on the summary, contents, and Dev Note skeleton
+AssertionError: packages/bundle/science-app/README.md: expected [ 'missing Table of Contents', …(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "missing Table of Contents",
++   "missing Dev Note",
++ ]
+
+ ❯ scripts/doc-standard.spec.ts:219:64
+    217|     for (const file of packageReadmes().filter(file => file.split('/')…
+    218|       const source = readFileSync(resolve(root, file), 'utf8')
+    219|       expect(packageReadmeStructureErrors(file, source), file).toEqual…
+       |                                                                ^
+    220|     }
+    221|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  01:37:28
+   Duration  541ms (transform 224ms, setup 265ms, import 19ms, tests 124ms, environment 0ms)
+
+run-gates: start package README limitations
+
+== FAILED package README model experience (6.24s) ==
+command: pnpm run verify-package-readme-model-experience
+outcome: exit 1
+$ tsx scripts/verify-package-readme-model-experience.ts
+verify-package-readme-model-experience failed:
+  packages/bundle/science-app/README.md: must contain one or more complete model-context entries
+  packages/client/ui-brand-papermachine/README.md: must contain one or more complete model-context entries
+  packages/client/ui-science/README.md: line 123: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-artifact-store/README.md: line 137: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-runtime/README.md: line 152: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-session/README.md: line 35: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/tool-science/README.md: line 87: tool-catalog link fragment "deepseek-aidsh-tool-science" does not name an H2 section
+  packages/session/session-attachment-index/README.md: line 38: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/util/byte-size/README.md: line 29: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: PASS documentation site checks (5.95s)
+run-gates: PASS package README limitations (5.42s)
+run-gates: PASS doc-typecheck (94.42s)
+
+run-gates: 24 passed, 10 failed, 0 skipped in 94.42s.
+run-gates: unsuccessful gates:
+  - FAILED doc graphs (22.50s, exit 1)
+    pnpm run verify-doc-graphs
+  - FAILED markdown links (21.96s, exit 1)
+    pnpm run verify-md-links
+  - FAILED translation pairing (18.50s, exit 1)
+    pnpm run verify-translation-pairing
+  - FAILED tool catalog (1.81s, exit 1)
+    pnpm run verify-tool-catalog
+  - FAILED config catalog (1.88s, exit 1)
+    pnpm run verify-config-catalog
+  - FAILED doc refs (1.36s, exit 1)
+    pnpm run verify-doc-refs
+  - FAILED subsystem pages (0.72s, exit 1)
+    pnpm run verify-subsystem-pages
+  - FAILED package README Summaries (0.49s, exit 1)
+    pnpm run verify-package-readme-summaries
+  - FAILED package README model experience (6.24s, exit 1)
+    pnpm run verify-package-readme-model-experience
+  - FAILED documentation standard tests (1.47s, exit 1)
+    pnpm exec vitest run scripts/doc-standard.spec.ts
+[ELIFECYCLE] Command failed with exit code 1.

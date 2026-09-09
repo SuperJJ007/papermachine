@@ -660,7 +660,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 
 ```ts persistence-catalog
 /**
- * Adds a user-only artifact note that older readers may skip.
+ * Adds a required-on-read user-only artifact note.
  * @param artifactId - Logical artifact that owns the note.
  * @param artifactVersion - Version visible when the note was added.
  * @param text - Plain user-authored note text.
@@ -677,7 +677,7 @@ Source: [`packages/science/science-session/src/domain.ts:92`](../packages/scienc
 
 ```ts persistence-catalog
 /**
- * Removes one prior user-only artifact note that older readers may skip.
+ * Removes one prior required-on-read user-only artifact note.
  * @param artifactId - Logical artifact that owns the note.
  * @param noteSeq - Sequence of the note-add event being removed.
  * @param removedAt - Epoch milliseconds when the removal committed.

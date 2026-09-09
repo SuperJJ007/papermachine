@@ -23,6 +23,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
@@ -89,8 +90,11 @@ function containsPath(parent: string, child: string): boolean {
 
 /** Refuse a generic temporary-root target before a real run can create scratch there. */
 function nonTemporaryHome(path: string): boolean {
-  const resolved = resolve(path)
-  return ['/tmp', tmpdir()].every(temp => !containsPath(resolve(temp), resolved) && !containsPath(resolved, resolve(temp)))
+  const resolved = canonicalPath(resolve(path))
+  return ['/tmp', tmpdir()].every((temp) => {
+    const root = canonicalPath(resolve(temp))
+    return !containsPath(root, resolved) && !containsPath(resolved, root)
+  })
 }
 
 /** Convert a bigint stat record to the frozen executable identity string. */

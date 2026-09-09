@@ -183,6 +183,7 @@ export class LocalBashExecutor extends ShellExecutor {
     const collect = (maxBytes: number): SubprocessCollect =>
       ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
     return {
+      environmentBase: 'scrubbed-parent' as const,
       argv,
       cwd: spec.workdir,
       stdio: {

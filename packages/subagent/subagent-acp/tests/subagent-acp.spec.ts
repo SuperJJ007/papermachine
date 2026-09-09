@@ -215,6 +215,7 @@ describe('child env layering (through the subprocess seam)', () => {
       // The spec.env layer merges after the seam's scrub, so the child's own
       // explicitly-forwarded key survives while ambient credentials do not.
       const running = spawnSubprocess({
+        environmentBase: 'scrubbed-parent' as const,
         argv: [
           process.execPath,
           '--input-type=module',
@@ -252,6 +253,7 @@ describe('child env layering (through the subprocess seam)', () => {
 
 describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', () => {
   const node = (source: string, stdin: 'pipe' | 'ignore' = 'pipe') => spawnSubprocess({
+    environmentBase: 'scrubbed-parent' as const,
     argv: [process.execPath, '--input-type=module', '--eval', source],
     cwd: process.cwd(),
     stdio: { stdin, stdout: { maxBytes: 1000 }, stderr: { maxBytes: 1000 } },
@@ -344,6 +346,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
 
   it('observes a spawn-level rejection and returns without a process to reap', async () => {
     const child = spawnSubprocess({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [process.execPath, '--input-type=module', '--eval', ''],
       cwd: '/nonexistent-dir-dsh-acp-ladder-test',
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1000 }, stderr: { maxBytes: 1000 } },

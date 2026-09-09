@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Mount `dsh-subprocess-local` in any composition that runs child processes on the host. It resolves local executables, gives ordinary Linux and Windows commands plus supported Linux terminal sessions an OS-owned managed range, and provides real terminal sessions through `node-pty`; unsupported hosts use an explicit weaker fallback. It has no configuration, so every disposition, limit, terminal size, and grace arrives on the spawn request from the calling capability seam. Output collection keeps a bounded in-memory tail with optional spill files for full-stream recovery, children start from a scrubbed environment, and disposal terminates and joins every selected range or session.
 
+Ordinary spawn requests require `environmentBase`: `scrubbed-parent` retains scrubbed ambient entries and the local provider's normalized proxy policy; `empty` supplies only explicit `env` entries. Explicit proxies remain allowed. This choice applies to the target process; managed runners and E2B control commands retain their separate bootstrap environments. The OS or target executable may add its own variables after launch.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

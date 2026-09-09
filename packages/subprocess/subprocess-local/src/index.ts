@@ -234,7 +234,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       throw new Error('subprocess-local: terminal argv must contain a program')
     }
     spec.signal?.throwIfAborted()
-    const env = targetEnvironment(spec)
+    const env = targetEnvironment({ ...spec, environmentBase: 'scrubbed-parent' })
     const options: IPtyForkOptions = {
       name: 'dumb',
       rows: spec.rows,

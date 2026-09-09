@@ -298,6 +298,7 @@ class FakeSandbox {
 
 function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec {
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', 'printf ok'],
     cwd: '/workspace',
     stdio: {
@@ -453,6 +454,23 @@ describe('E2BSubprocessHandle', () => {
     expect(piped).toBe('pipe-data')
     expect(handle.collected.stderr!.readFrom(0)).toMatchObject({ text: 'err', lossy: false })
     expect(fake.removed).toContain('/workspace/.dsh-e2b/processes/one/stderr.log')
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
+  it('isolates an empty target from remote ambient proxies while preserving control bootstrap', async () => {
+    const fake = new FakeSandbox()
+    fake.ambient = 'PATH=/bin\0HTTP_PROXY=http://ambient.invalid\0NPM_TOKEN=secret\0'
+    const handle = testHandle(runtime(fake), spec({
+      environmentBase: 'empty',
+      env: { HTTP_PROXY: 'http://explicit.invalid', ONLY: 'yes', PATH: undefined },
+    }), '/runtime/empty-environment')
+    fake.releaseStart()
+    await flush()
+    expect(fake.writtenFileData.get('/runtime/empty-environment/environment')).toBe('HTTP_PROXY=http://explicit.invalid\0ONLY=yes\0')
+    expect(fake.startOptions?.envs).toMatchObject({ TERM: 'dumb', NPM_TOKEN: '' })
+    expect(fake.startOptions?.envs?.HOME).toMatch(/^\/\.dsh-e2b-control-/)
+    fake.finish()
+    await expect(handle.done).resolves.toMatchObject({ exitCode: 0 })
     await expect(handle.waitForExit()).resolves.toBe(true)
   })
 

@@ -241,6 +241,7 @@ describe('closed runner protocol', () => {
 
 describe('runner launch inputs', () => {
   const spec = {
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['node', 'a'],
     cwd: process.cwd(),
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },

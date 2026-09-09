@@ -65,6 +65,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
       await expect(ctx.subprocess.resolveExecutable('node', { PATH: relativeNodePath })).resolves.toBe(node)
       await expect(sandbox.files.read(profileLeakPath)).rejects.toBeInstanceOf(FileNotFoundError)
       const environmentProbe = ctx.subprocess.spawn({
+        environmentBase: 'scrubbed-parent' as const,
         argv: ['/bin/bash', '-c', [
           'dsh_leak=0',
           'for dsh_pid in "$PPID" $(ps -o pid= --ppid "$PPID"); do',

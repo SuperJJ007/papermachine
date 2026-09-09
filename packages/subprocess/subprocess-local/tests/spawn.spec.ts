@@ -109,6 +109,7 @@ type SpecOverrides = Partial<Parameters<typeof spawnSubprocess>[0]> & {
 function spec(command: string, overrides: SpecOverrides = {}) {
   const { stdoutMaxBytes = 64_000, stderrMaxBytes = 64_000, maxSpillBytes = 64 * 1024 * 1024, stdin, ...rest } = overrides
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: shellArgv(command),
     cwd: process.cwd(),
     stdio: {

@@ -743,6 +743,7 @@ describe('official spawn projection', () => {
     }))
     const spawnSpec = claudeSpawnSpec(options, 321)
     expect(spawnSpec).toMatchObject({
+      environmentBase: 'scrubbed-parent' as const,
       argv: ['/official/claude', '--one', 'two'],
       cwd: '/parent/workspace',
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },

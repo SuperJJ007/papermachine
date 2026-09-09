@@ -288,14 +288,14 @@ function validateNoNullByte(property: string, value: string, argument = false): 
  * @returns complete target environment after Node-equivalent validation.
  */
 export function targetEnvironment(
-  spec: Pick<SubprocessSpawnSpec, 'argv' | 'cwd' | 'env'>,
+  spec: Pick<SubprocessSpawnSpec, 'argv' | 'cwd' | 'env' | 'environmentBase'>,
 ): Record<string, string> {
   spec.argv.forEach((value, index) => {
     validateNoNullByte(index === 0 ? 'file' : `args[${String(index - 1)}]`, value, true)
   })
   validateNoNullByte('options.cwd', spec.cwd)
   const env = Object.fromEntries(
-    Object.entries(childEnv(spec.env)).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(childEnv(spec.env, spec.environmentBase)).filter((entry): entry is [string, string] => entry[1] !== undefined),
   )
   for (const [key, value] of Object.entries(env)) {
     validateNoNullByte(`options.env['${key}']`, key)

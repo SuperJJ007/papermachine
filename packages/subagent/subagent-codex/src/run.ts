@@ -234,6 +234,7 @@ export async function startCodexRun(
   let child: SubprocessHandle
   try {
     child = spec.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: codexAppServerArgv(),
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },

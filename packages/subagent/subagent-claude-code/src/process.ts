@@ -51,6 +51,7 @@ export function claudeSpawnSpec(
     throw new Error('subagent-claude-code: SDK spawn request omitted its workspace')
   }
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: [options.command, ...options.args],
     cwd: options.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },

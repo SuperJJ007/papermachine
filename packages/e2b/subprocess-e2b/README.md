@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-subprocess-e2b` runs the agent's shell commands and interactive terminals inside an E2B remote sandbox instead of the host. Existing command, terminal, and language-server workflows continue without E2B-specific tools. Host environment variables and secrets are excluded; only explicitly requested environment entries enter the sandbox. Use it with `dsh-e2b` and `dsh-fs-e2b` so commands, terminals, and files share one sandbox. Remote execution adds latency because each command requires asynchronous setup.
 
+Ordinary spawn requests require `environmentBase`: `scrubbed-parent` retains scrubbed ambient entries and the local provider's normalized proxy policy; `empty` supplies only explicit `env` entries. Explicit proxies remain allowed. This choice applies to the target process; managed runners and E2B control commands retain their separate bootstrap environments. The OS or target executable may add its own variables after launch.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

@@ -1496,6 +1496,7 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     const run = await starting
     expect(spawn).toHaveBeenCalledWith({
+      environmentBase: 'scrubbed-parent' as const,
       argv: codexAppServerArgv(),
       cwd: process.cwd(),
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },

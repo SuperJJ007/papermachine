@@ -90,6 +90,7 @@ export class LspConnection {
     // stderr is a collected diagnostic tail (no spill — the bounded tail IS
     // the contract). The seam owns managed-range signalling and observation.
     this.handle = spawner({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [spec.command, ...spec.args],
       cwd: spec.cwd,
       stdio: {

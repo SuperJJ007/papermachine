@@ -70,6 +70,7 @@ try {
   const fsRead = await ctx.fs.readText(fromBash)
 
   const environmentHandle = ctx.subprocess.spawn({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['env'],
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 65_536 }, stderr: { maxBytes: 4_096 } },
@@ -94,6 +95,7 @@ try {
   if (!explicitEnvironment) throw new Error(`E2B subprocess dropped an explicit environment entry: ${environmentText}`)
 
   const splitUtf8Handle = ctx.subprocess.spawn({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', "printf '\\344'; sleep 0.05; printf '\\275'; sleep 0.05; printf '\\240'; sleep 0.05; printf '\\345'; sleep 0.05; printf '\\245'; sleep 0.05; printf '\\275'"],
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 4_096 } },
@@ -108,6 +110,7 @@ try {
 
   const outputDrainStarted = Date.now()
   const outputDrainHandle = ctx.subprocess.spawn({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', "bash -c 'exec -a dsh-output-drain-descendant sleep 30' & printf 'leader-done\\n'"],
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: { maxBytes: 64 }, stderr: { maxBytes: 4_096 } },

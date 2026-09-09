@@ -41,10 +41,14 @@ type SpawnProcess = (
  * deliberately restores or overrides an entry; an explicit `undefined`
  * tombstone removes an ordinary ambient entry.
  * @param extra - explicit caller entries and tombstones, merged after the scrub.
+ * @param environmentBase - target ambient policy; empty skips ambient entries and proxy injection.
  * @returns the environment to hand to `spawn` for the child process.
  */
-export function childEnv(extra?: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv {
-  const env = scrubbedParentEnv()
+export function childEnv(
+  extra?: Readonly<NodeJS.ProcessEnv>,
+  environmentBase: SubprocessSpawnSpec['environmentBase'] = 'scrubbed-parent',
+): NodeJS.ProcessEnv {
+  const env = environmentBase === 'empty' ? {} : scrubbedParentEnv()
   if (process.platform !== 'win32') return { ...env, ...extra }
   let entries: [string, string | undefined][] = Object.entries(env)
   for (const [key, value] of Object.entries(extra ?? {})) {
@@ -649,7 +653,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   const [program, ...args] = spec.argv
   const child = (internals.spawn ?? spawn)(program as string, args, {
     cwd: spec.cwd,
-    env: childEnv(spec.env),
+    env: childEnv(spec.env, spec.environmentBase),
     stdio: [
       spec.stdio.stdin === 'ignore' ? 'ignore' : 'pipe',
       spec.stdio.stdout === 'inherit' ? 'inherit' : 'pipe',

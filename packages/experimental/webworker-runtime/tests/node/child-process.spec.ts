@@ -291,6 +291,7 @@ it('keeps concurrent Landlock grants process-local', async () => {
 
 it('carries a command through the real local subprocess service', async () => {
   const handle = spawnSubprocess({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', 'echo written > note.txt && cat note.txt'],
     cwd: WORKSPACE,
     stdio: {
@@ -309,6 +310,7 @@ it('carries a command through the real local subprocess service', async () => {
 
 it('writes the caller-supplied standard input into the command', async () => {
   const handle = spawnSubprocess({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', 'grep -c ""'],
     cwd: WORKSPACE,
     stdio: {
@@ -325,6 +327,7 @@ it('writes the caller-supplied standard input into the command', async () => {
 
 it('kills a running command through the service and reports the signal', async () => {
   const handle = spawnSubprocess({
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', 'sleep 30; echo never'],
     cwd: WORKSPACE,
     stdio: {

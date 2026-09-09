@@ -60,6 +60,7 @@ async function executePosix(invocation: RunnerInvocation): Promise<{ status: num
 
 async function executeWindows(invocation: RunnerInvocation): Promise<{ status: number | null; stdout: string; stderr: string }> {
   const request: SubprocessSpawnSpec = {
+    environmentBase: 'scrubbed-parent' as const,
     argv: [
       process.execPath,
       '--input-type=module',

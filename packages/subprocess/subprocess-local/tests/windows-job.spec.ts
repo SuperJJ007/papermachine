@@ -50,6 +50,8 @@ class FakeChild extends EventEmitter {
 }
 
 const spec = {
+
+  environmentBase: 'scrubbed-parent' as const,
   argv: ['tool.exe', 'literal arg'],
   cwd: 'C:\\target',
   env: { TARGET: 'yes' },

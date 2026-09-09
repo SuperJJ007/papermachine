@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-subprocess-e2b` 让 agent（智能体）的 shell 命令与交互式终端在 E2B 远程沙箱而非宿主中运行。现有的命令、终端与语言服务器工作流无需 E2B 专用工具即可继续使用。宿主环境变量与密钥不会传入沙箱；只有显式请求的环境条目会进入沙箱。请与 `dsh-e2b`、`dsh-fs-e2b` 一起使用，让命令、终端与文件共享同一个沙箱。远程执行会增加延迟，因为每条命令都需要异步初始化。
 
+普通进程请求必须指定 `environmentBase`：`scrubbed-parent` 保留清理后的环境变量及本地 provider 归一化后的代理设置；`empty` 只传入显式 `env` 条目，也允许显式代理变量。该选择仅作用于目标进程，managed runner 和 E2B 控制命令保留各自的启动环境。操作系统或目标程序可能在启动后自行添加变量。
+
 ## 目录
 
 - [使用本包](#use-this-package)

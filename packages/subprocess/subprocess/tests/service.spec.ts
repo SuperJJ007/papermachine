@@ -54,6 +54,7 @@ describe('SubprocessRuntime seam', () => {
     const ctx = new Context()
     await ctx.plugin(StubSubprocessRuntime)
     const handle = ctx.subprocess.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: ['true'],
       cwd: '/stub',
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1 }, stderr: 'inherit' },

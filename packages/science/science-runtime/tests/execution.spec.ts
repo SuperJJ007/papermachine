@@ -202,6 +202,7 @@ describe('quiesce', () => {
     contexts.push(ctx)
     await ctx.plugin(LocalSubprocessRuntime)
     const handle = ctx.subprocess.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [process.execPath, '-e', 'setInterval(() => {}, 1_000)'],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
@@ -229,6 +230,7 @@ describe('quiesce', () => {
     // longer exposes one (upstream keeps target identity provider-private);
     // this test still needs it to force a final SIGKILL from outside the seam.
     const handle = ctx.subprocess.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [process.execPath, '-e', "process.on('SIGTERM', () => {}); process.stdout.write(String(process.pid)); setInterval(() => {}, 1_000)"],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },

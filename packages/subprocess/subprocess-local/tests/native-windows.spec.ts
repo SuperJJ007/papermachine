@@ -13,6 +13,7 @@ afterAll(() => { rmSync(scratch, { recursive: true, force: true }) })
 
 function spec(argv: string[], graceMs = 100, env?: NodeJS.ProcessEnv): SubprocessSpawnSpec {
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv,
     cwd: scratch,
     stdio: {

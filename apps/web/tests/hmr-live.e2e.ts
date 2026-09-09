@@ -29,6 +29,7 @@ function clientArtifactPaths(): string[] {
 
 function spawnSpec(argv: readonly string[], cwd: string, env?: Record<string, string>): SubprocessSpawnSpec {
   return {
+    environmentBase: 'scrubbed-parent',
     argv,
     cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },

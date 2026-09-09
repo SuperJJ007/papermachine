@@ -233,6 +233,7 @@ export async function runRipgrep(
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [await resolveRgPath(), '--no-config', ...argv],
       cwd: workdir,
       stdio: {

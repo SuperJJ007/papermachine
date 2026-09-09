@@ -264,6 +264,7 @@ describe('Science Runtime real Loader composition', () => {
     process.env.SCIENCE_RUNTIME_LEAK = 'must-not-reach-real-local-providers'
     try {
       const handle = context.subprocess.spawn({
+        environmentBase: 'scrubbed-parent' as const,
         argv: confined.argv,
         cwd: root,
         stdio: {

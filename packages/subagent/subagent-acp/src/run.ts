@@ -347,6 +347,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   let child: SubprocessHandle
   try {
     child = spec.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [spec.command, ...spec.args],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },

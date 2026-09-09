@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-subprocess-target-environment-base.md
+2026-09-09-subprocess-target-environment-base.md: 708d706578de99bcadeb2836a579ed779e16eb79
+2026-09-09-subprocess-target-environment-base.zh.md: c3aadb1715b0195f9af4b3ffa03eb0f79b67748f

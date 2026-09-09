@@ -85,6 +85,7 @@ function unitState(loadState: string, activeState: string) {
 
 function spec() {
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['tool', 'literal arg'],
     cwd: '/target',
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },

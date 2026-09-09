@@ -230,6 +230,7 @@ export class PwshLocalExecutor extends ShellExecutor {
     const collect = (maxBytes: number): SubprocessCollect =>
       ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
     return {
+      environmentBase: 'scrubbed-parent' as const,
       argv: [...argv],
       cwd: spec.workdir,
       stdio: {

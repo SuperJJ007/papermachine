@@ -27,6 +27,7 @@ function spec(command: string, overrides: Partial<SubprocessSpawnSpec> = {}): Su
     }[command] ?? command]
     : ['bash', '-c', command]
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv,
     cwd: process.cwd(),
     stdio: {

@@ -183,3 +183,5 @@ This Dev Note is working context for maintainers: undecided directions and open 
 The [sandbox decision](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) lists deferred phases — an optional `subagent-acp` consumer that confines child agents (unconfined default) and environment-coherent capability group examples. Neither is decided; the Windows chain that note listed as deferred has since shipped through the ACL restricted-token rung of `sandbox-local`.
 
 </details>
+
+`ConfinedArgv.env` contains backend-required environment entries. Consumers merge them after their target environment overrides so confinement requirements win. Runner failure classification distinguishes backend launch failures from denials using the declared runner identity and output signatures.

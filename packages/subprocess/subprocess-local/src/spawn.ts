@@ -342,6 +342,7 @@ function signalTree(
   /* v8 ignore next -- kill/terminate gate on treeAlive(), which is false without a pid; this guard protects direct callers only. */
   if (pid === undefined) return
   if (platform === 'win32') {
+    if (sig === 'SIGINT') return
     taskkill(pid)
     return
   }
@@ -585,6 +586,7 @@ export function bindManagedProcess(
     stdin.end(stdinMode.data)
   }
 
+  let directCompleted = false
   const done = new Promise<SubprocessOutcome>((resolve, reject) => {
     let pipeDrainTimer: ReturnType<typeof setTimeout> | undefined
     const settle = (outcome: SubprocessOutcome): void => {
@@ -606,6 +608,7 @@ export function bindManagedProcess(
       reject(error)
     }
     launch.direct.then((outcome) => {
+      directCompleted = true
       if (stdoutClosed === undefined && stderrClosed === undefined) {
         settle(outcome)
         return
@@ -637,6 +640,9 @@ export function bindManagedProcess(
       ...stderrCollector !== undefined ? { stderr: stderrCollector } : {},
     },
     done,
+    interrupt: () => {
+      if (!directCompleted && !settled && !terminationStarted && !rangeExitObserved) launch.owner.signal('SIGINT')
+    },
     terminate,
     terminateForHostExit,
     waitForExit,

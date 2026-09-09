@@ -15,16 +15,18 @@ kind: "package-bundle"
 
 bundle 的 Host 插件将其 preset 绝对目录提供为 `sciencePresetRoot`。agent-presets 配置行先注入该值，再求值配置中的根目录。因此 preset 路径跟随已安装的 bundle，不依赖进程工作目录。
 
-P1 骨架暂时禁用 Science 运行时、投影、编辑、附件索引和 UI 配置行。临时 Science preset 在模型请求前拒绝 `agent/pre-step`。P2 负责 Host 配置行及替代的受限 preset，P4 负责 UI 配置行。对应迁移验收前不支持启用这些行。
+Science 运行时、投影、编辑与读取服务、附件索引在 Host 挂载。Science UI 配置行在客户端迁移完成前保持禁用。Science preset 替换 base 中面向模型的工具配置行。
 
 ## Model Experience
 
-临时 preset 拒绝执行，不提供 Science 工具或模型响应。
+该 preset 提供 Python 和 R 执行、产物发布、只读工作区工具及受限委派。
 
 #### KV Cache effect
 
-临时 preset 在请求前拒绝回合，因此无影响。
+Science 身份提示和工具定义在会话中保持稳定；运行时上下文变更记录为用户消息。
 
 ## Known Limitations and Deferred Work
 
-- 此包仍是迁移骨架，Science 执行和产物侧栏尚不可用。浏览器验收需要编译后的品牌包和匹配的 Web 产物；仅导出配置不能证明浏览器激活成功。
+- 产物侧栏等待客户端迁移。浏览器验收需要匹配的 Web 和品牌构建产物。
+
+使用 `dsh --profile science-headless` 执行一次性 Science 任务，或使用 `dsh --profile science` 启动 Web 界面。运行 Python 或 R 前，在 Host Science Runtime 的 `profiles.science` 配置允许使用的 Conda 前缀。内置 Science 预设提供只读工作区工具，并禁止复制。

@@ -30,7 +30,7 @@ import { apply as hostApply } from '../src/index.ts'
 const ROSTER_ONE = {
   ok: true as const,
   value: {
-    presets: [{ id: 'standard', trust: 'system', isDefault: true }],
+    presets: [{ copyable: true, id: 'standard', trust: 'system', isDefault: true }],
     authorable: true,
   },
 }
@@ -40,8 +40,8 @@ const ROSTER_AUTHORED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'mine', trust: 'user', isDefault: false },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+      { copyable: true, id: 'mine', trust: 'user', isDefault: false },
     ],
     authorable: true,
   },
@@ -52,8 +52,8 @@ const ROSTER_MOVED = {
   ok: true as const,
   value: {
     presets: [
-      { id: 'standard', trust: 'system', isDefault: false },
-      { id: 'minimal', trust: 'system', isDefault: true },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: false },
+      { copyable: true, id: 'minimal', trust: 'system', isDefault: true },
     ],
     authorable: true,
   },
@@ -217,7 +217,7 @@ describe('ui-agent-preset apply', () => {
 
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
-      .toEqual([{ id: 'standard', trust: 'system', isDefault: true }])
+      .toEqual([{ copyable: true, id: 'standard', trust: 'system', isDefault: true }])
   })
 
   it('routes the section actions to one controller', async () => {

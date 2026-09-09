@@ -23,8 +23,8 @@ const READY: AgentPresetSectionState = {
   authorable: true,
   hasDocument: true,
   rows: [
-    { id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
-    { id: 'mine', trust: 'user', isDefault: false },
+    { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
+    { copyable: true, id: 'mine', trust: 'user', isDefault: false },
   ],
   copy: null,
   view: null,
@@ -117,7 +117,7 @@ describe('the preset list', () => {
   })
 
   it('shows no group heading for a set nobody has', () => {
-    renderSection({ rows: [{ id: 'standard', trust: 'system', isDefault: true }] })
+    renderSection({ rows: [{ copyable: true, id: 'standard', trust: 'system', isDefault: true }] })
 
     expect(screen.queryByRole('heading', { name: en.customGroup })).toBeNull()
   })
@@ -175,8 +175,8 @@ describe('the preset list', () => {
   it('marks a broken custom preset: unselectable, uncopyable, still deletable', () => {
     const actions = renderSection({
       rows: [
-        { id: 'standard', trust: 'system', isDefault: true },
-        {
+        { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+        { copyable: false,
           id: 'ghost', trust: 'user', isDefault: false, name: '幽灵预设', description: '我自己写的',
           broken: 'the composition file agent.cordis.yml is missing',
         },
@@ -213,7 +213,7 @@ describe('the preset list', () => {
 
   it('withholds the viewer on a broken shipped preset', () => {
     renderSection({
-      rows: [{ id: 'standard', trust: 'system', isDefault: false, name: '标准模式', broken: 'the composition is not valid YAML' }],
+      rows: [{ copyable: false, id: 'standard', trust: 'system', isDefault: false, name: '标准模式', broken: 'the composition is not valid YAML' }],
     })
 
     // There is no readable composition to offer; the reason on the card is
@@ -256,7 +256,7 @@ describe('the preset list', () => {
 
   it('starts a creator-mode draft session and leaves settings', () => {
     const actions = renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     })
 
     fireEvent.click(screen.getByRole('button', { name: en.creatorDraft }))
@@ -270,8 +270,8 @@ describe('the preset list', () => {
   it('keeps the empty custom group on screen: heading plus the creator entry', () => {
     renderSection({
       rows: [
-        { id: 'standard', trust: 'system', isDefault: true, name: '标准模式' },
-        { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' },
+        { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式' },
+        { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' },
       ],
     })
 
@@ -287,14 +287,14 @@ describe('the preset list', () => {
     cleanup()
 
     renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     }, { creator: false })
     expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
     cleanup()
 
     const actions = renderSection({
       authorable: false,
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     })
     const disabled = screen.getByRole('button', { name: en.creatorDraft })
     expect(disabled).toHaveProperty('disabled', true)
@@ -493,7 +493,7 @@ describe('a long card description', () => {
     clamp(true)
     vi.useFakeTimers()
     try {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: LONG }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: LONG }] })
 
       fireEvent.mouseEnter(within(rowFor('zh')).getByText(LONG))
       act(() => { vi.advanceTimersByTime(400) })
@@ -508,7 +508,7 @@ describe('a long card description', () => {
     clamp(false)
     vi.useFakeTimers()
     try {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: '短描述。' }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: '短描述。' }] })
 
       fireEvent.mouseEnter(within(rowFor('zh')).getByText('短描述。'))
       act(() => { vi.advanceTimersByTime(400) })
@@ -525,7 +525,7 @@ describe('a long card description', () => {
     clamp(true)
 
     expect(() => {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, description: LONG }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, description: LONG }] })
     }).not.toThrow()
     // The first measurement does not depend on the observer.
     expect(within(rowFor('zh')).getByText(LONG).getAttribute('title')).toBe('')

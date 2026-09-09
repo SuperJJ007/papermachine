@@ -28,6 +28,12 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
+   * Last event represented inside persisted state, when the unit stores a watermark.
+   * @param state - schema-validated persisted state.
+   * @returns the internal watermark, which must equal the checkpoint row sequence.
+   */
+  checkpointStateSeq?(state: NoInfer<S>): number
+  /**
    * State for the empty log and its immutable Session metadata.
    * @param header - immutable metadata for the Session being projected.
    * @param inheritedEventCount - exact fork-inherited prefix length.

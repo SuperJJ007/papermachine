@@ -60,6 +60,7 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
 // mocked SDK even through a static import.
 import { apply } from '@deepseek-ai/dsh-mcp-client/src/index.ts'
 import { RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from '@deepseek-ai/dsh-mcp-client/src/connection.ts'
+import { resolveToolFilter } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 
 // ---- Helpers ----
 
@@ -170,6 +171,22 @@ describe('reconnect supervisor', () => {
     expect(instances).toHaveLength(2)
   })
 
+  it('re-applies the deployment tool filter identically after a reconnect', async () => {
+    await apply(ctx, {
+      ...stdioConfig({ initialDelayMs: 5, maxDelayMs: 40, maxAttempts: 5 }),
+      tools: { exclude: ['remote'] },
+    })
+    // The very first sync already excludes the server's only tool.
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+
+    // The recovered server advertises a new tool alongside the excluded one.
+    mockListTools.mockResolvedValue(listing('remote', 'revived'))
+    instances[0]!.onclose?.()
+
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__revived')).toBeDefined() })
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+  })
+
   it('stops at the failure cap, unregisters the tools, and reports final failure', async () => {
     const { warns, errors } = captureLogs(ctx)
     await apply(ctx, stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 }))
@@ -262,7 +279,7 @@ describe('reconnect supervisor', () => {
     const { warns } = captureLogs(ctx)
     const gate: PromiseWithResolvers<void> = Promise.withResolvers()
     mockConnect.mockImplementation(() => gate.promise)
-    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'), resolveToolFilter(undefined, 'test.tools'))
     await vi.waitFor(() => { expect(instances).toHaveLength(1) })
 
     const disposing = handle.dispose()
@@ -281,7 +298,7 @@ describe('reconnect supervisor', () => {
       const gate: PromiseWithResolvers<void> = Promise.withResolvers()
       mockConnect.mockImplementation(() => gate.promise)
       mockClose.mockResolvedValue(undefined)
-      const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+      const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'), resolveToolFilter(undefined, 'test.tools'))
       await vi.advanceTimersByTimeAsync(0)
 
       const disposing = handle.dispose()

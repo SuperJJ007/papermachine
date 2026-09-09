@@ -35,6 +35,8 @@ export interface PresetRow {
   trust: 'system' | 'user'
   /** Whether a session that names no preset gets this one. */
   isDefault: boolean
+  /** Whether deployment policy permits copying. */
+  copyable: boolean
   /**
    * Why the preset cannot compose a session, absent when it can. A broken
    * row renders marked and unselectable — its directory still occupies the

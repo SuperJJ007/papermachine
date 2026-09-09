@@ -266,7 +266,7 @@ describe('pushed invalidations', () => {
         value: {
           writable: true,
           hasDocument: false,
-          namespaces: [{
+          namespaces: [{ effective: acknowledgement.current === undefined ? {} : { [WELCOME_NOTICE_ACK_FIELD]: acknowledgement.current },
             ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
             schema: {},
             value: acknowledgement.current === undefined ? {} : { [WELCOME_NOTICE_ACK_FIELD]: acknowledgement.current },
@@ -304,7 +304,7 @@ describe('pushed invalidations', () => {
       value: {
         writable: true,
         hasDocument: false,
-        namespaces: [{
+        namespaces: [{ effective: {},
           ns: 'llm-test',
           schema: {},
           value: {},

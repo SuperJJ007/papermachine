@@ -190,3 +190,5 @@ agent-presets:
 回收被替代的常驻挂载，需要给 `StandingMount` 加上已加入 agent 的计数，在 `mount`/`composeFrom`/`recompose` 中递增、在 agent 的 scope key 消亡时递减——即 `ensureStanding` 处的 `TODO`。子树并非惰性：`dsh-skill-filesystem` 监听自己的根目录，因此未回收的代际会让一套活的 watcher 一直存活到进程结束。
 
 </details>
+
+预设元数据可通过 `copyable: false` 拒绝复制。列表公开解析后的复制资格，Host 写入操作执行此限制。存在但无效的元数据或缺失的内置预设元数据会使预设失效且不可复制；用户预设缺少元数据时保留通常的复制资格。

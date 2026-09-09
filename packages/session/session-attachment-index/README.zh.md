@@ -45,3 +45,5 @@
 
 - **靠穷尽性测试而非构建期生成器来把关新鲜度。** 与本仓库中一些 merge-extensible 词汇所用的、由 JSDoc 标签驱动的生成器不同,这里的两份分类列表是一张手工维护的单一表格,由单元测试对照生成的已知类型集合校验;未来若某个领域包需要自己的 extractor-required 事件类型,除了调用 `register()` 之外,无需改动本包的任何内容。
 - Science profile 在 P1 中禁用此插件。P2 负责 File 载体分类、UTF-8/媒体校验，以及附件读取和会话导出的接入。本注册表自身不授权 HTTP 端点。
+
+内置扫描器从 V3 已完成的 assistant attempt 和消息载体收集图像与文件引用。`decodeReferencedText` 接纳 CSV、JSON、Markdown 和纯文本文件名，并拒绝无效 UTF-8；通用文件引用本身不意味着内容是文本。

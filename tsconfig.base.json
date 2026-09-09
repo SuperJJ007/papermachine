@@ -28,7 +28,9 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
-      "@deepseek-ai/dsh-science-app/pending": ["./packages/bundle/science-app/src/pending.ts"],
+      "@deepseek-ai/dsh-tool-fs/read-only": ["./packages/fs/tool-fs/src/read-only.ts"],
+      "@deepseek-ai/dsh-tool-science/read-service": ["./packages/science/tool-science/src/read-service.ts"],
+      "@deepseek-ai/dsh-tool-science/read-types": ["./packages/science/tool-science/src/read-types.ts"],
       "@deepseek-ai/dsh-client-ui-science": ["./packages/client/ui-science/src"],
       "@deepseek-ai/dsh-client-ui-brand-papermachine": ["./packages/client/ui-brand-papermachine/src"],
       "@deepseek-ai/dsh-science-artifact-store/ids": ["./packages/science/science-artifact-store/src/ids.ts"],

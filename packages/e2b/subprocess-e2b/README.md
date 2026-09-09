@@ -173,3 +173,5 @@ E2B exposes numeric PID/PGID input, signalling, and cleanup operations without a
 The initial environment probe inherits sandbox defaults because E2B merges command overrides, and collect/inherit command status needs control-plane polling because E2B cannot observe direct-command exit independently of descendant-held output. Both close only with new E2B primitives (TODO(e2b-replace-environment), TODO(e2b-status-watch)).
 
 </details>
+
+`SubprocessHandle.interrupt()` requests cooperative interruption without closing streams or starting termination. Local POSIX owners signal the managed range; Windows treats it as a no-op. Calls after direct completion or termination do nothing. `terminate()` and `waitForExit()` retain their range-quiescence semantics.

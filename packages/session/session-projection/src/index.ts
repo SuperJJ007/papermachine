@@ -54,6 +54,12 @@ export interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
+   * Last event represented inside persisted state, when the unit stores a watermark.
+   * @param state - schema-validated persisted state.
+   * @returns the internal watermark, which must equal the checkpoint row sequence.
+   */
+  checkpointStateSeq?(state: NoInfer<S>): number
+  /**
    * State for the empty log and its immutable Session metadata.
    * @param header - immutable metadata for the Session being projected.
    * @param inheritedEventCount - exact fork-inherited prefix length.
@@ -140,10 +146,23 @@ export type ProjectionCheckpoint = Record<string, ProjectionCheckpointRow>
 interface ErasedDefinition {
   key: string
   stateSchema: { parse(value: unknown): unknown }
+  checkpointStateSeq: ((state: unknown) => number) | undefined
   init(header: SessionHeader, inheritedEventCount: SessionLogOffset): unknown
   apply(state: unknown, event: SessionEvent): unknown
   wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
+}
+
+/** Validate a persisted row before any cached view or restored fold can use it. */
+function parseCheckpointState(def: ErasedDefinition, row: ProjectionCheckpointRow): { state: unknown } | undefined {
+  try {
+    const state = def.stateSchema.parse(row.val)
+    if (def.checkpointStateSeq !== undefined && def.checkpointStateSeq(state) !== row.seq) return undefined
+    return { state }
+  } catch {
+    // Invalid persisted state cannot seed a cached view or a replay.
+    return undefined
+  }
 }
 
 /** Per-session per-unit watermark and fixed live-drive view buffer. */
@@ -257,9 +276,11 @@ export class SessionProjectionRegistry extends Service {
       viewSchema: ZodType
       view(state: S): unknown
     } | undefined
+    const checkpointStateSeq = definition.checkpointStateSeq
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
+      checkpointStateSeq: checkpointStateSeq === undefined ? undefined : state => checkpointStateSeq(state as S),
       init: (header, inheritedEventCount) => definition.init(header, inheritedEventCount),
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
@@ -427,6 +448,7 @@ export class SessionProjectionRegistry extends Service {
     for (const registration of this.registrations.values()) {
       const row = checkpoint[registration.def.key]
       const need = row !== undefined && row.ver === registration.def.stateVersion
+        && parseCheckpointState(registration.def, row) !== undefined
         ? Math.max(row.seq + 1, 0)
         : 0
       floor = floor === undefined ? need : Math.min(floor, need)
@@ -457,13 +479,9 @@ export class SessionProjectionRegistry extends Service {
       if (selected !== undefined && !selected.has(def.key)) continue
       const row = checkpoint[def.key]
       if (row === undefined || row.ver !== def.stateVersion) continue
-      let state: unknown
-      try {
-        state = def.stateSchema.parse(row.val)
-      } catch {
-        continue
-      }
-      values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
+      const parsed = parseCheckpointState(def, row)
+      if (parsed === undefined) continue
+      values[def.key] = def.wire.viewSchema.parse(def.wire.view(parsed.state))
     }
     return values
   }
@@ -507,7 +525,8 @@ export class SessionProjectionRegistry extends Service {
     for (const registration of this.registrations.values()) {
       const def = registration.def
       const row = checkpoint[def.key]
-      const usable = row !== undefined
+      const parsed = row === undefined ? undefined : parseCheckpointState(def, row)
+      const usable = parsed !== undefined && row !== undefined
         && row.ver === def.stateVersion
         && row.seq >= beforeBase
         && row.seq <= endSeq
@@ -518,7 +537,7 @@ export class SessionProjectionRegistry extends Service {
         )
       }
       let state = usable
-        ? def.stateSchema.parse(row.val)
+        ? parsed.state
         : def.init(header, inheritedEventCount)
       const from = usable ? row.seq : beforeBase
       const startIndex = from - baseSeq + 1

@@ -151,3 +151,5 @@ This Dev Note is working context for maintainers: undecided directions and open 
 Retention and garbage collection are deferred because resumed and forked sessions may share immutable objects, and a backend serving remote runtimes or shared storage would need its own durability proof. Both directions are undecided; the local storage currently retains every object under `DSH_HOME`.
 
 </details>
+
+`saveImage({ normalization: "verbatim", ... })` preserves the submitted image bytes after decode verification and source limits. It performs no resizing or re-encoding, and returns no `originalDimensions`. This route supports image evidence that must match an existing stored artifact exactly.

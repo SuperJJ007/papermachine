@@ -161,3 +161,5 @@ spawn 会立即返回活动句柄，而不公开目标身份。`done` 独立报�
 未来：非 shell 运行器。该 seam 拆分的目的就是让直接 argv 执行器或 worker supervisor 无需深入 bash 内部即可消费它；目前尚无任何实现交付，终端原语也把就绪策略留在其消费方。
 
 </details>
+
+`SubprocessHandle.interrupt()` 请求协作中断，不关闭流，也不启动终止流程。本地 POSIX 实现向托管进程范围发送信号；Windows 不执行操作。直接进程已完成或终止已开始时，中断不执行操作。`terminate()` 与 `waitForExit()` 保持托管范围静止性语义。

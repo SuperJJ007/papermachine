@@ -153,3 +153,5 @@ These limits define when the provider is a poor fit or needs special operational
 None.
 
 </details>
+
+`SubprocessHandle.interrupt()` requests cooperative interruption without closing streams or starting termination. Local POSIX owners signal the managed range; Windows treats it as a no-op. Calls after direct completion or termination do nothing. `terminate()` and `waitForExit()` retain their range-quiescence semantics.

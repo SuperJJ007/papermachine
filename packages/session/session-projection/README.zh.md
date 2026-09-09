@@ -142,3 +142,5 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 无。
 
 </details>
+
+投影的持久化状态包含事件水位时，可声明 `checkpointStateSeq(state)`。每个被接纳的 checkpoint 必须通过 `stateSchema`，且内部水位与行序号相同。无效行不发布缓存视图，恢复时也会丢弃；仅有日志后缀时需要重新读取完整日志。热恢复采用相同的准入规则。

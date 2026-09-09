@@ -375,6 +375,11 @@ export class ReactLoopAgent implements Agent {
           this.session.append('user/message', message, { surfaceOp: 'append' })
         }
       }
+      if (!firstAttempt) {
+        const sections = renderContextSections(assembly)
+        const context = this.runtimeContext.project(joinContextSections(sections), sections)
+        if (context !== undefined) this.session.append('user/message', context, { surfaceOp: 'append' })
+      }
       firstAttempt = false
       const request = this.buildRequest(config, preparedCall, assembly.tools, startsRequestSeries, signal)
       const live = new AssistantStreamAttempt(

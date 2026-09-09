@@ -192,6 +192,11 @@ describe('Science cold replay', () => {
 
     const restored = ctx.sessionProjections.restore(spliced, events, SessionLogOffset(0), checkpointHeader, SessionLogOffset(0))
     expect(restored.snapshot.values.science).toEqual(clientOf(events))
+    const prepared = ctx.sessions.create(SessionId('science-hydrate-watermark'), { meta: { agentPreset: 'science' } })
+    expect(() => ctx.sessionProjections.hydrate(prepared, spliced, [], SessionLogOffset(events.length)))
+      .toThrow(/re-read from seq 0/)
+    expect(ctx.sessionProjections.hydrate(prepared, spliced, events, SessionLogOffset(0)).values.science)
+      .toEqual(clientOf(events))
     expect((restored.checkpoint.science?.val as ScienceCheckpointState).observedSeq)
       .toBe(events.at(-1)!.seq)
   })

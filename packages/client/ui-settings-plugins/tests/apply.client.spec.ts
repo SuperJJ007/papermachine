@@ -41,7 +41,7 @@ async function bench(served?: string[]) {
       value: {
         writable: true,
         hasDocument: true,
-        namespaces: served.map(ns => ({
+        namespaces: served.map(ns => ({ effective: {},
           ns, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
         })),
       },

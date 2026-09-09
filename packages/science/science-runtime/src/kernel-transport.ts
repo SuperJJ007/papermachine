@@ -21,7 +21,7 @@ import type { Server, Socket } from 'node:net'
 import type { Readable } from 'node:stream'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { quiesce } from './execution.ts'
+import { DESCENDANT_GRACE_MS, quiesce } from './execution.ts'
 import type { Quiescence } from './execution.ts'
 
 /**
@@ -129,16 +129,16 @@ async function unlinkFifo(fifoPath: string): Promise<void> {
   }
 }
 
-/**
- * Unavailable during P1; P2 owns this implementation.
- * @param _subprocess - Input reserved for P2.
- * @param _cwd - Input reserved for P2.
- * @param _fifoPath - Input reserved for P2.
- * @throws Always rejects execution while the migration is pending.
- */
-async function startResponseReader(_subprocess: SubprocessRuntime, _cwd: string, _fifoPath: string): Promise<SubprocessHandle> {
-  // FIXME(replant): P2: isolated FIFO reader.
-  throw new Error('Science migration pending — P2: isolated FIFO reader')
+/** Forward FIFO bytes over a subprocess pipe without blocking Host filesystem workers. */
+async function startResponseReader(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<SubprocessHandle> {
+  const cat = await subprocess.resolveExecutable('cat')
+  return subprocess.spawn({
+    argv: [cat, fifoPath],
+    cwd,
+    stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: 4_096 } },
+    graceMs: DESCENDANT_GRACE_MS,
+    environmentBase: 'empty',
+  })
 }
 
 /** Stop a reader that may still be blocked opening its FIFO, retaining the provider's quiescence observation. */
@@ -152,15 +152,37 @@ async function stopResponseReader(reader: SubprocessHandle): Promise<Quiescence>
 }
 
 /**
- * Unavailable during P1; P2 owns this implementation.
- * @param _subprocess - Input reserved for P2.
- * @param _cwd - Input reserved for P2.
- * @param _fifoPath - Input reserved for P2.
- * @throws Always rejects execution while the migration is pending.
+ * Create the kernel's response FIFO host-side, unconfined: spawns the
+ * platform `mkfifo` binary directly through the subprocess seam, never
+ * through the sandbox — the FIFO must exist before the confined
+ * kernel argv is spawned. Removes a stale FIFO left at the same path by an
+ * earlier failed attempt first: `mkfifo` refuses an existing
+ * path, and a retry after a start failure reuses the same kernel-epoch
+ * scratch directory.
+ * @param subprocess - subprocess runtime used unconfined for this one call.
+ * @param cwd - existing directory to spawn `mkfifo` from (irrelevant beyond existing, since `fifoPath` is absolute).
+ * @param fifoPath - absolute path at which to create the FIFO.
+ * @throws when the FIFO path carries a frame delimiter, `mkfifo` cannot be resolved, or it exits non-zero.
  */
-async function createResponseFifo(_subprocess: SubprocessRuntime, _cwd: string, _fifoPath: string): Promise<void> {
-  // FIXME(replant): P2: isolated FIFO creation.
-  throw new Error('Science migration pending — P2: isolated FIFO creation')
+async function createResponseFifo(subprocess: SubprocessRuntime, cwd: string, fifoPath: string): Promise<void> {
+  assertNoFrameDelimiters(fifoPath, 'response FIFO path')
+  await unlinkFifo(fifoPath)
+  const mkfifo = await subprocess.resolveExecutable('mkfifo')
+  const handle = subprocess.spawn({
+    argv: [mkfifo, fifoPath],
+    cwd,
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
+    graceMs: DESCENDANT_GRACE_MS,
+    environmentBase: 'empty',
+  })
+  const outcome = await handle.done
+  if (outcome.exitCode !== 0 || outcome.signal !== null) {
+    const stderrText = handle.collected.stderr?.readFrom(0).text ?? ''
+    throw new Error(
+      'science-runtime: mkfifo failed for the kernel response FIFO '
+      + `(exitCode=${String(outcome.exitCode)}, signal=${String(outcome.signal)}): ${stderrText}`,
+    )
+  }
 }
 
 /** One FIFO plus its owned forwarding `cat` subprocess, wrapped as a {@link KernelResponseTransport}. */

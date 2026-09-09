@@ -173,3 +173,5 @@ E2B 公开基于数值 PID/PGID 的输入、信号发送与清理操作，却没
 由于 E2B 会合并命令覆盖，初始环境探测会继承沙箱默认值；又因为 E2B 无法独立于后代持有的输出观察直接命令的退出，collect/inherit 命令状态需要控制面轮询。两者都只能靠 E2B 的新原语来弥合（TODO(e2b-replace-environment)、TODO(e2b-status-watch)）。
 
 </details>
+
+`SubprocessHandle.interrupt()` 请求协作中断，不关闭流，也不启动终止流程。本地 POSIX 实现向托管进程范围发送信号；Windows 不执行操作。直接进程已完成或终止已开始时，中断不执行操作。`terminate()` 与 `waitForExit()` 保持托管范围静止性语义。

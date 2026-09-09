@@ -121,8 +121,9 @@ async function tightenModes(dir: string): Promise<void> {
  * @param id - the new preset's id, which becomes its directory name.
  * @param name - display name for the copy; omitted falls back to the id.
  * @returns the absolute path of the new preset directory.
- * @throws when the id is unusable or already occupied on disk, or the
- * deployment configures no writable root.
+ * @throws when the id is unusable or already occupied on disk, the source is
+ * broken or otherwise non-copyable, or the deployment configures no writable
+ * root.
  */
 export async function copyComposition(
   roots: readonly PresetRoot[],
@@ -134,6 +135,10 @@ export async function copyComposition(
     const reason = `preset id ${JSON.stringify(id)} must match ${String(PRESET_ID)} — `
       + 'the id is a directory name, so anything else could escape the preset root'
     throw new RemoteError('agent-preset/invalid', `agent-presets: ${reason}`, { agentPreset: id, reason })
+  }
+  if (!source.copyable) {
+    const reason = source.broken ?? 'its metadata declares copyable: false'
+    throw notWritable(source.id, reason)
   }
   const dir = join(writableRoot(roots, id), id)
   // The roster check upstream only sees discovered presets; a directory with

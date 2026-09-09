@@ -32,6 +32,12 @@ export interface AgentPreset {
   /** Declared position within its group; absent sorts after those that declare one. */
   readonly order?: number
   /**
+   * Whether `agentPresets.copy()` may use this preset as a source. A healthy
+   * preset with no declaration resolves to `true`; a declared false value or
+   * any broken preset resolves to `false`.
+   */
+  readonly copyable: boolean
+  /**
    * Why this preset cannot compose a session, absent when it can. A broken
    * preset stays on the roster — hiding it would leave its directory blocking
    * the id with nothing to see or delete — but every mounting path refuses it
@@ -44,7 +50,10 @@ export interface AgentPreset {
 export interface PresetRoot {
   /** Directory holding one subdirectory per preset; a leading `~` expands. */
   path: string
-  /** Trust recorded on every preset discovered under this root. */
+  /**
+   * Trust recorded on every preset discovered under this root. System presets
+   * must provide valid metadata; user presets may omit the metadata file.
+   */
   trust: PresetTrust
 }
 

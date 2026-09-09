@@ -27,7 +27,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     const collected = spec.stdio.stdout !== 'pipe' && spec.stdio.stdout !== 'inherit'
       ? { stdout: { readFrom: () => read } }
       : {}
-    return {
+    return { interrupt: () => {},
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,

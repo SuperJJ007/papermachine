@@ -2456,7 +2456,7 @@ describe('scienceEdits submit', () => {
     await expect(service.previewChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
   })
 
-  it('adds and removes ignorable user-only notes without queuing model input', async () => {
+  it('adds and removes required user-only notes without queuing model input', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-notes')
     const run = await runSuccessfully(ctx, session, 'science-artifact-notes-run')
@@ -2470,7 +2470,7 @@ describe('scienceEdits submit', () => {
     })).toEqual({ accepted: true })
     const added = session.snapshotEvents().at(-1)
     expect(added).toMatchObject({
-      type: 'science/artifact-note-added', ignorable: true,
+      type: 'science/artifact-note-added',
       data: { artifactId: artifact.artifactId, artifactVersion: artifact.version, text: 'Inspect axis label' },
     })
     expect(followup).not.toHaveBeenCalled()
@@ -2479,7 +2479,7 @@ describe('scienceEdits submit', () => {
     expect(service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
       .toEqual({ accepted: true })
     expect(session.snapshotEvents().at(-1)).toMatchObject({
-      type: 'science/artifact-note-removed', ignorable: true,
+      type: 'science/artifact-note-removed',
       data: { artifactId: artifact.artifactId, noteSeq: added.seq },
     })
     expect(() => service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))

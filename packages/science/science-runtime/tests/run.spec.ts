@@ -139,8 +139,6 @@ class CleanupFaultOnKernelSpawnSubprocess extends LocalSubprocessRuntime {
  * unchanged. Matches `kernel-set.spec.ts`'s own `wrapWithUnprovenQuiescence` pattern.
  */
 function wrapKernelSpawn(inner: SubprocessRuntime, transform: (handle: SubprocessHandle) => SubprocessHandle): SubprocessRuntime {
-  // FIXME(replant P2.1): upstream SubprocessRuntime dropped `executionWorld`; restore this
-  // passthrough once P2.1 redesigns the execution-world classification seam.
   return {
     resolveExecutable: (command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal) =>
       inner.resolveExecutable(command, env, signal),

@@ -65,7 +65,7 @@ function fakeCtx(
           record('list', {})
           if (options.failList !== undefined) return remoteFail(options.failList)
           return remoteOk({
-            presets: [...presets].map(([id, preset]) => ({
+            presets: [...presets].map(([id, preset]) => ({ copyable: true,
               id, trust: preset.trust, isDefault: id === defaultId.id,
               ...preset.name === undefined ? {} : { name: preset.name },
             })),
@@ -325,8 +325,8 @@ describe('the copy dialog', () => {
 
 describe('the copy blocker', () => {
   const rows: PresetRow[] = [
-    { id: 'standard', trust: 'system', isDefault: true },
-    { id: 'mine', trust: 'user', isDefault: false },
+    { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+    { copyable: true, id: 'mine', trust: 'user', isDefault: false },
   ]
   const draft = (id: string): CopyDraft =>
     ({ from: 'standard', fromTitle: '标准模式', id, name: '', saving: false, error: null })

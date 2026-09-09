@@ -257,3 +257,5 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 </details>
 
 **运行时不变式：** 不发布伴生入口。这个模型侧 adapter 没有独立 lifecycle stream；执行关系由它调用的 capability seam 负责。
+
+`/read-only` 入口注册 `read` 和可用的图像读取能力，不注册文件写入或编辑工具。它与根入口共享读取限制和展示行为。

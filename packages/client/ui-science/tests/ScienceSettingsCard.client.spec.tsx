@@ -272,7 +272,7 @@ describe('ScienceSettingsCard: end-to-end through the real controller', () => {
       stub.publish({ value: { science: {} }, secrets: [{ path: [...path], set: true }] })
     })
     const controller = new ScienceSettingsCardController(stub.scope)
-    stub.publish({ status: 'ready', writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' })
+    stub.publish({ effective: undefined, secrets: [], status: 'ready', writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' })
 
     const face = controller.inject()
     const buildProps = (): ScienceSettingsCardProps => ({

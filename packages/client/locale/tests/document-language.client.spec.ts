@@ -23,7 +23,7 @@ async function bench(preference?: string) {
   await ctx.plugin(SlotRegistry).await()
   let stored = preference
   let revision = 0
-  const namespace = () => ({
+  const namespace = () => ({ effective: stored === undefined ? {} : { preference: stored },
     ns: LOCALE_SETTINGS_NAMESPACE,
     schema: LocaleSettingsSchema.toJSON(),
     value: stored === undefined ? {} : { preference: stored },

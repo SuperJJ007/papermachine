@@ -316,6 +316,7 @@ export class LocalSandboxProvider extends SandboxProvider {
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     if (this.runnerCommand !== undefined) {
       return {
+        env: {},
         argv: [...this.runnerCommand, ...bwrapProfileArgs(policy), '--', ...argv],
         enforcement: 'full',
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
@@ -325,6 +326,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     const selected = this.selectRunner(policy.mode)
     const runnerArgv = this.runnerArgv(selected.runner, policy)
     return {
+      env: {},
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
       denialSignatures: DENIAL_SIGNATURES[selected.runner],

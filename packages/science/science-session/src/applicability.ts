@@ -27,7 +27,7 @@ function recordedModeBoundPresetId(event: SessionEvent): string | undefined {
  *
  * This policy owns facts that are not present in the event stream itself,
  * notably the session's resolved agent preset. The caller resolves it
- * through `@deepseek-ai/dsh-agent-presets`' `resolveSessionPreset` (creation
+ * through `@deepseek-ai/dsh-agent-presets`' `agentPreset` projection (creation
  * header, overridden by the last `agent-preset/selected` event) rather than
  * the frozen creation header alone, matching every other host-layer reader
  * of a session's preset — a session recomposed to `science` while blank

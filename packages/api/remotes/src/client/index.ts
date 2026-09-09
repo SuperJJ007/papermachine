@@ -1,3 +1,5 @@
+import scienceRemote from '@deepseek-ai/dsh-tool-science/remote'
+export type {} from '@deepseek-ai/dsh-tool-science/remote'
 /** Platform-neutral assembly of generated Host Remote contributions. */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -126,7 +128,7 @@ export type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-
 // this module's owner /remote artifacts; specs take RemoteError from
 // dsh-client-test-runtime instead.
 export type {
-  RemoteErrorCode, RemoteErrorDetailsMap, RemoteFailure, RemoteResult,
+  RemoteError, RemoteErrorCode, RemoteErrorDetailsMap, RemoteFailure, RemoteResult,
 } from '@deepseek-ai/dsh-typert-protocol'
 export type { RemoteHostFacts } from '@deepseek-ai/dsh-api-gateway/client'
 
@@ -151,7 +153,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     for (const contribution of [
       agentPresetsRemote, commandsRemote, settingsControllerRemote, goalsRemote, llmRemote, dynamicRemote,
       pluginInventoryRemote, messageFeedbackRemote, fileUploadsRemote, sessionReferencesRemote,
-      subagentsRemote, sessionRemote, workspaceRemote, workspaceFilesRemote,
+      scienceRemote, subagentsRemote, sessionRemote, workspaceRemote, workspaceFilesRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

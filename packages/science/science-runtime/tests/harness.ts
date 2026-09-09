@@ -71,9 +71,8 @@ export class DirectSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.policies.push(policy)
-    // FIXME(replant P2.1): upstream ConfinedArgv dropped `env`; `this.env` stays settable for
-    // desktop-rung (ELECTRON_RUN_AS_NODE) tests pending P2.1's redesign of that merge seam.
     return {
+      env: this.env,
       argv: [...this.argvPrefix, ...argv],
       enforcement: this.enforcement,
       denialSignatures: this.denialSignatures,
@@ -101,9 +100,7 @@ export class ControlledRun {
     private readonly mode: 'immediate' | 'deferred',
     output: ControlledOutput = {},
   ) {
-    // FIXME(replant P2.1): the fake follows the upstream handle; restore
-    // cooperative interruption in P2.1; keep process identity provider-private.
-    this.handle = {
+    this.handle = { interrupt: () => {},
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -258,9 +255,7 @@ function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, ut
 
 /** Return a probe handle that already reached process and whole-tree settlement. */
 function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Probe = 'valid'): SubprocessHandle {
-  // FIXME(replant P2.1): the fake follows the upstream handle; restore
-  // cooperative interruption in P2.1; keep process identity provider-private.
-  return {
+  return { interrupt: () => {},
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,
@@ -424,7 +419,8 @@ const adapter = command + '.science-test.mjs'
 const child = process.platform === 'win32' && existsSync(adapter)
   ? spawn(process.execPath, [adapter, ...args], { stdio: 'inherit' })
   : spawn(command, args, { stdio: 'inherit' })
-process.on('SIGINT', () => child.kill('SIGINT'))
+// The managed group receives SIGINT once; forwarding would interrupt the target twice.
+process.on('SIGINT', () => {})
 child.on('error', (error) => {
   process.stderr.write('science-runtime fake runner failed to spawn ' + command + ': ' + String(error) + '\\n')
   process.exitCode = 127

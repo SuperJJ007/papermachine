@@ -144,3 +144,5 @@ This Dev Note is working context for maintainers: undecided directions and open 
 The [sandbox decision](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) lists an environment-coherent capability group example (for example bash plus fs against one container) as a deferred phase; it is not decided.
 
 </details>
+
+`ConfinedArgv.env` contains backend-required environment entries. Consumers merge them after their target environment overrides so confinement requirements win. Runner failure classification distinguishes backend launch failures from denials using the declared runner identity and output signatures.

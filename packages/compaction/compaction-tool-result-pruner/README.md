@@ -147,3 +147,5 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 - **Token-based budgets, deferred** — budgets are Unicode code points; switching to token-based budgets would require an estimator contract the token meter does not expose.
 
 </details>
+
+`exemptTools` lists tool names whose results must remain intact. Exemptions resolve each result’s durable call identity to its tool name before pruning.

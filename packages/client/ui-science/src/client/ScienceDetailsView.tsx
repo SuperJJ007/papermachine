@@ -35,8 +35,7 @@ import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversati
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { RpcError, RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteError, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 // Type-only: pulls the ui-conversation SlotMap merge (conversation.details.view,
 // and its owner share's inspectCall).
@@ -94,7 +93,7 @@ export interface ScienceDetailsInjected {
    * actually sends; a build wired against the not-yet-widened runtime type
    * simply reads `health` as possibly `undefined` until that type catches up.
    */
-  loadLibrary: () => Promise<RpcResult<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health?: ScienceLibraryHealth }>>
+  loadLibrary: () => Promise<RemoteResult<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health?: ScienceLibraryHealth }>>
   /** List one project workspace directory. */
   loadWorkspaceFiles: ISession['readWorkspaceFiles']
   /** Read one project workspace file. */
@@ -735,7 +734,7 @@ function ReadOnlyPreview({ chart, loadImage, loadText, t }: {
  * @param error - the RPC failure to inspect.
  * @returns the host's reason string, or `undefined` for any other error code.
  */
-function scienceArtifactErrorReason(error: RpcError): string | undefined {
+function scienceArtifactErrorReason(error: RemoteError): string | undefined {
   return error.code === 'science-artifact-error' ? error.details.reason : undefined
 }
 
@@ -752,7 +751,7 @@ function scienceArtifactErrorReason(error: RpcError): string | undefined {
  * @param t - the Science namespace translator.
  * @returns localized notice text for the preview body.
  */
-function workspaceFileErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+function workspaceFileErrorText(error: RemoteError, t: TranslateNS<'science'>): string {
   switch (scienceArtifactErrorReason(error)) {
     case 'NO_WORKSPACE': return t('library.fileNoWorkspace')
     case 'PATH_OUTSIDE_WORKSPACE': return t('library.filePathOutside')
@@ -781,7 +780,7 @@ function workspaceFileErrorText(error: RpcError, t: TranslateNS<'science'>): str
  * @param t - the Science namespace translator.
  * @returns localized notice text for the library panel.
  */
-function libraryErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+function libraryErrorText(error: RemoteError, t: TranslateNS<'science'>): string {
   switch (scienceArtifactErrorReason(error)) {
     case 'NO_WORKSPACE': return t('library.libraryNoWorkspace')
     // `ProjectArtifactStoreErrorCode` values, `internal`, and any reason this
@@ -805,7 +804,7 @@ function libraryErrorText(error: RpcError, t: TranslateNS<'science'>): string {
  * @param t - the Science namespace translator.
  * @returns localized notice text for the project-file listing.
  */
-function projectFilesErrorText(error: RpcError, t: TranslateNS<'science'>): string {
+function projectFilesErrorText(error: RemoteError, t: TranslateNS<'science'>): string {
   switch (scienceArtifactErrorReason(error)) {
     case 'NO_WORKSPACE': return t('library.filesNoWorkspace')
     case 'PATH_OUTSIDE_WORKSPACE': return t('library.filesPathOutside')

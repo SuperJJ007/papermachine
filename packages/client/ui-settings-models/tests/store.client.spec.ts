@@ -33,7 +33,7 @@ const DIRECTORY = [
 ]
 
 const NAMESPACES = [
-  {
+  { effective: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' },
     ns: 'llm-deepseek',
     schema: {},
     value: { apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' },
@@ -42,7 +42,7 @@ const NAMESPACES = [
     secrets: [],
     revision: 0,
   },
-  {
+  { effective: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
     ns: 'llm-pi-ai',
     schema: {},
     value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
@@ -206,7 +206,7 @@ describe('edge joins', () => {
       describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
         hasDocument: false,
-        namespaces: [{
+        namespaces: [{ effective: { providers: { weird: 'oops' } },
           ns: 'llm-pi-ai',
           schema: {},
           value: { providers: { weird: 'oops' } },
@@ -233,7 +233,7 @@ describe('edge joins', () => {
       describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
         hasDocument: false,
-        namespaces: [{ ns: 'llm-pi-ai', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
+        namespaces: [{ effective: { providers: {} }, ns: 'llm-pi-ai', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
       })),
       providers: () => Promise.resolve(ok({
         providers: [

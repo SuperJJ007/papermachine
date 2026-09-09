@@ -3,40 +3,87 @@
       name: '@deepseek-ai/dsh-science-app'
     - id: ui-brand-papermachine
       name: '@deepseek-ai/dsh-client-ui-brand-papermachine'
-    # FIXME(replant): P2 validates these Host entries before enabling them.
     - id: session-attachment-index
       name: '@deepseek-ai/dsh-session-attachment-index'
-      disabled: true
     - id: science-session
       name: '@deepseek-ai/dsh-science-session'
-      disabled: true
     - id: science-artifact-store
       name: '@deepseek-ai/dsh-science-artifact-store'
-      disabled: true
     - id: science-runtime
       name: '@deepseek-ai/dsh-science-runtime/with-settings'
-      disabled: true
       config:
         profiles: {}
     - id: science-edit-service
       name: '@deepseek-ai/dsh-tool-science/edit-service'
-      disabled: true
+    - id: science-read-service
+      name: '@deepseek-ai/dsh-tool-science/read-service'
     # FIXME(replant): P4 replaces the removed Detail/runtime integrations.
     - id: ui-science
       name: '@deepseek-ai/dsh-client-ui-science'
       disabled: true
       config:
         toggleScope: global
+- insert:
+    - id: science-agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      inject: [sciencePresetRoot]
+      config:
+        default: science
+        roots:
+          - path: !!js sciencePresetRoot
+            trust: system
 - id: agent-presets
-  inject: [sciencePresetRoot]
-  config:
-    default: science
-    roots:
-      - path: !!js sciencePresetRoot
-        trust: system
+  disabled: true
 - id: ui-agent-preset
   disabled: true
 - id: ui-brand-official
   disabled: true
 - id: hmr
+  disabled: true
+
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: compaction-basic
+  disabled: true
+- id: command-compact
+  disabled: true
+- id: tool-result-pruner
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: agent-instructions
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-web
   disabled: true

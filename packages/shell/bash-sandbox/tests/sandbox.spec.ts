@@ -48,7 +48,7 @@ const RUNNER_FORMS = [
 
 /** A passthrough wrap: the caller's argv unchanged, asserted full — commands run unconfined, deterministically. */
 const passthrough = (argv: readonly string[]): ConfinedArgv =>
-  ({ argv: [...argv], enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE })
+  ({ env: {}, argv: [...argv], enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE })
 
 /**
  * Boot a context with a recording fake `ctx.sandbox` (behavior injectable
@@ -106,7 +106,7 @@ describe('the provider hand-off', () => {
 
   it('hands the provider\'s returned argv directly to ctx.subprocess.spawn', async () => {
     const returnedArgv = ['env', 'DSH_WRAP=1', 'bash', '-c', 'printf "%s" "$DSH_WRAP"']
-    const { ctx, bash } = await setup({}, () => ({ argv: returnedArgv, enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
+    const { ctx, bash } = await setup({}, () => ({ env: {}, argv: returnedArgv, enforcement: 'full', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
     const result = await bash.run(bash.resolve({ command: 'printf "%s" "$DSH_WRAP"' }))
     expect(result.stdout.text).toBe('1')
@@ -127,7 +127,7 @@ describe('the provider hand-off', () => {
       'const child = spawnSync(process.argv[1], process.argv.slice(2), { env: process.env, stdio: "inherit" });',
       'process.exit(child.status ?? 125);',
     ].join('')
-    const { bash } = await setup({}, argv => ({
+    const { bash } = await setup({}, argv => ({ env: {},
       argv: [process.execPath, '-e', runnerScript, ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -189,7 +189,7 @@ describe('fail closed', () => {
   it.each(RUNNER_FORMS)(
     'keeps an invalid workdir ordinary with the %s provider-runner form',
     async (_form, runner) => {
-      const { bash } = await setup({}, argv => ({
+      const { bash } = await setup({}, argv => ({ env: {},
         argv: [runner, ...argv],
         enforcement: 'full',
         denialSignatures: UNIX_SIGNATURES,
@@ -222,7 +222,7 @@ describe('fail closed', () => {
 
   it('keeps Node-shaped synchronous ENOEXEC ordinary in run() and start()', async () => {
     const runner = join(spillDir, 'malformed-runner')
-    const { ctx, bash } = await setup({}, argv => ({
+    const { ctx, bash } = await setup({}, argv => ({ env: {},
       argv: [runner, ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -248,7 +248,7 @@ describe('fail closed', () => {
 
   it('classifies a synchronous SubprocessRuntime EACCES with the exact runner path', async () => {
     const runner = join(spillDir, 'unexecutable-runner')
-    const { ctx, bash } = await setup({}, argv => ({
+    const { ctx, bash } = await setup({}, argv => ({ env: {},
       argv: [runner, ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -268,7 +268,7 @@ describe('fail closed', () => {
 
   it('keeps a synchronous cwd-owned ENOENT as the original start() error', async () => {
     const runner = './sandbox-runner'
-    const { ctx, bash } = await setup({}, argv => ({
+    const { ctx, bash } = await setup({}, argv => ({ env: {},
       argv: [runner, ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -509,7 +509,7 @@ describe('classifyRunnerFailure', () => {
 
 describe('result facts', () => {
   it.each([126, 127])('keeps a successfully launched wrapped child exit %i as an ordinary outcome', async (exitCode) => {
-    const { bash } = await setup({}, argv => ({
+    const { bash } = await setup({}, argv => ({ env: {},
       argv: ['env', ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -536,7 +536,7 @@ describe('result facts', () => {
   })
 
   it('carries the provider\'s partial-enforcement fact through unchanged', async () => {
-    const { bash } = await setup({}, argv => ({ argv: [...argv], enforcement: 'partial', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
+    const { bash } = await setup({}, argv => ({ env: {}, argv: [...argv], enforcement: 'partial', denialSignatures: UNIX_SIGNATURES, runnerFailureRules: RUNNER_FAILURE }))
     const result = await bash.run(bash.resolve({ command: 'true' }))
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'partial' })
   })
@@ -544,7 +544,7 @@ describe('result facts', () => {
 
 describe('background sandbox facts', () => {
   it.each(RUNNER_FORMS)('keeps an invalid-workdir rejection ordinary for the %s provider-runner form', async (_form, runner) => {
-    const { bash } = await setup({}, argv => ({
+    const { bash } = await setup({}, argv => ({ env: {},
       argv: [runner, ...argv],
       enforcement: 'full',
       denialSignatures: UNIX_SIGNATURES,
@@ -574,7 +574,7 @@ describe('background sandbox facts', () => {
     const emptyReader: SubprocessOutputReader = {
       readFrom: () => ({ utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false }),
     }
-    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({ interrupt: () => {},
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -638,7 +638,7 @@ describe('background sandbox facts', () => {
     let call = 0
     const { bash } = await setup({}, (argv) => {
       const wrap = wraps[Math.min(call++, wraps.length - 1)] as Pick<ConfinedArgv, 'enforcement' | 'denialSignatures'>
-      return { argv: [...argv], ...wrap, runnerFailureRules: RUNNER_FAILURE }
+      return { env: {}, argv: [...argv], ...wrap, runnerFailureRules: RUNNER_FAILURE }
     })
     const slow = bash.start(bash.resolve({ command: 'sleep 0.4; echo "x: Permission denied" >&2; exit 1' }))
     const quick = bash.start(bash.resolve({ command: 'true' }))

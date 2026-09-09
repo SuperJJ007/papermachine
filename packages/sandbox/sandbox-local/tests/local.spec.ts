@@ -126,7 +126,7 @@ describe('runnerCommand config', () => {
       runnerFailureSignatures: ['fake-runner: profile rejected'],
     }, { probeBwrap, probeLandlock, probeSeatbelt })
     const confined = sandbox.confine(['bash', '-c', 'echo hi'], WW)
-    expect(confined).toEqual({
+    expect(confined).toEqual({ env: {},
       argv: ['fake-runner', '--flag', ...bwrapProfileArgs(WW), '--', 'bash', '-c', 'echo hi'],
       enforcement: 'full',
       // An operator runner's kernel mechanism is unknown: both Linux
@@ -174,7 +174,7 @@ describe('the platform chains', () => {
     const probeLandlock = vi.fn(() => 'full' as const)
     const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock })
     const confined = sandbox.confine(['true'], RO)
-    expect(confined).toEqual({
+    expect(confined).toEqual({ env: {},
       argv: ['bwrap', ...bwrapProfileArgs(RO), '--', 'true'],
       enforcement: 'full',
       denialSignatures: ['read-only file system'],
@@ -189,7 +189,7 @@ describe('the platform chains', () => {
     const launcher = fakeLauncher()
     const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock, landlockLauncher: launcher })
     const confined = sandbox.confine(['bash', '-c', 'echo hi'], WW)
-    expect(confined).toEqual({
+    expect(confined).toEqual({ env: {},
       argv: [launcher, ...landlockProfileArgs(WW), '--', 'bash', '-c', 'echo hi'],
       enforcement: 'full',
       denialSignatures: ['permission denied'],
@@ -209,7 +209,7 @@ describe('the platform chains', () => {
     const probeSeatbelt = vi.fn(() => true)
     const { sandbox } = await setup({}, { platform: 'darwin', probeSeatbelt })
     const confined = sandbox.confine(['bash', '-c', 'echo hi'], RO)
-    expect(confined).toEqual({
+    expect(confined).toEqual({ env: {},
       argv: ['sandbox-exec', ...seatbeltProfileArgs(RO), '--', 'bash', '-c', 'echo hi'],
       enforcement: 'full',
       denialSignatures: ['operation not permitted'],
@@ -374,7 +374,7 @@ describe('the default seatbelt probe (sandbox-exec contract)', () => {
     const exec = fakeSeatbeltExec(0)
     const { sandbox } = await setup({}, { chain: ['bwrap', 'seatbelt'], probeBwrap: () => false, seatbeltExec: exec })
     const confined = sandbox.confine(['true'], RO)
-    expect(confined).toEqual({
+    expect(confined).toEqual({ env: {},
       argv: [exec, ...seatbeltProfileArgs(RO), '--', 'true'],
       enforcement: 'full',
       denialSignatures: ['operation not permitted'],

@@ -142,3 +142,5 @@ These limits define where the projection registry needs care at scale. They are 
 None.
 
 </details>
+
+A projection may declare `checkpointStateSeq(state)` when its persisted state contains an event watermark. Every admitted checkpoint must pass `stateSchema` and match that watermark to the row sequence. Invalid rows are omitted from cached views and discarded during restoration; a suffix-only restore requires a full log re-read. Hydration uses the same admission rule.

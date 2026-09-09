@@ -209,7 +209,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
       )
     })
   })
-  const handle: SubprocessHandle = {
+  const handle: SubprocessHandle = { interrupt: () => {},
     stdin: toChild,
     stdout: fromChild,
     stderr,

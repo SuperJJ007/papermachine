@@ -226,6 +226,9 @@ describe('Windows parent runner contract', () => {
     await expect(spawned.result.owner.waitForExit()).resolves.toBeUndefined()
 
     const cancelled = launch()
+    const sentBeforeInterrupt = [...cancelled.child.sent]
+    cancelled.result.owner.signal('SIGINT')
+    expect(cancelled.child.sent).toEqual(sentBeforeInterrupt)
     const reason = new Error('caller aborted')
     cancelled.result.owner.signal('SIGTERM', reason)
     expect(cancelled.child.sent.at(-1)).toEqual({ type: 'terminate' })

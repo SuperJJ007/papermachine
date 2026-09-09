@@ -33,7 +33,7 @@ async function bench(isLoopback = true) {
   locale.setLocale('zh')
   ctx.provide('locale', locale)
   const section: Record<string, unknown> = { preference: 'system', fontSize: 14 }
-  const namespace = () => ({
+  const namespace = () => ({ effective: { ...section },
     ns: THEME_SETTINGS_NAMESPACE,
     schema: ThemeSettingsSchema.toJSON(),
     value: { ...section },

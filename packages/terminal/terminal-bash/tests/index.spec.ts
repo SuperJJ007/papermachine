@@ -27,7 +27,7 @@ import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
 class EmptySandbox extends SandboxProvider {
   confine(_argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
-    return { argv: [], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { env: {}, argv: [], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
   }
 }
 
@@ -36,7 +36,7 @@ class RecordingSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.calls.push({ argv, policy })
-    return { argv: ['/sandbox', '--', ...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
+    return { env: {}, argv: ['/sandbox', '--', ...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
   }
 }
 

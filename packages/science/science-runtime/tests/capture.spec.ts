@@ -1027,7 +1027,7 @@ describe('Science auto-capture', () => {
       // ErrnoException, so isCaptureFilesystemFailure classifies it at warn
       // — this test only proves the LOGICAL_NAME_CONFLICT retry itself was
       // not taken (the injected error propagates unchanged), not the log level.
-      ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+      ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof ctx.logger.warn
       failingStoreOverride(new ProjectArtifactStoreError('injected: not a logical-name conflict', 'ARTIFACT_NOT_FOUND'))(ctx)
     })
     contexts.push(harness.ctx)
@@ -1037,7 +1037,7 @@ describe('Science auto-capture', () => {
     expect(result.terminal.status).toBe('success')
     expect(result.capture).toBeUndefined()
     expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
-    expect(warnings).toHaveLength(1)
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('injected: not a logical-name conflict')
   })
 
@@ -1047,7 +1047,7 @@ describe('Science auto-capture', () => {
     const warnings: string[] = []
     const errors: string[] = []
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, (ctx) => {
-      ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+      ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof ctx.logger.warn
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       failingStoreOverride(Object.assign(new Error('disk unavailable'), { code: 'EIO' }))(ctx)
     })
@@ -1059,7 +1059,7 @@ describe('Science auto-capture', () => {
     expect(result.capture).toBeUndefined()
     expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
     expect(errors).toHaveLength(0)
-    expect(warnings).toHaveLength(1)
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('disk unavailable')
   })
 
@@ -1068,7 +1068,7 @@ describe('Science auto-capture', () => {
     const prefix = createFakePythonPrefix(root)
     const warnings: string[] = []
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    harness.ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
+    harness.ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-append-refused')
     rejectSessionAppend(session, 'science/artifact-saved', new Error('boom: append refused'))
@@ -1079,7 +1079,7 @@ describe('Science auto-capture', () => {
     expect(result.capture?.appendFailed).toBe(true)
     expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toHaveLength(0)
     expect(session.snapshotEvents().filter(event => event.type === 'science/run-finished')).toHaveLength(1)
-    expect(warnings).toHaveLength(1)
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('auto-capture stopped early')
   })
 })

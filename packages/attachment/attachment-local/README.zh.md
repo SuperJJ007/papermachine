@@ -151,3 +151,5 @@ kind: "package-reference"
 保留与垃圾回收被推迟，因为恢复和 fork 后的会话可能共享不可变对象；服务于远程运行时或共享存储的后端则需要自己的持久性证明。两个方向都尚未决定；本地存储当前在 `DSH_HOME` 下保留所有对象。
 
 </details>
+
+`saveImage({ normalization: "verbatim", ... })` 在完成解码验证和源文件限制检查后保留提交图像的原始字节，不缩放或重新编码，也不返回 `originalDimensions`。此路径用于必须与现有产物字节完全一致的图像证据。

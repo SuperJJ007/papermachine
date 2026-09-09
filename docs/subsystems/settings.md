@@ -100,6 +100,8 @@ interface SettingsScope<T> {
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
 interface SettingsDescriptor {
+  // TODO(settings-namespace-vocabulary): Rename `ns` to `namespace` across the
+  // public API, provider contract, implementations, tests, and consumers.
   /** The registered namespace. */
   ns: SettingsNamespace
   /** Serialized schemastery schema (`schema.toJSON()`). */
@@ -120,6 +122,16 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
+  /**
+   * The resolved value THIS PROCESS's owner actually read at registration —
+   * frozen for the process lifetime, never advanced by a later write. Equal
+   * to `value` for an `applies: 'live'` owner, which re-reads on every write;
+   * a `restart`-applies owner reads once, so a later write changes `value`
+   * (what the document now holds) while `effective` keeps showing what the
+   * RUNNING owner is still acting on — the fact a configuration UI needs to
+   * tell "saved" from "in effect" apart for a restart-scoped namespace.
+   */
+  effective: unknown
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }

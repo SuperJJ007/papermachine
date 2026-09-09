@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
@@ -19,7 +19,7 @@ import type { ScienceVersionSummary } from './library-artifact.ts'
 
 /** Injected batch reader: the caller's `sessions.scienceVersions` RPC, scoped to one session. */
 export type LoadScienceVersions =
-  (versionIds: readonly string[]) => Promise<RpcResult<{ versions: ScienceVersionSummary[] }>>
+  (versionIds: readonly string[]) => Promise<RemoteResult<{ versions: ScienceVersionSummary[] }>>
 
 /**
  * Build one session-scoped {@link LoadScienceVersions}, resolving the live

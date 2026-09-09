@@ -163,6 +163,8 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   readonly collected: SubprocessHandle['collected']
   readonly done: Promise<SubprocessOutcome>
 
+  private completed = false
+
   private readonly commandState = Promise.withResolvers<CommandHandle | undefined>()
   private readonly readyState = Promise.withResolvers<CommandHandle>()
   private readonly stdoutDecoder = new E2BBase64Decoder()
@@ -221,8 +223,20 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     void this.readyState.promise.catch(() => {})
     spec.signal?.addEventListener('abort', this.onAbort, { once: true })
     this.done = this.run()
-    void this.done.catch(() => {})
+    void this.done.then(() => { this.completed = true }, () => { this.completed = true })
     if (spec.signal?.aborted === true) this.terminate()
+  }
+
+  /** @inheritdoc */
+  interrupt(): void {
+    const group = this.remoteProcessGroupId
+    if (group === undefined || this.completed || this.terminationController.signal.aborted) return
+    void this.runtime.getSandbox().then(async (sandbox) => {
+      if (this.completed || this.terminationController.signal.aborted) return
+      await signalRemoteGroups(sandbox, this.controlEnvs, [group], 'INT')
+    }).catch((_interruptDeliveryFailure: unknown) => {
+      // Cooperative delivery is best-effort; termination and quiescence remain independent.
+    })
   }
 
   /** @inheritdoc */
@@ -517,6 +531,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     while (true) {
       const rawStatus = (await sandbox.files.read(this.paths.status)).trim()
       if (rawStatus.length > 0) {
+        this.completed = true
         const exitCode = Number(rawStatus)
         if (!/^(?:0|[1-9][0-9]*)$/.test(rawStatus) || !Number.isSafeInteger(exitCode) || exitCode > 255) {
           throw new Error(`subprocess-e2b: remote wrapper published invalid exit code ${JSON.stringify(rawStatus)}`)

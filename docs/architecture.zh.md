@@ -162,3 +162,5 @@ seam 正是替换一个提供方就能改变整个产品的原因。文件系统
 | 将注册项限定到单个 agent | 使用该 agent 的 `agent.ctx` |
 
 [扩展实操手册](cookbook/extension-cookbook.zh.md)将功能映射到能力，并索引[包](cookbook/adding-a-package.zh.md)、[工具](cookbook/adding-a-tool.zh.md)、[LLM（大语言模型）适配器](cookbook/adding-an-llm-adapter.zh.md)和[设置卡片](cookbook/adding-a-settings-card.zh.md)的分步指南。[Conversation 子系统](subsystems/conversation.zh.md)负责 Chat node 组装。
+
+如果消息面替换移除了步骤保留的运行上下文，重试会在请求准备后恢复它。恢复的消息在构建模型历史前记入日志，不再次调用上下文提供方。

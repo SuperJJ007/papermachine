@@ -86,6 +86,7 @@ describe('preset discovery', () => {
     expect(found.map(preset => preset.id)).toEqual(['minimal', 'standard'])
     expect(found[0]).toEqual({
       id: 'minimal',
+      copyable: true,
       trust: 'system',
       path: join(SYSTEM.path, 'minimal', COMPOSITION_FILE),
     })

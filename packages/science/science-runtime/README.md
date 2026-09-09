@@ -176,3 +176,5 @@ None; the Runtime neither assembles nor sends provider requests.
 - **R composite and base graphics are raster-only** — only one complete ggplot on a PNG device is addressable; viewport composition, multiple plots, and base `plot()` retain region editing.
 - **Repeated saves retain only terminal state** — multiple matplotlib or ggplot2 saves to the same path during one run leave only the final exported snapshot and settings registered for extraction.
 - **Uncopyable custom figures remain ordinary PNGs** — a snapshot failure preserves the successful save but makes the image unavailable for direct editing. Cold recovery still requires reproducible source inputs and plotting dependencies; runtime objects are not persisted.
+
+Science kernels request an empty target environment, merge backend-required entries last, and use cooperative interruption before escalation. Target process identity remains private to the subprocess provider.

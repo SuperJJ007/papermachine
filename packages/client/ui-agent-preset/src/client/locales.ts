@@ -11,7 +11,7 @@ export type AgentPresetSettingsKey =
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
-  | 'brokenBadge' | 'brokenNoCopy' | 'switchRefused'
+  | 'notCopyable' | 'brokenBadge' | 'brokenNoCopy' | 'switchRefused'
   | 'composition' | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
@@ -54,6 +54,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   builtInGroup: 'Built-in',
   customGroup: 'Custom',
   noDescription: 'No description.',
+  notCopyable: 'This preset cannot be duplicated',
   brokenBadge: 'Failed to load',
   brokenNoCopy: 'A preset that failed to load cannot be duplicated',
   switchRefused: 'Could not switch to {name}: {reason}',
@@ -112,6 +113,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   builtInGroup: '内置',
   customGroup: '自定义',
   noDescription: '暂无描述。',
+  notCopyable: '此预设不允许复制',
   brokenBadge: '加载失败',
   brokenNoCopy: '预设加载失败，不能复制',
   switchRefused: '无法切换到「{name}」：{reason}',

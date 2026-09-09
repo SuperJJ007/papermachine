@@ -14,6 +14,10 @@ export interface SettingsScopeSnapshot<T> {
   status: 'loading' | 'ready' | 'unavailable'
   /** Last accepted schema-resolved section; undefined before the first acceptance. */
   value: T | undefined
+  /** Redacted value currently applied by the Host owner. */
+  effective: T | undefined
+  /** Presence of schema-declared secrets, without their values. */
+  secrets: ReadonlyArray<{ path: string[]; set: boolean }>
   /**
    * Composition layer the Host resolved {@link value} over, when the owning
    * plugin declared one. What a field reverts to once cleared.

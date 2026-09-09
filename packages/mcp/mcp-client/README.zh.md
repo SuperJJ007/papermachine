@@ -209,3 +209,5 @@ kind: "package-reference"
 - 固定的 MCP SDK 仍在演化；上游破坏性变更需要更新桥接。
 
 </details>
+
+`tools.include`、`tools.exclude`、`tools.rename` 与 `tools.describe` 在注册前按服务器工具名称筛选或调整发现的工具。未知名称和冲突的公开名称会使同步失败。每次重新连接都应用相同的部署策略。

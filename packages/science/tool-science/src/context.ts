@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-tool-science/context
  */
 
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -81,13 +82,16 @@ export function closedKernelFacts(kernel: ScienceKernel): ClosedKernelFacts | un
 }
 
 /**
- * Unavailable during P1; P2 owns this implementation.
- * @param _session - Input reserved for P2.
- * @throws Always rejects execution while the migration is pending.
+ * Read the upstream agentPreset projection over this Session's complete log.
+ * @param session - the Session whose selected preset determines Science eligibility.
+ * @returns whether the projected preset is Science.
  */
-export function isScienceSession(_session: Session): boolean {
-  // FIXME(replant): P2: agentPreset projection integration.
-  throw new Error('Science migration pending — P2: agentPreset projection integration')
+export function isScienceSession(session: Session): boolean {
+  const preset = session.snapshotEvents().reduce(
+    agentPresetProjectionDefinition.apply,
+    agentPresetProjectionDefinition.init(session.header),
+  )
+  return preset === SCIENCE_PRESET_ID
 }
 
 /** Render one interpreter binding line, omitting source, credentials, and Host paths. */

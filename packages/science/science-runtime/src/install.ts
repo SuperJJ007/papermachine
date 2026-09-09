@@ -11,8 +11,8 @@ import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { interpreterPathEnv, localeEnvironment, confineRequiringEnforcement } from './execution.ts'
+import type { SubprocessOutputRead, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, confineRequiringEnforcement } from './execution.ts'
 import type { OperationControl } from './lifecycle.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type { InstallScienceEnvironmentPackagesStatus, ScienceRunOutput } from './types.ts'
@@ -223,6 +223,11 @@ export function confineInstallArgv(
   return confineRequiringEnforcement(sandbox, installConfinementPolicy(session, canonicalPrefix), argv, minimumEnforcement)
 }
 
+/** Convert a batch (`readFrom(0)` after settlement) subprocess output read into the durable `ScienceRunOutput` shape. */
+function toRunOutput(read: SubprocessOutputRead | undefined): ScienceRunOutput {
+  if (read === undefined) return { text: '', bytes: 0, truncated: false }
+  return { text: read.text, bytes: read.nextOffset, truncated: read.lossy }
+}
 
 /** Terminal classification and bounded output for one settled installer subprocess. */
 export interface InstallOutcome {
@@ -232,21 +237,75 @@ export interface InstallOutcome {
 }
 
 /**
- * Unavailable during P1; P2 owns this implementation.
- * @param _subprocess - Input reserved for P2.
- * @param _confined - Input reserved for P2.
- * @param _env - Input reserved for P2.
- * @param _cwd - Input reserved for P2.
- * @param _control - Input reserved for P2.
- * @throws Always rejects execution while the migration is pending.
+ * Run one confined micromamba install to completion, classifying the
+ * settled subprocess outcome ahead of `control`'s own first cause: a
+ * process that exits `0` with no signal is `'success'` even when `control`
+ * separately latched a cause (a solve that finishes inside the bounded
+ * SIGTERM grace after its deadline fired is a real, on-disk install, not a
+ * failed one). Only a process that did not complete successfully falls back
+ * to `control.cause` for `'timed-out'`/`'cancelled'`, else `'failed'`. Never
+ * throws for a completed or aborted attempt; only an unproven quiescence or
+ * a subprocess-provider failure (never observed as an abort) throws, since
+ * neither can be expressed as a durable install status.
+ * @param subprocess - subprocess seam performing the spawn.
+ * @param confined - confined installer argv.
+ * @param env - exact child environment (see {@link installEnvironment}).
+ * @param cwd - the installer's own scratch directory.
+ * @param control - this operation's fused cancellation/timeout signal and first-cause record.
+ * @returns the install's terminal classification and bounded output tails.
  */
 export async function runMicromambaInstall(
-  _subprocess: SubprocessRuntime,
-  _confined: ConfinedArgv,
-  _env: NodeJS.ProcessEnv,
-  _cwd: string,
-  _control: OperationControl,
+  subprocess: SubprocessRuntime,
+  confined: ConfinedArgv,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  control: OperationControl,
 ): Promise<InstallOutcome> {
-  // FIXME(replant): P2: isolated installer subprocess.
-  throw new Error('Science migration pending — P2: isolated installer subprocess')
+  const handle = subprocess.spawn({
+    argv: confined.argv,
+    cwd,
+    stdio: {
+      stdin: 'ignore',
+      stdout: { maxBytes: INSTALL_OUTPUT_MAX_BYTES },
+      stderr: { maxBytes: INSTALL_OUTPUT_MAX_BYTES },
+    },
+    graceMs: DESCENDANT_GRACE_MS,
+    environmentBase: 'empty',
+    // confined.env carries entries the selected sandbox backend's runner
+    // invocation itself requires (e.g. the win32 ACL rung's
+    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+    env: { ...env, ...confined.env },
+    signal: control.signal,
+  })
+  let outcome: Awaited<typeof handle.done> | undefined
+  let completionError: unknown
+  try {
+    outcome = await handle.done
+  } catch (error) {
+    completionError = error
+  }
+  // Caller cancellation already asks the shared subprocess provider to
+  // terminate; this waits without the caller signal so the scratch
+  // directory is never removed while a managed tree still owns it.
+  const quiescent = await handle.waitForExit()
+  const stdout = toRunOutput(handle.collected.stdout?.readFrom(0))
+  const stderr = toRunOutput(handle.collected.stderr?.readFrom(0))
+  // Success is checked ahead of control.cause: a micromamba that exits 0
+  // inside the bounded SIGTERM grace after the deadline fired already wrote
+  // its target environment, and reporting that as 'timed-out' misleads the
+  // caller into a redundant retry (the retry then observes an unchanged
+  // inventory and appends no revision — see installPackages — but only
+  // after wrongly restarting the kernel epoch on the first, misreported run).
+  if (quiescent && completionError === undefined && outcome !== undefined && outcome.exitCode === 0 && outcome.signal === null) {
+    return { status: 'success', stdout, stderr }
+  }
+  if (control.cause !== undefined) {
+    return { status: control.cause === 'timeout' ? 'timed-out' : 'cancelled', stdout, stderr }
+  }
+  if (!quiescent) throw new ScienceRuntimeError('QUIESCENCE_UNPROVEN', 'package installer did not reach whole-tree quiescence')
+  if (completionError !== undefined) {
+    throw completionError instanceof Error ? completionError : new Error('science-runtime: package installer failed without an Error object')
+  }
+  if (outcome === undefined) throw new Error('science-runtime: package installer settled without a subprocess outcome')
+  return { status: 'failed', stdout, stderr }
 }

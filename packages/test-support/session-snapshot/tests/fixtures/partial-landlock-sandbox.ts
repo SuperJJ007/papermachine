@@ -14,14 +14,14 @@ const MISSING_RUNNER_ENV = 'DSH_SNAPSHOT_MISSING_SANDBOX_RUNNER'
 export default class PartialLandlockSandboxProvider extends SandboxProvider {
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     if (process.env[MISSING_RUNNER_ENV] === '1') {
-      return {
+      return { env: {},
         argv: [join(policy.workspaceRoot, '.dsh-missing-sandbox-runner'), ...argv],
         enforcement: 'full',
         denialSignatures: ['permission denied'],
         runnerFailureRules: [{ fatalSignatures: ['snapshot-runner: '] }],
       }
     }
-    return {
+    return { env: {},
       argv: [
         'bash',
         '-c',

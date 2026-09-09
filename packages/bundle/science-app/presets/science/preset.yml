@@ -1,3 +1,4 @@
 name: Science 模式
-description: PaperMachine Science migration skeleton; execution is pending P2.
+description: Reproducible Python and R analysis with a read-only workspace.
 order: 5
+copyable: false

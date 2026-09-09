@@ -1,27 +1,21 @@
 /**
- * Display metadata is presentation, never capability: every way of getting it
- * wrong degrades to "this preset has no display text" rather than to a
- * preset that cannot be discovered or mounted. It also cannot carry identity
- * — `id` is the directory and `trust` is the root, so neither is readable
- * from the file a user can write.
+ * Display fields remain permissive, but `copyable` is behavioral policy:
+ * present metadata must be readable YAML containing a map, and a declared
+ * copy value must be boolean. Identity still comes only from the directory
+ * and root.
  */
 
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { METADATA_FILE, readPresetMetadata, renderPresetMetadata } from '../src/metadata.ts'
-
-/** Every temp preset directory created by this file, removed after each test. */
-const tempDirs: string[] = []
-afterEach(async () => {
-  for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true })
-})
+import { describe, expect, it } from 'vitest'
+import {
+  METADATA_FILE, PresetMetadataError, readPresetMetadata, renderPresetMetadata,
+} from '../src/metadata.ts'
 
 /** A preset directory holding exactly the given metadata text. */
 async function presetDir(content?: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-preset-meta-'))
-  tempDirs.push(dir)
   await mkdir(dir, { recursive: true })
   if (content !== undefined) await writeFile(join(dir, METADATA_FILE), content)
   return dir
@@ -40,20 +34,24 @@ describe('reading display metadata', () => {
     expect(await readPresetMetadata(await presetDir())).toEqual({})
   })
 
-  it('treats malformed YAML as no metadata', async () => {
+  it('requires metadata for a shipped preset', async () => {
+    await expect(readPresetMetadata(await presetDir(), { required: true }))
+      .rejects.toThrow(/preset\.yml is required for shipped presets/)
+  })
+
+  it('rejects malformed YAML', async () => {
     const dir = await presetDir('name: [unclosed\n')
 
-    // Display text is not worth failing discovery over — the composition
-    // beside it still mounts.
-    expect(await readPresetMetadata(dir)).toEqual({})
+    await expect(readPresetMetadata(dir)).rejects.toThrow(PresetMetadataError)
+    await expect(readPresetMetadata(dir)).rejects.toThrow(/preset\.yml is not valid YAML/)
   })
 
   it.each([
     ['a list', '- name: x\n'],
     ['a scalar', 'just a string\n'],
     ['an empty document', ''],
-  ])('treats %s as no metadata', async (_label, content) => {
-    expect(await readPresetMetadata(await presetDir(content))).toEqual({})
+  ])('rejects %s because metadata must be a map', async (_label, content) => {
+    await expect(readPresetMetadata(await presetDir(content))).rejects.toThrow(/must be a map/)
   })
 
   it('ignores fields that are not text', async () => {
@@ -85,6 +83,23 @@ describe('reading display metadata', () => {
     expect(await readPresetMetadata(await presetDir('order: .inf\n'))).toEqual({})
   })
 
+  it('reads a declared copyable: false', async () => {
+    const dir = await presetDir('name: Science 模式\ncopyable: false\n')
+
+    expect(await readPresetMetadata(dir)).toEqual({ name: 'Science 模式', copyable: false })
+  })
+
+  it('reads a declared copyable: true explicitly, same as absent', async () => {
+    expect(await readPresetMetadata(await presetDir('copyable: true\n'))).toEqual({ copyable: true })
+  })
+
+  it('rejects a copyable value that is not a boolean', async () => {
+    await expect(readPresetMetadata(await presetDir('copyable: "no"\n')))
+      .rejects.toThrow(/copyable.*must be a boolean/)
+    await expect(readPresetMetadata(await presetDir('copyable: 0\n')))
+      .rejects.toThrow(/copyable.*must be a boolean/)
+  })
+
   it('cannot carry identity or trust', async () => {
     const dir = await presetDir('name: mine\nid: standard\ntrust: system\n')
 
@@ -104,6 +119,17 @@ describe('rendering display metadata', () => {
 
   it('stores a declared order', () => {
     expect(renderPresetMetadata({ name: '标准模式', order: 1 })).toBe('name: 标准模式\norder: 1\n')
+  })
+
+  it('stores a declared copyable: false', () => {
+    expect(renderPresetMetadata({ name: 'Science 模式', copyable: false }))
+      .toBe('name: Science 模式\ncopyable: false\n')
+  })
+
+  it('treats copyable: false alone as something to store, not nothing', () => {
+    // false is a meaningful, falsy value — the emptiness check must not
+    // mistake it for an absent field the way it would treat "".
+    expect(renderPresetMetadata({ copyable: false })).toBe('copyable: false\n')
   })
 
   it('omits an absent field rather than writing it blank', () => {

@@ -190,3 +190,5 @@ This Dev Note is working context for maintainers: open design questions and dire
 Reclaiming a superseded standing mount needs a joined-agent count on `StandingMount`, incremented in `mount`/`composeFrom`/`recompose` and decremented when the agent's scope key dies — the `TODO` at `ensureStanding`. The subtree is not inert: `dsh-skill-filesystem` watches its roots, so an unreclaimed generation keeps a live watcher set alive until the process ends.
 
 </details>
+
+Preset metadata accepts `copyable: false` to refuse duplication. The roster exposes resolved eligibility, and Host authoring enforces it. Invalid present metadata or missing shipped metadata makes the preset broken and non-copyable; absent user metadata retains ordinary copy eligibility.

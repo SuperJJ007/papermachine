@@ -257,3 +257,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. This model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls.
+
+The `/read-only` entry registers `read` and the available image-reading capability without registering filesystem write or edit tools. It shares the root entry’s read limits and presentation behavior.

@@ -179,3 +179,5 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 </details>
 
 **运行时不变式：** 不发布伴生入口。readiness、terminal buffer 与 process-tree state 都是按 Session 的私有实现状态，backend 不发布独立 lifecycle stream 或 snapshot。
+
+受约束的启动在终端环境配置之后应用沙箱后端必需的环境项。非受约束启动不添加后端环境项。

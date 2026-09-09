@@ -55,6 +55,15 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../session-query/session-query"
+    },
+    {
+      "path": "../../session/session-attachment-index"
+    },
+    {
+      "path": "../../client/connection/tsconfig.host.json"
     }
   ]
 }

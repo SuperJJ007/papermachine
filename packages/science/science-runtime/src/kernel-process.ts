@@ -19,11 +19,25 @@ import type { SandboxEnforcement, SandboxProvider } from '@deepseek-ai/dsh-sandb
 import type { ScienceInterpreterAvailableBinding, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, quiesce } from './execution.ts'
+import {
+  confineInterpreterArgv,
+  DESCENDANT_GRACE_MS,
+  interpreterArgv,
+  interpreterPathEnv,
+  localeEnvironment,
+  MAX_OUTPUT_BYTES,
+  quiesce,
+} from './execution.ts'
 import type { Quiescence } from './execution.ts'
-import { assertNoFrameDelimiters } from './kernel-transport.ts'
+import {
+  assertNoFrameDelimiters,
+  createKernelResponseTransport,
+  selectKernelTransportKind,
+} from './kernel-transport.ts'
 import type { KernelResponseTransport, KernelTransportKind } from './kernel-transport.ts'
+import { createKernelScratch, planKernelScratch } from './scratch.ts'
 import type { ScienceKernelScratch, ScienceSessionScratch } from './scratch.ts'
+import { ScienceRuntimeError } from './types.ts'
 
 /**
  * Fatal kernel-driver protocol violation: an unparseable frame, an
@@ -311,13 +325,85 @@ export class KernelProcess {
   }
 
   /**
-   * Unavailable during P1; P2 owns this implementation.
-   * @param _options - Input reserved for P2.
-   * @throws Always rejects execution while the migration is pending.
+   * Spawn one confined kernel and await its READY handshake. Opens this
+   * kernel's response transport ({@link selectKernelTransportKind}: a POSIX
+   * FIFO or a win32 loopback TCP connection) before spawning it, so the
+   * transport's address is ready to embed in the driver's own argv.
+   * @param options - services, binding, driver path, kernel index, start
+   *   deadline, and the caller's own operation signal.
+   * @returns a ready-to-use kernel process.
+   * @throws {@link KernelProtocolError} on a READY timeout, a response-channel
+   *   connect timeout, `options.signal` aborting before either, an
+   *   unparseable frame before READY, or a process exit/rejection before READY.
+   * @throws {@link ScienceRuntimeError} (`CONFINEMENT_UNAVAILABLE`) when the
+   *   sandbox is unavailable, reports less than `options.minimumEnforcement`,
+   *   or the R kernel's TMPDIR would contain a space.
    */
-  static async start(_options: KernelProcessOptions): Promise<KernelProcess> {
-    // FIXME(replant): P2: persistent kernel subprocess.
-    throw new Error('Science migration pending — P2: persistent kernel subprocess')
+  static async start(options: KernelProcessOptions): Promise<KernelProcess> {
+    const { services, binding, driverPath, index, kernelStartTimeoutMs, signal, transportKind, minimumEnforcement } = options
+    const kernelScratch = await createKernelScratch(
+      services.sessionScratch,
+      planKernelScratch(services.sessionScratch, binding.language, index),
+    )
+    if (binding.language === 'r' && kernelScratch.tmp.includes(' ')) {
+      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'R kernel TMPDIR cannot contain an ASCII space')
+    }
+    // Opened before the kernel spawns: a FIFO's forwarding reader is already
+    // spawned by this point (its stream is available immediately below), while
+    // a loopback TCP listener only has its address ready — its stream exists
+    // once the kernel actually connects, awaited via `connect()` after spawn.
+    const transport = await createKernelResponseTransport(
+      transportKind ?? selectKernelTransportKind(),
+      services.subprocess,
+      kernelScratch.directory,
+    )
+    let handle: SubprocessHandle | undefined
+    try {
+      const confined = confineInterpreterArgv(
+        services.session,
+        services.sessionScratch,
+        services.sandbox,
+        binding.canonicalPrefix,
+        interpreterArgv(binding.language, binding.executable, driverPath, transport.endpointArg),
+        minimumEnforcement,
+      )
+      // NOT given `signal`: that spec field stays wired to the spawned
+      // handle for the process's whole lifetime (subprocess-local's own
+      // spawn keeps its abort listener attached until exit), but this
+      // kernel outlives the one run whose operation `signal` this is —
+      // wiring it here would let any later run's own cancellation
+      // force-kill an already-READY, unrelated persistent kernel. `signal`
+      // only bounds the connect/READY waits below; an abort during either is
+      // handled entirely through `cleanupOnStartFailure`'s own `quiesce()`.
+      handle = services.subprocess.spawn({
+        argv: confined.argv,
+        cwd: kernelScratch.directory,
+        stdio: {
+          stdin: 'pipe',
+          stdout: { maxBytes: MAX_OUTPUT_BYTES },
+          stderr: { maxBytes: MAX_OUTPUT_BYTES },
+        },
+        graceMs: DESCENDANT_GRACE_MS,
+        environmentBase: 'empty',
+        // confined.env carries entries the selected sandbox backend's runner
+        // invocation itself requires (e.g. the win32 ACL rung's
+        // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
+        env: { ...kernelEnvironment(binding, services.session, services.sessionScratch, kernelScratch), ...confined.env },
+      })
+      const stdin = handle.stdin
+      if (stdin === undefined) throw new Error('science-runtime: kernel process was not spawned with a stdin pipe')
+      const readStream = await transport.connect(handle, kernelStartTimeoutMs, signal)
+      const kernel = new KernelProcess(handle, transport, readStream, stdin)
+      await kernel.awaitReady(kernelStartTimeoutMs, signal)
+      return kernel
+    } catch (error) {
+      if (handle !== undefined) {
+        const result = await quiesce(handle)
+        if (!result.quiescent) await result.eventualQuiescence
+      }
+      await transport.endStartFailure()
+      throw error
+    }
   }
 
   /**
@@ -425,13 +511,9 @@ export class KernelProcess {
     })
   }
 
-  /**
-   * Unavailable during P1; P2 owns this implementation.
-   * @throws Always rejects execution while the migration is pending.
-   */
+  /** Deliver a cooperative SIGINT request to the kernel process; a pure {@link SubprocessHandle.interrupt} passthrough. */
   interrupt(): void {
-    // FIXME(replant): P2: cooperative kernel interrupt.
-    throw new Error('Science migration pending — P2: cooperative kernel interrupt')
+    this.handle.interrupt()
   }
 
   /**
@@ -474,6 +556,34 @@ export class KernelProcess {
       eventualQuiescence: Promise.all([quiescence, transportQuiescence].map(result =>
         result.quiescent ? Promise.resolve(true) : result.eventualQuiescence)).then(results => results.every(Boolean)),
     }
+  }
+
+  private awaitReady(timeoutMs: number, signal: AbortSignal | undefined): Promise<void> {
+    // NOT `using`: this function returns before the deadline's own timer
+    // fires or clears, so disposal must be tied to the returned promise
+    // settling (below), not to this synchronous function body returning.
+    // Fusing `signal` means an abort here can be the
+    // caller's own cancellation, not only the READY deadline; `onTimeout`
+    // fires either way since both cases mean READY is not coming.
+    const bound = deadline(signal, timeoutMs, 'KERNEL_START_TIMEOUT')
+    const onTimeout = (): void => {
+      this.failProtocol(new KernelProtocolError(`science-runtime: kernel did not send READY within ${String(timeoutMs)}ms`))
+    }
+    bound.signal.addEventListener('abort', onTimeout, { once: true })
+    if (bound.signal.aborted) onTimeout()
+    // A process death before any line was parsed never reaches failProtocol
+    // through onFrameLine, so also fail the handshake when exit settles first.
+    void this.exited.then((fact) => {
+      if (this.phase === 'starting') {
+        this.failProtocol(new KernelProtocolError(
+          `science-runtime: kernel process exited before sending READY (exitCode=${String(fact.exitCode)}, signal=${String(fact.signal)})`,
+        ))
+      }
+    })
+    return this.readyWaiter.promise.finally(() => {
+      bound.signal.removeEventListener('abort', onTimeout)
+      bound[Symbol.dispose]()
+    })
   }
 
   private onFifoData(chunk: string): void {

@@ -179,3 +179,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Readiness, terminal buffers, and process-tree state are private per-session implementation state, and the backend publishes no independent lifecycle stream or snapshot.
+
+Confined launches apply the sandbox backend’s required environment entries after terminal environment configuration. Unconfined launches add no backend entries.

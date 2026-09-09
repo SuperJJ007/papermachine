@@ -137,3 +137,5 @@ Resumed and forked sessions may share immutable objects, so any retention policy
 Audio and video would need dedicated lifecycle and provider contracts beyond the verbatim file path, and the role-neutral `ImageBlock` leaves assistant-side image output as forward compatibility — current production adapters declare text-only output, so only user content carries images. Both directions are undecided.
 
 </details>
+
+`saveImage({ normalization: "verbatim", ... })` preserves the submitted image bytes after decode verification and source limits. It performs no resizing or re-encoding, and returns no `originalDimensions`. This route supports image evidence that must match an existing stored artifact exactly.

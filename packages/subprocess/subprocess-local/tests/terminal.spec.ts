@@ -62,7 +62,7 @@ class FakeInspector implements ProcessInspector {
   sessionMembers: ProcessIdentity[] = []
   readonly alive = new Set<number>()
   readonly groups: Array<[number, SubprocessTerminalSignal]> = []
-  readonly processes: Array<[number, 'SIGTERM' | 'SIGKILL']> = []
+  readonly processes: Array<[number, 'SIGINT' | 'SIGTERM' | 'SIGKILL']> = []
   readonly stdinChecks: Array<[number, number]> = []
   throwGroup = false
   throwProcess = false
@@ -96,7 +96,7 @@ class FakeInspector implements ProcessInspector {
     if (this.throwGroup) throw new Error('group failed')
     this.groups.push([pgid, signal])
   }
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL') {
+  signalProcess(identity: ProcessIdentity, signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL') {
     // Mirrors the real inspectors' alive-gated signalling.
     if (this.throwProcess) throw new Error('process raced')
     if (!this.isAlive(identity)) return
@@ -119,7 +119,7 @@ describe('LocalTerminalHandle', () => {
     const pty = new FakePty()
     const inspector = new FakeInspector()
     const stopped = Promise.withResolvers<undefined>()
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const owner: BoundProcessOwner = {
       signal(signal) {
         signals.push(signal)
@@ -144,7 +144,7 @@ describe('LocalTerminalHandle', () => {
     vi.useFakeTimers()
     const pty = new FakePty()
     const stopped = Promise.withResolvers<undefined>()
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const owner: BoundProcessOwner = {
       signal(signal) {
         signals.push(signal)
@@ -171,7 +171,7 @@ describe('LocalTerminalHandle', () => {
     const pty = new FakePty()
     const inspector = new FakeInspector()
     const stopped = Promise.withResolvers<undefined>()
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const owner: BoundProcessOwner = {
       signal(signal) {
         signals.push(signal)
@@ -195,7 +195,7 @@ describe('LocalTerminalHandle', () => {
   it('force-kills and retries a managed range when observation first rejects', async () => {
     const pty = new FakePty()
     const failure = new Error('scope became unreadable')
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const waitForExit = vi.fn()
       .mockRejectedValueOnce(failure)
       .mockResolvedValue(undefined)
@@ -215,7 +215,7 @@ describe('LocalTerminalHandle', () => {
     const pty = new FakePty()
     const firstFailure = new Error('scope became unreadable')
     const finalFailure = new Error('scope stayed unreadable')
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const owner: BoundProcessOwner = {
       signal: (signal) => { signals.push(signal) },
       waitForExit: vi.fn()
@@ -315,7 +315,7 @@ describe('LocalTerminalHandle', () => {
   it('rejects when a managed range stops but node-pty never publishes exit', async () => {
     vi.useFakeTimers()
     const pty = new FakePty()
-    const signals: Array<'SIGTERM' | 'SIGKILL'> = []
+    const signals: Array<'SIGINT' | 'SIGTERM' | 'SIGKILL'> = []
     const owner: BoundProcessOwner = {
       signal: (signal) => { signals.push(signal) },
       waitForExit: async () => {},

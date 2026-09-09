@@ -24,7 +24,7 @@ function rejected(message: string) {
 }
 
 function namespace(value: unknown = {}, revision = 0) {
-  return {
+  return { effective: value,
     ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
     schema: {},
     value,

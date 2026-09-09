@@ -96,7 +96,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     const confined = this.confine(spec.command, { ...policy, mode })
     let result: ShellRunResult
     try {
-      result = await this.runArgv(spec, confined.argv)
+      result = await this.runArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
@@ -123,7 +123,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     const confined = this.confine(spec.command, { ...policy, mode })
     let proc: ShellProcess
     try {
-      proc = this.startArgv(spec, confined.argv)
+      proc = this.startArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
       // `done` rejection; this covers alternatives that throw the same error synchronously.

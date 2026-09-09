@@ -213,7 +213,7 @@ describe('DeepSeek plugin package inventory', () => {
 
     const standingKey = {}
     const standing = createScope(ctx, standingKey)
-    await mountPreset(standing.ctx, { id: 'fixture', trust: 'user', path: composition })
+    await mountPreset(standing.ctx, { id: 'fixture', trust: 'user', copyable: true, path: composition })
     const agentKey = {}
     const agentScope = createScope(ctx, agentKey, { parent: standingKey })
     const id = SessionId('preset-agent')

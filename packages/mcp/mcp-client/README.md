@@ -209,3 +209,5 @@ This Dev Note is working context for maintainers: open design questions and dire
 - The pinned MCP SDK is still evolving; a breaking upstream change requires updating the bridge.
 
 </details>
+
+`tools.include`, `tools.exclude`, `tools.rename`, and `tools.describe` curate discovered tools by their server names before registration. Unknown names and conflicting public names fail synchronization. Each reconnect reapplies the same deployment policy.

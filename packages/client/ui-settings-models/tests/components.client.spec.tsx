@@ -92,23 +92,29 @@ const DEFAULT_DEEPSEEK_MODELS = [
 
 function wireNamespaces(): SettingsNamespaceView[] {
   return [
-    {
-      ns: 'llm-deepseek',
-      schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
-      value: {
-        apiKeyEnv: 'DEEPSEEK_API_KEY',
-        baseURL: 'https://base',
-        defaultContextWindow: 1_000_000,
-        maxTokens: 256_000,
-        models: DEFAULT_DEEPSEEK_MODELS,
-      },
-      base: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
-      user: { baseURL: 'https://base' },
-      applies: 'live',
-      secrets: [],
-      revision: 0,
+    { effective: {
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      baseURL: 'https://base',
+      defaultContextWindow: 1_000_000,
+      maxTokens: 256_000,
+      models: DEFAULT_DEEPSEEK_MODELS,
     },
-    {
+    ns: 'llm-deepseek',
+    schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
+    value: {
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      baseURL: 'https://base',
+      defaultContextWindow: 1_000_000,
+      maxTokens: 256_000,
+      models: DEFAULT_DEEPSEEK_MODELS,
+    },
+    base: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
+    user: { baseURL: 'https://base' },
+    applies: 'live',
+    secrets: [],
+    revision: 0,
+    },
+    { effective: {},
       ns: 'llm-plain',
       schema: JSON.parse(JSON.stringify(Schema.object({
         profiles: Schema.dict(Schema.object({ note: Schema.string() })),
@@ -118,7 +124,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 0,
     },
-    {
+    { effective: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
       ns: 'llm-pi-ai',
       schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
       value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
@@ -127,7 +133,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 0,
     },
-    {
+    { effective: { enabled: false },
       ns: 'subagent-model-selection',
       schema: JSON.parse(JSON.stringify(Schema.object({ enabled: Schema.boolean().default(false) }).toJSON())) as JsonValue,
       value: { enabled: false },
@@ -747,7 +753,7 @@ describe('ModelsSection', () => {
     // and the catalog only looked restored after reopening the card.
     const { face } = scriptedFace()
     const stored = { models: [{ id: 'user-only-model', name: 'User Only' }] }
-    const overridden: SettingsNamespaceView = {
+    const overridden: SettingsNamespaceView = { effective: { ...stored, defaultContextWindow: 1_000_000 },
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: { ...stored, defaultContextWindow: 1_000_000 },
@@ -979,7 +985,7 @@ describe('ModelsSection', () => {
 
   it('pins the deepseek placeholder and clears typed input back to inherited', async () => {
     const { face } = scriptedFace()
-    const bare: SettingsNamespaceView = {
+    const bare: SettingsNamespaceView = { effective: {},
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: {},

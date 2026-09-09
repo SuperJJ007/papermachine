@@ -82,7 +82,7 @@ export async function signalRemoteGroups(
   sandbox: Sandbox,
   envs: Record<string, string>,
   groups: readonly number[],
-  signal: 'TERM' | 'KILL',
+  signal: 'INT' | 'TERM' | 'KILL',
 ): Promise<void> {
   // TODO(e2b-pgid-identity): Prefer an atomic identity-bound group signal if E2B adds one;
   // a userspace identity precheck cannot close the numeric-PGID reuse race.

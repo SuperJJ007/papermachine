@@ -375,8 +375,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     ])
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
-      // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; restore this
-      // assertion once P2.1 re-derives the empty-base probe semantic on the new env-merge seam.
+      expect(spec.environmentBase).toBe('empty')
       expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
       expect(spec.cwd).toMatch(/[\\/]probes[\\/]/)
     }
@@ -399,6 +398,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     // see the equivalent R assertion below) never sees a byte it cannot
     // represent, regardless of the platform this test itself runs on.
     for (const spec of subprocess.specs) {
+      expect(spec.environmentBase).toBe('empty')
       for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
     }
     expect(sandbox.policies).toHaveLength(3)
@@ -425,6 +425,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
+      expect(spec.environmentBase).toBe('empty')
       expect(spec.env?.ELECTRON_RUN_AS_NODE).toBe('1')
       expect(spec.env?.PATH).toBe('/backend-required-path')
     }

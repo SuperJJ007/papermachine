@@ -63,6 +63,7 @@ function namespaceView(descriptor: SettingsDescriptor): SettingsNamespaceView {
     ns: String(descriptor.ns),
     schema: descriptor.schema as JsonValue,
     value: descriptor.value as JsonValue,
+    effective: descriptor.effective as JsonValue,
     ...descriptor.base === undefined ? {} : { base: descriptor.base as JsonValue },
     ...descriptor.user === undefined ? {} : { user: descriptor.user as JsonValue },
     applies: descriptor.applies,

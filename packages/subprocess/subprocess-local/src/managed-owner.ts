@@ -6,7 +6,7 @@ import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 /** Platform owner used by termination and whole-range settlement. */
 export interface BoundProcessOwner {
   /** Signal the managed range; `cancellationReason` is used only before Windows target commit. */
-  signal(signal: 'SIGTERM' | 'SIGKILL', cancellationReason?: unknown): void
+  signal(signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL', cancellationReason?: unknown): void
   /** Wait for the same managed range to become empty; reject when it cannot be observed. */
   waitForExit(): Promise<void>
   /** Synchronously force final termination during JavaScript-observable host exit. */

@@ -163,6 +163,13 @@ interface SubprocessHandle {
    */
   terminate(): void
   /**
+   * Request cooperative SIGINT without starting termination or closing streams.
+   * POSIX providers signal their managed process group or scope; Windows is a
+   * no-op because its ordinary process API cannot deliver POSIX SIGINT.
+   * A request before target readiness or after direct completion is a no-op.
+   */
+  interrupt(): void
+  /**
    * Wait until the same managed range is empty — not just until the spawned
    * command reports its outcome, so surviving work remains observable.
    * @param signal - optional bound for the wait.

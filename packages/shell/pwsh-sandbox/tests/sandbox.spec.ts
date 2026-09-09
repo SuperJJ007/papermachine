@@ -38,7 +38,7 @@ interface ConfineCall {
 
 /** A passthrough wrap: the caller's argv unchanged, asserted full — commands run unconfined, deterministically. */
 const passthrough = (argv: readonly string[]): ConfinedArgv =>
-  ({ argv: [...argv], enforcement: 'full', denialSignatures: ['access is denied', 'access to the path'], runnerFailureRules: [] })
+  ({ env: {}, argv: [...argv], enforcement: 'full', denialSignatures: ['access is denied', 'access to the path'], runnerFailureRules: [] })
 
 /** A subprocess service whose spawn() throws SYNCHRONOUSLY — the paths the async service never produces. */
 function throwingSubprocessRuntime(error: unknown): new (ctx: Context) => Service {
@@ -202,7 +202,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   it('an aborted caller signal outranks runner-spawn attribution', async () => {
     const controller = new AbortController()
     controller.abort('caller-cancel')
-    const { executor } = await setup(() => ({
+    const { executor } = await setup(() => ({ env: {},
       argv: ['definitely-not-a-real-runner', '--', 'pwsh'],
       enforcement: 'full',
       denialSignatures: [],
@@ -226,7 +226,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   }, 30_000)
 
   it('a runner launch refusal fails closed with SANDBOX_UNAVAILABLE, never unconfined', async () => {
-    const { executor } = await setup(() => ({
+    const { executor } = await setup(() => ({ env: {},
       argv: ['definitely-not-a-real-runner', '--', 'pwsh'],
       enforcement: 'full',
       denialSignatures: [],
@@ -238,7 +238,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
 
   it('a SYNCHRONOUS attributable spawn rejection in run() fails closed, an unattributable one rethrows', async () => {
     const attributable = Object.assign(new Error('sync-enoent'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' })
-    const { executor: closed } = await setup(() => ({
+    const { executor: closed } = await setup(() => ({ env: {},
       argv: ['node', '--', 'pwsh'],
       enforcement: 'full',
       denialSignatures: [],
@@ -255,7 +255,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
 
   it('a SYNCHRONOUS spawn rejection in start() follows the same attribution split', async () => {
     const attributable = Object.assign(new Error('sync-enoent-start'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' })
-    const { executor: closed } = await setup(() => ({
+    const { executor: closed } = await setup(() => ({ env: {},
       argv: ['node', '--', 'pwsh'],
       enforcement: 'full',
       denialSignatures: [],
@@ -271,7 +271,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   }, 30_000)
 
   it('a runner that REFUSES at runtime (fatal signature, nonzero exit) fails closed too', async () => {
-    const { executor } = await setup(() => ({
+    const { executor } = await setup(() => ({ env: {},
       argv: [process.execPath, '-e', 'console.error(\'fake-runner: profile refused\'); process.exit(127)', '--'],
       enforcement: 'full',
       denialSignatures: [],
@@ -301,7 +301,7 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   }, 30_000)
 
   it('background provider rejections with runner provenance settle as runnerFailed facts', async () => {
-    const { executor } = await setup(() => ({
+    const { executor } = await setup(() => ({ env: {},
       argv: ['definitely-not-a-real-runner', '--', 'pwsh'],
       enforcement: 'full',
       denialSignatures: [],

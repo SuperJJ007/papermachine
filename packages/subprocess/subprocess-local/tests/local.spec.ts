@@ -697,7 +697,7 @@ describe('LocalSubprocessRuntime', () => {
     const prepareManagedProcessBinding = vi.fn(() => ({ spillDir: '/tmp/dsh-test-spill' }))
     const handles = [true, false, false].map((failFirstWait) => {
       let waits = 0
-      return {
+      return { interrupt: () => {},
         collected: {},
         done: Promise.resolve({ exitCode: 0, signal: null }),
         terminate: vi.fn(),

@@ -411,7 +411,7 @@ describe('AgentPresets.compositionInventory', () => {
     // Discovery judged the preset healthy, then the file vanished before the
     // row read: the inventory keeps the preset and carries the raced reason.
     vi.spyOn(ctx.agentPresets, 'list').mockResolvedValue([
-      { id: 'ghost', trust: 'user', path: join(FIXTURES, 'ghost', COMPOSITION_FILE) },
+      { id: 'ghost', trust: 'user', copyable: true, path: join(FIXTURES, 'ghost', COMPOSITION_FILE) },
     ])
 
     const [ghost] = await ctx.agentPresets.compositionInventory()

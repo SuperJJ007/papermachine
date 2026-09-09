@@ -137,3 +137,5 @@ kind: "package-reference"
 音频与视频需要原样文件路径之外的专门生命周期与提供方契约；角色无关的 `ImageBlock` 也把助手侧图片输出留作前瞻兼容——当前生产适配器声明只输出文本，因此只有用户内容携带图片。两个方向都尚未决定。
 
 </details>
+
+`saveImage({ normalization: "verbatim", ... })` 在完成解码验证和源文件限制检查后保留提交图像的原始字节，不缩放或重新编码，也不返回 `originalDimensions`。此路径用于必须与现有产物字节完全一致的图像证据。

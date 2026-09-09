@@ -18,6 +18,8 @@ export {
   validateEscalationArgs,
 } from './escalation.ts'
 export type { EscalationApproval, EscalationApprover, EscalationOutcome, EscalationRequest } from './escalation.ts'
+export { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from './classification.ts'
+export type { RunnerFailureMatch } from './classification.ts'
 export { canonicalPath, writableRoots } from './roots.ts'
 
 /**
@@ -93,6 +95,8 @@ export interface RunnerFailureRule {
  * achieves for it.
  */
 export interface ConfinedArgv {
+  /** Runner-required environment overrides, merged after the caller's target environment. */
+  readonly env: Readonly<Record<string, string>>
   /** The wrapped argv (runner, profile, separator, then the caller's argv). */
   argv: string[]
   /** How completely the selected backend enforces the policy's file effects. */

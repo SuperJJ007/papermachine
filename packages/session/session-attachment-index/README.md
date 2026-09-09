@@ -45,3 +45,5 @@ None; it never assembles or sends provider requests.
 
 - **The exhaustiveness test, not a build-time generator, enforces freshness.** Unlike the JSDoc-tag-driven generators this repository uses for some merge-extensible vocabularies, the two policy lists here are a single hand-maintained table verified by a unit test against the generated known-type set; a future domain package that needs its own extractor-required event type edits nothing in this package beyond calling `register()`.
 - The Science profile keeps this plugin disabled during P1. P2 owns File carrier classification, UTF-8/media validation, and integration with attachment reads and Session export. This registry alone does not authorize an HTTP endpoint.
+
+The built-in scanner includes image and file references from V3 completed assistant attempts and message carriers. `decodeReferencedText` admits CSV, JSON, Markdown, and plain-text filenames and rejects malformed UTF-8; a generic file reference alone does not imply text content.

@@ -118,9 +118,9 @@ describe('the roster a client reads', () => {
 
     expect(roster.authorable).toBe(true)
     expect(roster.presets).toEqual([
-      { id: 'minimal', trust: 'system', isDefault: true },
-      { id: 'standard', trust: 'system', isDefault: false },
-      { id: 'documented', trust: 'user', isDefault: false, name: '我的模式', description: '只做检索。' },
+      { id: 'minimal', trust: 'system', copyable: true, isDefault: true },
+      { id: 'standard', trust: 'system', copyable: true, isDefault: false },
+      { id: 'documented', trust: 'user', copyable: true, isDefault: false, name: '我的模式', description: '只做检索。' },
     ])
     // No row carries the composition's location: a preset is addressed by id
     // everywhere off the Host.

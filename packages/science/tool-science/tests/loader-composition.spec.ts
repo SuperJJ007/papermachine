@@ -21,6 +21,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -44,6 +45,7 @@ import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-llm', LlmRuntime],
   ['@deepseek-ai/dsh-session', SessionStore],
+  ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
   ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
   ['@deepseek-ai/dsh-invariants', InvariantRegistry],
   ['@deepseek-ai/dsh-science-session', ScienceSession],
@@ -94,6 +96,7 @@ async function boot(): Promise<Context> {
   await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-llm'",
     "- name: '@deepseek-ai/dsh-session'",
+    "- name: '@deepseek-ai/dsh-session-projection'",
     "- name: '@deepseek-ai/dsh-session-persistence-jsonl'",
     '  config:',
     `    root: ${JSON.stringify(persistenceRoot)}`,

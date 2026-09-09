@@ -264,6 +264,7 @@ export class AgentPresets extends TypertRemoteService {
       presets: (await this.list()).map(preset => ({
         id: preset.id,
         trust: preset.trust,
+        copyable: preset.copyable,
         isDefault: preset.id === defaultId,
         ...preset.name === undefined ? {} : { name: preset.name },
         ...preset.description === undefined ? {} : { description: preset.description },
@@ -534,8 +535,9 @@ export class AgentPresets extends TypertRemoteService {
    * primary source, so any trust is accepted.
    * @param id - the new preset's id, which becomes its directory name.
    * @param name - display name for the copy; absent falls back to the id.
-   * @throws when the source is unknown, the id is unusable or already taken,
-   * or the deployment configures no writable root.
+   * @throws when the source is unknown, broken, or explicitly non-copyable;
+   * the id is unusable or already taken; or the deployment configures no
+   * writable root.
    */
   async copy(from: string, id: string, name?: string): Promise<void> {
     const source = await this.resolve(from)

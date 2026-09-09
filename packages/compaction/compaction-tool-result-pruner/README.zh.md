@@ -147,3 +147,5 @@ kind: "package-reference"
 - **基于 token 的预算，暂缓**——预算以 Unicode 码点计；改为基于 token 的预算需要 token meter 未暴露的估算器约定。
 
 </details>
+
+`exemptTools` 列出结果必须保持完整的工具名称。裁剪前通过结果的持久化调用标识解析工具名称并应用豁免。

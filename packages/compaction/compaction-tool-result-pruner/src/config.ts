@@ -11,12 +11,14 @@ export const DEFAULTS: ResolvedConfig = deepFreeze({
   thresholdChars: 8192,
   headChars: 4096,
   tailChars: 1024,
+  exemptTools: [],
 })
 
 const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'thresholdChars',
   'headChars',
   'tailChars',
+  'exemptTools',
 ])
 
 /**
@@ -38,7 +40,7 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     if (!CONFIG_KEYS.has(key)) {
       throw new Error(
         `ToolResultPruneConfig: unknown key "${key}" `
-        + '(allowed: thresholdChars, headChars, tailChars)',
+        + '(allowed: thresholdChars, headChars, tailChars, exemptTools)',
       )
     }
   }
@@ -47,10 +49,12 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     thresholdChars: config.thresholdChars ?? DEFAULTS.thresholdChars,
     headChars: config.headChars ?? DEFAULTS.headChars,
     tailChars: config.tailChars ?? DEFAULTS.tailChars,
+    exemptTools: config.exemptTools ?? DEFAULTS.exemptTools,
   }
   assertPositiveInteger('thresholdChars', resolved.thresholdChars)
   assertNonNegativeInteger('headChars', resolved.headChars)
   assertNonNegativeInteger('tailChars', resolved.tailChars)
+  assertStringArray('exemptTools', resolved.exemptTools)
 
   const emittedChars = resolved.headChars
     + codePointLength(PRUNE_MARKER)
@@ -73,5 +77,11 @@ function assertPositiveInteger(name: string, value: number): void {
 function assertNonNegativeInteger(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`ToolResultPruneConfig: ${name} (${value}) must be a non-negative integer`)
+  }
+}
+
+function assertStringArray(name: string, value: readonly string[]): void {
+  if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
+    throw new Error(`ToolResultPruneConfig: ${name} must be an array of strings`)
   }
 }

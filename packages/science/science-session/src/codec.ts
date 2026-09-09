@@ -657,6 +657,10 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
       const data = kernelStateEventSchema.parse(event.data) as ScienceKernelStateEvent
       return { type: event.type, seq: event.seq, time: event.time, data }
     }
+    case 'science/artifact-note-added':
+    case 'science/artifact-note-removed':
+      // User notes are folded by the separate artifact-note projection.
+      return undefined
     default:
       if (event.type.startsWith('science/') && event.ignorable !== true) {
         throw new Error(`unsupported required Science event type ${JSON.stringify(event.type)}`)

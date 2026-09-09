@@ -40,7 +40,7 @@ function ctxWith(settings: object) {
 }
 
 function view(value: JsonValue, revision = 0): SettingsNamespaceView {
-  return {
+  return { effective: value,
     ns: 'ui-test',
     // `toJSON()` already produced the wire envelope; its declared type is the
     // schema builder's, so one cast names what the Host actually sends.
@@ -88,11 +88,11 @@ describe('SettingsScopeController', () => {
   it('starts loading and derives a schema-valid section with revision and writability', async () => {
     const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 3))
     const { mirror, scope } = derivedScope({ describe: describeCall })
-    expect(scope.getSnapshot()).toEqual({
+    expect(scope.getSnapshot()).toEqual({ effective: undefined, secrets: [],
       status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host',
     })
     await mirror.load()
-    expect(scope.getSnapshot()).toEqual({
+    expect(scope.getSnapshot()).toEqual({ effective: undefined, secrets: [],
       status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host',
     })
   })
@@ -442,7 +442,7 @@ describe('SettingsScopeController', () => {
     const mirror = new SettingsDescribeMirror(ctx, 'memory')
     const scope = new SettingsScopeController<UiTestSettings>(
       ctx, { namespace: 'ui-test' }, mirror, 'memory', settingsSchema)
-    expect(scope.getSnapshot()).toEqual({
+    expect(scope.getSnapshot()).toEqual({ effective: undefined, secrets: [],
       status: 'unavailable', value: undefined, revision: undefined, writable: false, mode: 'memory',
     })
     await mirror.load()

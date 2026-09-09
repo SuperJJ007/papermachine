@@ -1403,3 +1403,23 @@ describe('retained output byte validity', () => {
     collector.seal()
   })
 })
+
+it.skipIf(process.platform === 'win32')('cooperative interruption leaves the process available for another request', async () => {
+  const handle = spawnSubprocess(spec('unused', {
+    argv: [process.execPath, '-e', 'process.on(\'SIGINT\', () => console.log(\'interrupted\')); process.stdin.on(\'data\', () => console.log(\'continued\')); console.log(\'ready\')'],
+    stdio: { stdin: 'pipe', stdout: { maxBytes: 64000 }, stderr: { maxBytes: 64000 } },
+    graceMs: 100,
+  }))
+  try {
+    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('ready'))
+    handle.interrupt()
+    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('interrupted'))
+    handle.stdin?.write('next\n')
+    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('continued'))
+  } finally {
+    handle.terminate()
+    await handle.done
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  }
+  handle.interrupt()
+})

@@ -144,3 +144,27 @@ describe('agent/request-error', () => {
     })
   })
 })
+
+
+it('restores retained runtime context after request recovery compacts its surface node', async () => {
+  const adapter = new MockAdapter([fail('busy', 'RATE_LIMIT'), textResponse('ok')])
+  const ctx = await harness(adapter)
+  let assemblies = 0
+  ctx.systemPrompt.context({ name: 'policy', order: 0, text: () => { assemblies++; return 'Mode: read-only.' } })
+  const agent = await ctx.agentLoop.create(SessionId('retry-compacted-context'), { provider: 'mock', model: 'mock' })
+  ctx.on('agent/request-error', async () => {
+    const event = agent.session.snapshotEvents().find(event => event.type === 'user/message' && event.data.source.kind === 'plugin' && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')
+    if (event === undefined) throw new Error('missing runtime context')
+    agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'summary' }], source: { kind: 'plugin', plugin: 'test-compaction' } }), {
+      surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq],
+    })
+    return { kind: 'retry' }
+  })
+  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+  await agent.whenIdle()
+  expect(assemblies).toBe(1)
+  expect(adapter.requests).toHaveLength(2)
+  expect(adapter.requests[1]!.messages.some(message => message.source.kind === 'plugin' && message.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(true)
+  expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind === 'plugin' && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')).toHaveLength(2)
+  await ctx.fiber.dispose()
+})

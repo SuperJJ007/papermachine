@@ -37,6 +37,8 @@ export interface SettingsNamespaceView {
   schema: JsonValue
   /** Redacted resolved value (schema defaults → composition base → user layer). */
   value: JsonValue
+  /** Redacted value currently applied by the owner. */
+  effective: JsonValue
   /** Redacted composition base layer, when the registrant declared one. */
   base?: JsonValue
   /** Redacted raw user section, when one exists; a field's presence here marks it user-overridden. */

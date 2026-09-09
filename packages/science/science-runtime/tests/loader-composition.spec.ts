@@ -264,7 +264,7 @@ describe('Science Runtime real Loader composition', () => {
     process.env.SCIENCE_RUNTIME_LEAK = 'must-not-reach-real-local-providers'
     try {
       const handle = context.subprocess.spawn({
-        environmentBase: 'scrubbed-parent' as const,
+        environmentBase: 'empty' as const,
         argv: confined.argv,
         cwd: root,
         stdio: {
@@ -273,8 +273,6 @@ describe('Science Runtime real Loader composition', () => {
           stderr: { maxBytes: 1_024 },
         },
         graceMs: 3_000,
-        // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; the
-        // provider's scrubbed-parent default plus this explicit env still proves no ambient leak.
         env: {
           HOME: root,
           TMPDIR: root,

@@ -46,6 +46,7 @@ function appendToolStep(
   call: string,
   content: ContentBlock[],
   extra: Record<string, unknown> = {},
+  toolName = 'bash',
 ): number {
   const callId = ToolCallId(call)
   session.append('turn/start', {
@@ -58,14 +59,14 @@ function appendToolStep(
     step: 1,
     message: createMessage({
       role: 'assistant',
-      content: [{ type: 'tool-call', id: callId, name: 'bash', arguments: '{}' }],
+      content: [{ type: 'tool-call', id: callId, name: toolName, arguments: '{}' }],
       source: {
         kind: 'model',
         ...{ provider: MODEL, model: MODEL },
       },
     }),
   }, { surfaceOp: 'append' })
-  session.append('tool/call', { turn, step: 1, callId, name: 'bash', arguments: '{}' })
+  session.append('tool/call', { turn, step: 1, callId, name: toolName, arguments: '{}' })
   const result = session.append('tool/result', {
     turn,
     step: 1,
@@ -82,9 +83,9 @@ describe('tool-result pruning configuration', () => {
     const raw = { thresholdChars: 100, headChars: 20, tailChars: 10 }
     const resolved = resolveConfig(raw)
     raw.headChars = 1
-    expect(resolved).toEqual({ thresholdChars: 100, headChars: 20, tailChars: 10 })
+    expect(resolved).toEqual({ thresholdChars: 100, headChars: 20, tailChars: 10, exemptTools: [] })
     expect(Object.isFrozen(resolved)).toBe(true)
-    expect(DEFAULTS).toEqual({ thresholdChars: 8192, headChars: 4096, tailChars: 1024 })
+    expect(DEFAULTS).toEqual({ thresholdChars: 8192, headChars: 4096, tailChars: 1024, exemptTools: [] })
     expect(Object.isFrozen(DEFAULTS)).toBe(true)
   })
 
@@ -95,6 +96,8 @@ describe('tool-result pruning configuration', () => {
       [{ tailChars: 1.5 }, /tailChars .* non-negative integer/],
       [{ thresholdChars: 50, headChars: 20, tailChars: 20 }, /headChars \+ marker \+ tailChars/],
       [{ threshold: 10 }, /unknown key "threshold"/],
+      [{ exemptTools: [1] }, /exemptTools must be an array of strings/],
+      [{ exemptTools: 'skill' }, /exemptTools must be an array of strings/],
     ] as Array<[unknown, RegExp]>
     for (const [config, pattern] of bad) {
       expect(() => resolveConfig(config as ToolResultPruneConfig)).toThrow(pattern)
@@ -259,6 +262,40 @@ describe('ToolResultPruner session transaction', () => {
     const replay = Session.create(session.id, session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
     expect(replay.surface.replaceGeneration).toBe(session.surface.replaceGeneration)
+  })
+
+  it('skips an exempt tool result entirely and prunes a non-exempt one, treating an unknown call id as non-exempt', () => {
+    const session = Session.create(SessionId('exempt'))
+    const skillSeq = appendToolStep(
+      session, 1, 'skill-call', [{ type: 'text', text: 'S'.repeat(100) }], {}, 'skill',
+    )
+    appendToolStep(session, 2, 'bash-call', [{ type: 'text', text: 'B'.repeat(100) }], {}, 'bash')
+    // An orphaned tool/result with no preceding tool/call for its callId: an
+    // unknown call id, which must still be pruned like any non-exempt result.
+    const orphanSeq = session.append('tool/result', {
+      turn: 3,
+      step: 1,
+      message: createToolResultMessage({
+        callId: ToolCallId('orphan-call'),
+        content: [{ type: 'text', text: 'O'.repeat(100) }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' }).seq
+    session.append('turn/start', { turn: 4 })
+
+    const prune = service({ ...SMALL, exemptTools: ['skill'] })
+    const result = prune.pruneSession(session)
+
+    expect(result.pruned.map(entry => entry.callId)).toEqual([
+      ToolCallId('bash-call'),
+      ToolCallId('orphan-call'),
+    ])
+    expect(session.surface.nodes).toContain(skillSeq)
+    expect(session.snapshotEvents()[skillSeq]).toMatchObject({
+      type: 'tool/result',
+      data: { message: { content: [{ content: [{ type: 'text', text: 'S'.repeat(100) }] }] } },
+    })
+    expect(session.surface.nodes).not.toContain(orphanSeq)
   })
 
   it('runs under real invariants between closed steps but not outside a turn', async () => {

@@ -183,3 +183,5 @@ sandbox mode "<mode>" is requested but no sandbox backend is usable on this host
 [沙箱决策](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)列出延期阶段——可选的 `subagent-acp` 消费方（隔离子 agent（智能体），默认不隔离）与环境一致的能力组示例。两者均未决定；该笔记列为延期的 Windows 链已通过 `sandbox-local` 的 ACL 受限令牌档交付。
 
 </details>
+
+`ConfinedArgv.env` 包含后端必需的环境项。消费者在目标环境覆盖项之后合并这些项，使约束要求优先。运行器失败分类通过声明的运行器身份与输出特征区分后端启动失败和访问拒绝。

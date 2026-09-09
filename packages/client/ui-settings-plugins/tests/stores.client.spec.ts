@@ -1026,7 +1026,7 @@ describe('ConfigurablePluginsTabController', () => {
       value: {
         writable: true,
         hasDocument: true,
-        namespaces: namespaces.map(ns => ({
+        namespaces: namespaces.map(ns => ({ effective: {},
           ns, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0,
         })),
       },
@@ -1136,7 +1136,7 @@ describe('ConfigurablePluginsTabController', () => {
       view: {
         writable: true,
         hasDocument: true,
-        namespaces: [{
+        namespaces: [{ effective: {},
           ns: 'bash', schema: {}, value: {}, applies: 'live', secrets: [], revision: 1,
         }],
       },

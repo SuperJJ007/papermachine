@@ -27,7 +27,7 @@ function host() {
 
 /** A served, accepted section — the baseline every test layers over. */
 function ready(over: Partial<SettingsScopeSnapshot<ScienceRuntimeSettingsSection>> = {}) {
-  return {
+  return { effective: undefined, secrets: [],
     status: 'ready' as const, writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' as const, ...over,
   }
 }

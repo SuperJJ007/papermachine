@@ -126,6 +126,8 @@ interface RunnerFailureRule {
  * achieves for it.
  */
 interface ConfinedArgv {
+  /** Runner-required environment overrides, merged after the caller's target environment. */
+  readonly env: Readonly<Record<string, string>>
   /** The wrapped argv (runner, profile, separator, then the caller's argv). */
   argv: string[]
   /** How completely the selected backend enforces the policy's file effects. */

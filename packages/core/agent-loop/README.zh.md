@@ -208,3 +208,5 @@ const handle = await ctx.agents.create({
 无。
 
 </details>
+
+请求重试时，如果消息面替换移除了当前步骤的运行上下文，会重新记录该步骤保留的已解析文本，不重新调用上下文提供方。

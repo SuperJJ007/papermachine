@@ -1841,3 +1841,24 @@ describe('remote retained output byte validity', () => {
     expect(reader.readFrom(6).utf8Validity).toBe('invalid')
   })
 })
+
+
+it('delivers cooperative interruption only while a remote target group is running', async () => {
+  const fake = new FakeSandbox()
+  fake.deferStart()
+  const handle = testHandle(runtime(fake), spec(), '/runtime/cooperative-interrupt')
+  handle.interrupt()
+  expect(fake.commandsSeen).not.toContain('kill -INT -- -4242')
+  fake.releaseStart()
+  await flush()
+  handle.interrupt()
+  await vi.waitFor(() => { expect(fake.commandsSeen).toContain('kill -INT -- -4242') })
+  expect(fake.alive).toBe(true)
+  handle.terminate()
+  await handle.done
+  const signals = fake.commandsSeen.filter(command => command.startsWith('kill -INT ')).length
+  handle.interrupt()
+  await flush()
+  expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toHaveLength(signals)
+  await expect(handle.waitForExit()).resolves.toBe(true)
+})

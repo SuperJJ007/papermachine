@@ -20,13 +20,15 @@
 /**
  * Session event types whose model-visible content carriers this package
  * scans directly: direct `content`, a wrapped `message.content`, every
- * `inserted[].content` message, and a completed `assistant/chunk` block —
+ * `inserted[].content` message, and completed blocks in `assistant/attempt` —
  * the same carriers the durable log always projects to model-visible
  * history, regardless of which domain produced the event.
  */
 export const BUILT_IN_CARRIER_EVENT_TYPES: ReadonlySet<string> = new Set([
   'agent/inbox/spliced',
-  'assistant/chunk',
+  'assistant/attempt',
+  'system/message',
+  'tool/ptc-dispatch',
   'assistant/message',
   'team/message/queued',
   'tool/result',
@@ -39,18 +41,7 @@ export const BUILT_IN_CARRIER_EVENT_TYPES: ReadonlySet<string> = new Set([
  * new known type without deliberately classifying it here — or registering
  * an extractor for it — is caught by the freshness test instead of silently
  * authorizing nothing forever.
- *
- * TODO(attachment-index-buckets): membership here is unasserted. The freshness
- * test proves every known type appears in exactly one list, never that the
- * chosen list is right, so a type whose payload can structurally carry
- * `{ type: 'image', attachment }` may sit here and silently authorize nothing.
- * `tool/code-dispatch` is the live example: its `content` is the sub-call's
- * full model-facing outcome (`ContentBlock[]`), which the deleted upstream
- * shape-driven scan would have reached. No route produces such an event today
- * — code mode defers image-bearing content to `agent/inbox/spliced`, MCP error
- * results degrade images to text, and `post-execute` strips them — so the
- * consequence would be a broken image plus an omission from Session ZIP
- * export, with no test turning red.
+
  */
 // This list is, by design, most of the generated KNOWN_SESSION_EVENT_TYPES
 // (packages/core/session/src/known-event-types.ts) minus the small built-in-
@@ -69,6 +60,11 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/start',
   'compaction/summary',
   'feedback/record',
+  'feedback/message-put',
+  'feedback/message-delete',
+  'model/selection',
+  'session-log-deepseek/delivery-accepted',
+  'subagent/model-selection-policy',
   'goal/change',
   'hook/invoked',
   'hook/result',
@@ -104,8 +100,7 @@ export const ATTACHMENT_FREE_EVENT_TYPES: ReadonlySet<string> = new Set([
   'tool-workflow/run-end',
   'tool-workflow/run-start',
   'tool/call',
-  'tool/code-dispatch',
-  'tool/code-dispatch-start',
+  'tool/ptc-dispatch-start',
   'turn/end',
   'turn/start',
   'web/deepseek-search-llm-request',

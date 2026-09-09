@@ -21,7 +21,7 @@ import AgentPresets, {
 } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
-const VALID = '- id: tool-alpha\n  name: ../../plugins/contribute.js\n  config:\n    tool: alpha\n'
+const VALID = `- id: tool-alpha\n  name: ${JSON.stringify(pathToFileURL(join(FIXTURES, 'plugins/contribute.js')).href)}\n  config:\n    tool: alpha\n`
 
 /** Every temp root created by this file, removed after each test. */
 const roots: string[] = []
@@ -172,6 +172,7 @@ describe('copying a preset', () => {
   it('leaves nothing behind when the copy itself fails', async () => {
     const source = {
       id: 'gone',
+      copyable: true,
       trust: 'user' as const,
       path: join(userRoot, 'gone', COMPOSITION_FILE),
     }

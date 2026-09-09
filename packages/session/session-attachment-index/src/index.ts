@@ -203,3 +203,18 @@ export class SessionAttachmentIndex extends Service {
 }
 
 export default SessionAttachmentIndex
+
+/**
+ * Decode a referenced file under the Science text-preview media policy.
+ * File references carry a display filename; its extension selects CSV, JSON,
+ * Markdown, or plain text. The complete bytes must be valid UTF-8.
+ * @param ref - Session-authorized file reference.
+ * @param data - Integrity-verified stored bytes.
+ * @returns Exact decoded text.
+ */
+export function decodeReferencedText(ref: FileAttachmentRef, data: Uint8Array): string {
+  if (!/\.(?:csv|json|md|markdown|txt)$/iu.test(ref.name)) {
+    throw new Error('Referenced file media type does not support text preview')
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(data)
+}

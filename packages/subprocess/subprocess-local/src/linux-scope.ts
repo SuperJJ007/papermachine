@@ -156,7 +156,7 @@ export function probeLinuxNative(internals: LinuxScopeInternals = {}): boolean {
 
 interface DirectRange {
   running(): boolean
-  signal(signal: 'SIGTERM' | 'SIGKILL'): void
+  signal(signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): void
 }
 
 class SystemdScopeOwner implements BoundProcessOwner {
@@ -177,9 +177,10 @@ class SystemdScopeOwner implements BoundProcessOwner {
     private readonly sleep: (delayMs: number, signal?: AbortSignal) => Promise<void>,
   ) {}
 
-  signal(signal: 'SIGTERM' | 'SIGKILL'): void {
+  signal(signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): void {
     if (this.stopped) return
     this.observeRequestConsumption()
+    if (signal === 'SIGINT' && this.establishment === 'pending') return
     const directFallbackRequired = this.establishment === 'pending'
     if (directFallbackRequired && this.direct.running()) this.direct.signal(signal)
     const result = this.runSync(this.systemctl, [
@@ -390,7 +391,7 @@ function directOutcome(
   })
 }
 
-function signalChildGroup(child: ReturnType<typeof spawn>, signal: 'SIGTERM' | 'SIGKILL'): void {
+function signalChildGroup(child: ReturnType<typeof spawn>, signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL'): void {
   try {
     process.kill(-(child.pid as number), signal)
   } catch {

@@ -134,3 +134,5 @@ These limits tell you when headless does not fit and what it needs from the `dsh
 None.
 
 </details>
+
+When an agent preset roster is composed, the driver records its default preset in the new session header and mounts that preset before the first request. Without a roster it uses the host tool and prompt registrations.

@@ -28,7 +28,7 @@ interface Recorded { ns: string; ops: unknown }
 
 /** A roster Remote answering a fixed set of rows, or refusing. */
 function fakeRoster(
-  presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
+  presets: { id: string; trust: 'system' | 'user'; isDefault: boolean; copyable: boolean }[],
   options: { failList?: string; failListCode?: RemoteErrorCode; settings?: object } = {},
 ): ClientContext {
   return {
@@ -50,7 +50,7 @@ function fakeRoster(
 
 /** A context whose roster and settings write outcome the test controls. */
 function fakeApi(
-  presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
+  presets: { id: string; trust: 'system' | 'user'; isDefault: boolean; copyable: boolean }[],
   options: {
     writes?: Recorded[]
     failWrite?: string
@@ -79,8 +79,8 @@ function fakeApi(
 describe('the agent-preset roster store', () => {
   it('derives the display options from one roster call', async () => {
     const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'mine', trust: 'user', isDefault: false },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+      { copyable: true, id: 'mine', trust: 'user', isDefault: false },
     ]))
 
     await controller.load()
@@ -95,8 +95,8 @@ describe('the agent-preset roster store', () => {
 
   it('offers no broken preset: the pickers choose the NEXT session\'s composition', async () => {
     const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition is not valid YAML' },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+      { copyable: false, id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition is not valid YAML' },
     ] as never))
 
     await controller.load()
@@ -109,7 +109,7 @@ describe('the agent-preset roster store', () => {
 
   it('carries the display metadata a preset published', async () => {
     const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
     ] as never))
 
     await controller.load()
@@ -146,8 +146,8 @@ describe('the agent-preset roster store', () => {
   it('writeDefaultPreset writes only the default field, into the agent-presets namespace', async () => {
     const writes: Recorded[] = []
     const ctx = fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'minimal', trust: 'system', isDefault: false },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+      { copyable: true, id: 'minimal', trust: 'system', isDefault: false },
     ], { writes })
 
     expect(await writeDefaultPreset(ctx, 'minimal')).toBeUndefined()
@@ -160,7 +160,7 @@ describe('the agent-preset roster store', () => {
 
   it('writeDefaultPreset surfaces the refusal message when the write fails', async () => {
     const ctx = fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true },
     ], { failWrite: 'read-only settings' })
 
     expect(await writeDefaultPreset(ctx, 'minimal')).toBe('read-only settings')
@@ -179,7 +179,7 @@ describe('the agent-preset roster store', () => {
   it('ignores a load while one is already in flight', async () => {
     const writes: Recorded[] = []
     const controller = derivedController(fakeApi(
-      [{ id: 'standard', trust: 'system', isDefault: true }], { writes }))
+      [{ copyable: true, id: 'standard', trust: 'system', isDefault: true }], { writes }))
 
     await Promise.all([controller.load(), controller.load()])
 
@@ -191,7 +191,7 @@ describe('the agent-preset roster store', () => {
 describe('the new-session chip controller', () => {
   /** A chip over a current session the test can move. */
   function chip(
-    presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
+    presets: { id: string; trust: 'system' | 'user'; isDefault: boolean; copyable: boolean }[],
     current: SeatSession | undefined | (() => SeatSession | undefined),
     options: {
       writes?: Recorded[]
@@ -231,9 +231,9 @@ describe('the new-session chip controller', () => {
     )
   }
 
-  const ROSTER: { id: string; trust: 'system' | 'user'; isDefault: boolean }[] = [
-    { id: 'standard', trust: 'system', isDefault: true },
-    { id: 'minimal', trust: 'system', isDefault: false },
+  const ROSTER: { id: string; trust: 'system' | 'user'; isDefault: boolean; copyable: boolean }[] = [
+    { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+    { copyable: true, id: 'minimal', trust: 'system', isDefault: false },
   ]
 
   it('opens on the deployment default', async () => {
@@ -251,7 +251,7 @@ describe('the new-session chip controller', () => {
   })
 
   it('shows the first preset when the roster marks none default', async () => {
-    const controller = chip([{ id: 'minimal', trust: 'system', isDefault: false }], undefined)
+    const controller = chip([{ copyable: true, id: 'minimal', trust: 'system', isDefault: false }], undefined)
 
     await controller.load()
 
@@ -262,7 +262,7 @@ describe('the new-session chip controller', () => {
 
   it('carries the display metadata into the menu rows', async () => {
     const controller = chip([
-      { id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
     ] as never, undefined)
 
     await controller.load()
@@ -308,8 +308,8 @@ describe('the new-session chip controller', () => {
   it('replaces the default display when an existing blank session arrives after roster load', async () => {
     const state: { current?: SeatSession } = {}
     const controller = chip([
-      { id: 'standard', trust: 'system', isDefault: false },
-      { id: 'minimal', trust: 'system', isDefault: true },
+      { copyable: true, id: 'standard', trust: 'system', isDefault: false },
+      { copyable: true, id: 'minimal', trust: 'system', isDefault: true },
     ], () => state.current)
     await controller.load()
     expect(controller.store.getSnapshot().current).toBe('minimal')

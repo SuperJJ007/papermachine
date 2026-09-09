@@ -161,3 +161,5 @@ This Dev Note is working context for maintainers: open design questions and dire
 Future: non-shell runners. The seam was split so a direct-argv executor or worker supervisor could consume it without reaching into bash internals; none is shipped yet, and the terminal primitive keeps readiness policy in its consumer.
 
 </details>
+
+`SubprocessHandle.interrupt()` requests cooperative interruption without closing streams or starting termination. Local POSIX owners signal the managed range; Windows treats it as a no-op. Calls after direct completion or termination do nothing. `terminate()` and `waitForExit()` retain their range-quiescence semantics.

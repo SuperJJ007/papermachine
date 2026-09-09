@@ -80,7 +80,8 @@ class WindowsJobOwner implements BoundProcessOwner {
     void this.exited.catch(() => {})
   }
 
-  signal(_signal: 'SIGTERM' | 'SIGKILL', cancellationReason?: unknown): void {
+  signal(_signal: 'SIGINT' | 'SIGTERM' | 'SIGKILL', cancellationReason?: unknown): void {
+    if (_signal === 'SIGINT') return
     if (!this.cancellationReasonSet) {
       this.cancellationReason = cancellationReason
       this.cancellationReasonSet = true

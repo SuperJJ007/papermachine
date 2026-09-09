@@ -43,17 +43,17 @@ describe('extractBuiltInAttachments', () => {
     expect(refs.map(r => String(r.attachmentId))).toEqual(['sha256:e'])
   })
 
-  it('scans a completed assistant/chunk block-end image block', () => {
+  it('scans a completed assistant/attempt block-end image block', () => {
     const refs = extractBuiltInAttachments({
-      type: 'assistant/chunk',
-      data: { chunk: { type: 'block-end', block: image('sha256:f') } },
+      type: 'assistant/attempt',
+      data: { stream: [{ type: 'chunk', time: 0, chunk: { type: 'block-end', block: image('sha256:f') } }] },
     })
     expect(refs.map(r => String(r.attachmentId))).toEqual(['sha256:f'])
   })
 
-  it('ignores a non-block-end assistant/chunk', () => {
+  it('ignores a non-block-end assistant/attempt', () => {
     const refs = extractBuiltInAttachments({
-      type: 'assistant/chunk',
+      type: 'assistant/attempt',
       data: { chunk: { type: 'block-start', block: image('sha256:g') } },
     })
     expect(refs).toEqual([])

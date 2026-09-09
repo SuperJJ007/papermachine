@@ -155,9 +155,8 @@ function wrapWithUnprovenQuiescence(inner: SubprocessRuntime): {
   readonly proveQuiescence: () => void
 } {
   const proven = Promise.withResolvers<boolean>()
-  // FIXME(replant P2.1): upstream SubprocessRuntime dropped `executionWorld`; restore this
-  // passthrough once P2.1 redesigns the execution-world classification seam.
   const subprocess = {
+    executionWorld: inner.executionWorld,
     resolveExecutable: (command: string) => inner.resolveExecutable(command),
     spawn: (spec: SubprocessSpawnSpec): SubprocessHandle => {
       const handle = inner.spawn(spec)
@@ -187,9 +186,8 @@ function wrapTrackingKernelSpawns(inner: SubprocessRuntime): {
 } {
   let spawns = 0
   let exitWrites = 0
-  // FIXME(replant P2.1): upstream SubprocessRuntime dropped `executionWorld`; restore this
-  // passthrough once P2.1 redesigns the execution-world classification seam.
   const subprocess = {
+    executionWorld: inner.executionWorld,
     resolveExecutable: (command: string) => inner.resolveExecutable(command),
     spawn: (spec: SubprocessSpawnSpec): SubprocessHandle => {
       const handle = inner.spawn(spec)

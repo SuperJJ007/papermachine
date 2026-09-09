@@ -40,8 +40,7 @@ class FakeSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
     if (this.unavailable) throw new SandboxUnavailableError('workspace-write')
-    // FIXME(replant P2.1): restore backend environment evidence with the subprocess seam.
-    return { argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [] }
+    return { env: {}, argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [] }
   }
 }
 
@@ -207,8 +206,6 @@ describe('quiesce', () => {
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
       graceMs: 3_000,
-      // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; this spec
-      // relies on the provider default (env merged onto the scrubbed parent) until P2.1 lands.
     })
     // The process never exits on its own within the first grace window, so
     // the first waitForExit(grace) proves false; terminate() then sends
@@ -235,8 +232,6 @@ describe('quiesce', () => {
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
       graceMs: 3_000,
-      // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; this spec
-      // relies on the provider default (env merged onto the scrubbed parent) until P2.1 lands.
     })
     // This process ignores SIGTERM, so terminate() cannot prove quiescence
     // within the second grace window either; the caller keeps quarantine
@@ -247,7 +242,6 @@ describe('quiesce', () => {
     // SIGTERM alone never reaps this process: prove eventualQuiescence
     // resolves once something unblockable (SIGKILL) finally does, rather
     // than hanging the test forever on a tree only this test owns.
-    // FIXME(replant P2.1): keep target identity provider-private when restoring interruption.
     const pid = Number(handle.collected.stdout!.readFrom(0).text)
     if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error('child did not report a valid process id')
     try {

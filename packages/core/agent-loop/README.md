@@ -208,3 +208,5 @@ These limits define when the loop needs special care. They are current package c
 None.
 
 </details>
+
+Request retries restore the retained step’s runtime context if a surface replacement removed it. Restoration records the same resolved text without re-running context providers.

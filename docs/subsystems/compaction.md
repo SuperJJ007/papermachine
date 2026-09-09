@@ -224,6 +224,13 @@ pruneContent(blocks: readonly ContentBlock[]): ContentBlock[] | null
  * immediately preceded by a `compaction/prune` shadow-price event pricing the
  * shadowed node through the injected token meter, so pure consumers can
  * subtract it without per-node state.
+ *
+ * A `tool/result` whose originating `tool/call` name appears in
+ * `config.exemptTools` is skipped entirely, never truncated: an exempt
+ * result carries instructions rather than data, and a truncated
+ * instruction set is worse than an untouched one. A result whose call id
+ * has no matching `tool/call` in the log (an unknown call id) is treated
+ * as non-exempt and pruned normally.
  * @param session - session whose current surface is rewritten.
  * @returns landed replacements and aggregate Unicode-code-point savings.
  * @throws when the session rejects a replacement; replacements committed

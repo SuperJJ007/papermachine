@@ -1,6 +1,5 @@
 /** Real-store evidence for the Science read Remote and byte routes. */
-import * as fs from 'node:fs/promises'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,11 +12,6 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import * as ScienceSession from '@deepseek-ai/dsh-science-session'
 import ScienceReadService from '../src/read-service.ts'
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, stat: vi.fn(actual.stat) }
-})
 
 let ctx: Context
 let root: string
@@ -45,7 +39,7 @@ beforeEach(async () => {
   } as unknown as Context['sessionQuery'])
   register.mockClear()
   ctx.provide('connection', { fetch: { register } } as unknown as Context['connection'])
-  service = new ScienceReadService(ctx, { workspaceEntryLimit: 2, workspaceFileByteLimit: 32 })
+  service = new ScienceReadService(ctx, { textAttachmentByteLimit: 32 })
 })
 afterEach(async () => { vi.restoreAllMocks(); await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) })
 
@@ -95,20 +89,7 @@ it('authorizes a file from the durable V3 message before decoding UTF-8', async 
   await expect(service.textAttachment(sessionId, AttachmentId('absent'))).rejects.toThrow('not referenced')
 })
 
-it('bounds workspace listings and previews and rejects traversal and symlink escapes', async () => {
-  await writeFile(join(workspace, 'data.csv'), 'a,b')
-  await writeFile(join(workspace, '.hidden'), 'hidden')
-  await mkdir(join(workspace, 'folder'))
-  await writeFile(join(workspace, 'large.txt'), 'x'.repeat(33))
-  await writeFile(join(root, 'outside.txt'), 'outside')
-  await symlink(join(root, 'outside.txt'), join(workspace, 'escape.txt'))
-  expect(await service.workspaceFiles(sessionId)).toMatchObject({ root: '', truncated: true, entries: [{ name: 'data.csv' }, { name: 'folder', kind: 'dir' }],
-  })
-  expect(await service.workspaceFile(sessionId, 'data.csv')).toEqual({ mediaType: 'text/csv', byteCount: 3, data: Buffer.from('a,b').toString('base64') })
-  for (const path of ['../outside.txt', join(root, 'outside.txt'), 'escape.txt']) await expect(service.workspaceFile(sessionId, path)).rejects.toThrow('outside')
-  await expect(service.workspaceFile(sessionId, 'folder')).rejects.toThrow('not a file')
-  await expect(service.workspaceFile(sessionId, 'large.txt')).rejects.toThrow('limit')
-})
+
 
 it('serves byte-identical GET and bodyless HEAD through the registered exact route', async () => {
   const { version } = await artifact()
@@ -125,24 +106,17 @@ it('serves byte-identical GET and bodyless HEAD through the registered exact rou
   expect((await route.fetch(new Request(url.replace(String(version.versionId), 'absent')))).status).toBe(404)
 })
 
-it('previews supported workspace media and rejects oversized text attachments', async () => {
-  for (const [name, mediaType] of [['a.json', 'application/json'], ['a.md', 'text/markdown'], ['a.markdown', 'text/markdown'], ['a.txt', 'text/plain'], ['a.png', 'image/png'], ['a.bin', 'application/octet-stream']]) {
-    await writeFile(join(workspace, name!), 'data')
-    expect(await service.workspaceFile(sessionId, name!)).toMatchObject({ mediaType })
-  }
-  await mkdir(join(workspace, 'empty'))
-  expect(await service.workspaceFiles(sessionId, 'empty')).toMatchObject({ root: 'empty', entries: [] })
+it('rejects oversized referenced text attachments', async () => {
   const ref = await ctx.attachments.saveFile({ name: 'large.txt', data: Buffer.alloc(33) })
   ctx.sessions.get(sessionId)!.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'file', attachment: ref }],
   }), { surfaceOp: 'append' })
   await expect(service.textAttachment(sessionId, ref.attachmentId)).rejects.toThrow('limit')
 })
 
-it('requires a durable workspace for project fallback and workspace previews', async () => {
+it('requires a durable workspace for project reads', async () => {
   const id = SessionId('no-workspace')
   ctx.sessions.create(id)
   await expect(service.scienceLibrary(id)).rejects.toThrow('no workspace')
-  await expect(service.workspaceFiles(id)).rejects.toThrow('no workspace')
   await expect(service.scienceArtifact(id, VersionId('absent'))).rejects.toThrow('not referenced')
 })
 
@@ -238,14 +212,7 @@ it('maps missing and corrupt downloads to explicit responses and propagates othe
   expect((await route.fetch(new Request(`http://localhost/api/science-artifact?sessionId=${sessionId}`))).status).toBe(400)
 })
 
-it('rejects a file that grows after the initial stat', async () => {
-  const path = join(workspace, 'growing.txt')
-  await writeFile(path, 'small')
-  const initial = await fs.stat(path)
-  await writeFile(path, 'x'.repeat(33))
-  vi.mocked(fs.stat).mockResolvedValueOnce(initial)
-  await expect(service.workspaceFile(sessionId, 'growing.txt')).rejects.toThrow('limit')
-})
+
 
 
 it('encodes non-ASCII download names and keeps extensionless fallback names', async () => {

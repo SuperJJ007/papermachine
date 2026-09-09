@@ -188,13 +188,20 @@ Remote service admitting browser edit gestures into the addressed live agent.
 
 ```ts cordis-catalog
 /**
- * Unavailable during P1; P2 owns this implementation.
- * @param agent - Input reserved for P2.
- * @param _request - Input reserved for P2.
- * @returns No receipt; this placeholder always rejects execution.
- * @throws Always rejects execution while the migration is pending.
+ * Validate exact current artifact selections and queue one structured edit
+ * message. Media type and live-figure-object state — the store's, since
+ * the T1/T2 artifact-authority migration — gate each target: a region
+ * target's raster is read back from the project artifact store and
+ * admitted as an ordinary session message attachment, so the model-visible
+ * image stays reconstructable from the session log alone; an element
+ * target must match one addressable chart entry's id, kind, axes, label,
+ * and current-value summary, read from the store's `figure_state` row and
+ * never minting an attachment.
+ * @param agent - exact live agent resolved by the Remote lookup policy.
+ * @param request - selected versions, targets, and shared user instruction.
+ * @returns durable-inbox admission receipt.
  */
-@Remote('submit') async submit(agent: Agent, _request: ScienceEditRequest): Promise<ScienceEditReceipt>
+@Remote('submit') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>
 
 /**
  * Apply deterministic operations to one exact current addressable chart.
@@ -217,22 +224,20 @@ Remote service admitting browser edit gestures into the addressed live agent.
 @Remote('previewChartOps') async previewChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<import('./types.ts').ScienceChartPreviewReceipt>
 
 /**
- * Unavailable during P1; P3 owns this implementation.
- * @param agent - Input reserved for P3.
- * @param _request - Input reserved for P3.
- * @returns No receipt; this placeholder always rejects execution.
- * @throws Always rejects execution while the migration is pending.
+ * Add one user-only note after validating its exact visible artifact version.
+ * @param agent - Agent whose session owns the artifact.
+ * @param request - Exact artifact version and plain note text.
+ * @returns acceptance receipt after the note event commits.
  */
-@Remote('addArtifactNote') addArtifactNote(agent: Agent, _request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt
+@Remote('addArtifactNote') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt
 
 /**
- * Unavailable during P1; P3 owns this implementation.
- * @param agent - Input reserved for P3.
- * @param _request - Input reserved for P3.
- * @returns No receipt; this placeholder always rejects execution.
- * @throws Always rejects execution while the migration is pending.
+ * Remove one active user-only note owned by the named logical artifact.
+ * @param agent - Agent whose session owns the note.
+ * @param request - Logical artifact and add-event sequence identifying the note.
+ * @returns acceptance receipt after the removal event commits.
  */
-@Remote('removeArtifactNote') removeArtifactNote(agent: Agent, _request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt
+@Remote('removeArtifactNote') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt
 
 /**
  * Duplicate one exact committed artifact version into a brand-new logical
@@ -249,6 +254,57 @@ Remote service admitting browser edit gestures into the addressed live agent.
 Types: [Agent](core.zh.md)
 
 Source: [`packages/science/tool-science/src/edit-message.ts`](../../packages/science/tool-science/src/edit-message.ts)
+
+<a id="ctxsciencereads--sciencereadservice"></a>
+
+### `ctx.scienceReads` — `ScienceReadService`
+
+Read-only Remote service over a session's project and durable attachment references.
+
+```ts cordis-catalog
+/**
+ * Read one session-authorized immutable version.
+ * @param sessionId - Authorizing session.
+ * @param versionId - Exact version.
+ * @returns Verified bytes encoded as base64.
+ */
+@Remote async scienceArtifact(sessionId: SessionId, versionId: VersionId): Promise<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>
+
+/**
+ * Read an exact version's editable chart state.
+ * @param sessionId - Authorizing session.
+ * @param versionId - Exact version.
+ * @returns Chart state or null for non-chart versions.
+ */
+@Remote async scienceChartState(sessionId: SessionId, versionId: VersionId): Promise<{ chart: ScienceChartState | null }>
+
+/**
+ * Read a referenced UTF-8 file.
+ * @param sessionId - Authorizing session.
+ * @param attachmentId - Durable file identity.
+ * @returns Validated text with its reference.
+ */
+@Remote async textAttachment(sessionId: SessionId, attachmentId: AttachmentId): Promise<{ attachment: FileAttachmentRef; data: string }>
+
+/**
+ * Read current project metadata.
+ * @param sessionId - Authorizing session.
+ * @returns Current authorized store facts.
+ */
+@Remote async scienceLibrary(sessionId: SessionId): Promise<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>
+
+/**
+ * Read current project metadata.
+ * @param sessionId - Authorizing session.
+ * @param versionIds - Exact versions to resolve.
+ * @returns Current authorized store facts.
+ */
+@Remote async scienceVersions(sessionId: SessionId, versionIds: readonly VersionId[]): Promise<{ versions: ScienceVersionSummary[] }>
+```
+
+Types: [FileAttachmentRef](attachment.zh.md) · [SessionId](core.zh.md)
+
+Source: [`packages/science/tool-science/src/read-service.ts`](../../packages/science/tool-science/src/read-service.ts)
 
 <a id="ctxscienceruntime--scienceruntime"></a>
 

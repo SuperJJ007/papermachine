@@ -56,6 +56,7 @@ export { REGION_BEGIN, REGION_END }
 export const SERVICE_PAGE: Record<string, string> = {
   scienceArtifactStore: 'science.md',
   scienceEdits: 'science.md',
+  scienceReads: 'science.md',
   scienceRuntime: 'science.md',
   sessionAttachments: 'attachment.md',
   agentLoop: 'core.md',

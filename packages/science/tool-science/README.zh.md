@@ -197,4 +197,4 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附的内置 `science` agent preset 与 Web Host 的 `./edit-service` 行是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
 - **没有发布流程** — 模型在对话中回答；没有独立的 Outcome 编辑器或发布工具。
 
-Host 的 `/read-service` 入口公开七个 `science` Remote 读取方法，分别读取产物字节、库元数据、版本摘要、图表状态、已引用的 UTF-8 文件、工作区目录和工作区预览。它还通过 connection 服务注册需要认证的 GET/HEAD `/api/science-artifact?sessionId=…&versionId=…`。读取使用会话的持久化工作区，并根据 Science 历史或项目存储授权版本。工作区预览限制通过部署配置设置。
+Host `/read-service` 入口提供五个 `science` Remote 读取方法，覆盖产物字节、项目库元数据、版本摘要、图表状态和已引用的 UTF-8 文件。它还通过 connection 服务注册经认证的 GET/HEAD `/api/science-artifact?sessionId=…&versionId=…`。产物读取要求会话持久化 cwd；本会话产物使用事件坐标，同项目其他版本经存储核实后可读。`textAttachmentByteLimit` 限制已引用 UTF-8 预览（默认 2 MiB）。工作区文件使用上游 `api/workspace-files` 与 `ui-sidebar-files`。

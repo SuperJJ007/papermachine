@@ -1,6 +1,5 @@
-/** Session-authorized Science library, workspace, and attachment reads. */
-import { readdir, readFile, realpath, stat } from 'node:fs/promises'
-import { extname, isAbsolute, relative, resolve, sep } from 'node:path'
+/** Project-authorized Science library and session-referenced attachment reads. */
+import { extname } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -19,12 +18,11 @@ import type { ScienceChartState, ScienceArtifactMediaType } from '@deepseek-ai/d
 import type { ScienceLibraryArtifact, ScienceLibraryHealth, ScienceVersionSummary, ScienceVersionHealthFlags } from './read-types.ts'
 
 interface SessionReadState { header: SessionHeader; events: readonly SessionEvent[] }
-/** Limits for workspace reads from the authenticated Science surface. */
-export interface Config { workspaceEntryLimit: number; workspaceFileByteLimit: number }
-/** Validated deployment limits for directory and file previews. */
+/** Limits for referenced text attachment previews. */
+export interface Config { textAttachmentByteLimit: number }
+/** Validated deployment limit for referenced text previews. */
 export const Config: z<Config> = z.object({
-  workspaceEntryLimit: z.number().min(1).step(1).default(1000),
-  workspaceFileByteLimit: z.number().min(1).step(1).default(2 * 1024 * 1024),
+  textAttachmentByteLimit: z.number().min(1).step(1).default(2 * 1024 * 1024),
 })
 
 declare module '@deepseek-ai/cordis' { interface Context { scienceReads: ScienceReadService } }
@@ -36,16 +34,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 function failure(reason: string, message: string): RemoteError<'science-artifact-error'> {
   return new RemoteError('science-artifact-error', message, { reason })
-}
-function workspaceMediaType(path: string): string {
-  switch (extname(path).toLowerCase()) {
-    case '.csv': return 'text/csv'
-    case '.json': return 'application/json'
-    case '.md': case '.markdown': return 'text/markdown'
-    case '.txt': return 'text/plain'
-    case '.png': return 'image/png'
-    default: return 'application/octet-stream'
-  }
 }
 
 /**
@@ -168,26 +156,6 @@ async function authorizedScienceArtifact(
     producerTurn: projectVersion.producerTurn,
   }
 }
-async function resolveWorkspacePath(state: SessionReadState, requestedPath: string): Promise<{
-  readonly workspace: string
-  readonly target: string
-  readonly display: string
-}> {
-  if (state.header.cwd === undefined) {
-    throw failure('NO_WORKSPACE', 'Session has no workspace directory.')
-  }
-  if (isAbsolute(requestedPath) || requestedPath.split(/[\\/]/u).includes('..')) {
-    throw failure('PATH_OUTSIDE_WORKSPACE', 'Path is outside the session workspace.')
-  }
-  const workspace = await realpath(state.header.cwd)
-  const candidate = resolve(workspace, requestedPath)
-  const target = await realpath(candidate)
-  const delta = relative(workspace, target)
-  if (delta === '..' || delta.startsWith(`..${sep}`) || isAbsolute(delta)) {
-    throw failure('PATH_OUTSIDE_WORKSPACE', 'Path is outside the session workspace.')
-  }
-  return { workspace, target, display: delta.split(sep).join('/') }
-}
 
 /**
  * Content-Disposition filename for one Science artifact raw-bytes download:
@@ -292,7 +260,7 @@ export class ScienceReadService extends TypertRemoteService {
     const state = await this.readSessionState(sessionId)
     const ref = this.ctx.sessionAttachments.findReferencedFile(state.events, attachmentId)
     if (ref === undefined) throw new RemoteError('attachment-error', 'File is not referenced by this session.', { reason: 'ATTACHMENT_NOT_REFERENCED' })
-    if (ref.bytes > this.config.workspaceFileByteLimit) throw failure('FILE_TOO_LARGE', 'Text attachment exceeds the preview limit.')
+    if (ref.bytes > this.config.textAttachmentByteLimit) throw failure('FILE_TOO_LARGE', 'Text attachment exceeds the preview limit.')
     const chunks: Uint8Array[] = []
     for await (const chunk of this.ctx.attachments.readFileStream(ref)) chunks.push(chunk)
     return { attachment: ref, data: decodeReferencedText(ref, Buffer.concat(chunks)) }
@@ -425,43 +393,6 @@ export class ScienceReadService extends TypertRemoteService {
     }
     return { versions }
 
-  }
-  /**
- * List contained workspace entries.
- * @param sessionId - Owning session.
- * @param path - Relative directory.
- * @returns Bounded directory listing.
- */
-  @Remote
-  async workspaceFiles(sessionId: SessionId, path?: string):
-  Promise<{ root: string; entries: Array<{ name: string; kind: 'dir' | 'file'; modifiedAt: number; byteCount?: number; mediaType?: string }>; truncated?: true }> {
-    const resolved = await resolveWorkspacePath(await this.readSessionState(sessionId), path ?? '')
-    const children = (await readdir(resolved.target, { withFileTypes: true }))
-      .filter(entry => !entry.name.startsWith('.') && entry.name !== 'node_modules' && !entry.isSymbolicLink())
-      .sort((a, b) => a.name.localeCompare(b.name))
-    const entries = await Promise.all(children.slice(0, this.config.workspaceEntryLimit).map(async (entry) => {
-      const info = await stat(resolve(resolved.target, entry.name))
-      return entry.isDirectory()
-        ? { name: entry.name, kind: 'dir' as const, modifiedAt: info.mtimeMs }
-        : { name: entry.name, kind: 'file' as const, modifiedAt: info.mtimeMs, byteCount: info.size, mediaType: workspaceMediaType(entry.name) }
-    }))
-    return { root: resolved.display, entries, ...(children.length > this.config.workspaceEntryLimit ? { truncated: true as const } : {}) }
-  }
-  /**
- * Read a bounded workspace preview.
- * @param sessionId - Owning session.
- * @param path - Relative file.
- * @returns Base64 file content.
- */
-  @Remote
-  async workspaceFile(sessionId: SessionId, path: string): Promise<{ mediaType: string; byteCount: number; data: string }> {
-    const resolved = await resolveWorkspacePath(await this.readSessionState(sessionId), path)
-    const info = await stat(resolved.target)
-    if (!info.isFile()) throw failure('PATH_OUTSIDE_WORKSPACE', 'Workspace preview path is not a file.')
-    if (info.size > this.config.workspaceFileByteLimit) throw failure('FILE_TOO_LARGE', 'Workspace file exceeds the preview limit.')
-    const data = await readFile(resolved.target)
-    if (data.byteLength > this.config.workspaceFileByteLimit) throw failure('FILE_TOO_LARGE', 'Workspace file exceeds the preview limit.')
-    return { mediaType: workspaceMediaType(resolved.target), byteCount: data.byteLength, data: data.toString('base64') }
   }
   private async download(request: Request): Promise<Response> {
     const url = new URL(request.url)

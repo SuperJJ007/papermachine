@@ -198,7 +198,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async copy(from: string, id: string, name?: string): Promise<void>',
         description: 'Create a locally authored preset by copying an existing one whole.\n\nCopy is the only authoring write. Composition text never crosses this seam: the source is named by id and its directory is copied as it stands, so the copy is exactly as loadable as its source and authoring grants no capability the roster did not already carry. The copy is NOT mounted to validate — a source that mounts today yields a copy that mounts today.',
         parameters: [{ name: 'from', description: 'the preset the copy starts from; shipped presets are the primary source, so any trust is accepted.' }, { name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'name', description: 'display name for the copy; absent falls back to the id.' }],
-        throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
+        throws: ['when the source is unknown, broken, or explicitly non-copyable; the id is unusable or already taken; or the deployment configures no writable root.'],
       },
       {
         signature: '@Remote(\'copy\') async remoteExportCopy(from: string, id: string, name?: string): Promise<void>',
@@ -1559,11 +1559,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Remote service admitting browser edit gestures into the addressed live agent.',
     methods: [
       {
-        signature: '@Remote(\'submit\') async submit(agent: Agent, _request: ScienceEditRequest): Promise<ScienceEditReceipt>',
-        description: 'Unavailable during P1; P2 owns this implementation.',
-        parameters: [{ name: 'agent', description: 'Input reserved for P2.' }, { name: '_request', description: 'Input reserved for P2.' }],
-        returns: 'No receipt; this placeholder always rejects execution.',
-        throws: ['Always rejects execution while the migration is pending.'],
+        signature: '@Remote(\'submit\') async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt>',
+        description: 'Validate exact current artifact selections and queue one structured edit message. Media type and live-figure-object state — the store\'s, since the T1/T2 artifact-authority migration — gate each target: a region target\'s raster is read back from the project artifact store and admitted as an ordinary session message attachment, so the model-visible image stays reconstructable from the session log alone; an element target must match one addressable chart entry\'s id, kind, axes, label, and current-value summary, read from the store\'s `figure_state` row and never minting an attachment.',
+        parameters: [{ name: 'agent', description: 'exact live agent resolved by the Remote lookup policy.' }, { name: 'request', description: 'selected versions, targets, and shared user instruction.' }],
+        returns: 'durable-inbox admission receipt.',
       },
       {
         signature: '@Remote(\'applyChartOps\') async applyChartOps( agent: Agent, request: ScienceChartEditRequest, signal: AbortSignal, ): Promise<ScienceChartEditReceipt>',
@@ -1578,24 +1577,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the base64 preview PNG, its re-extracted chart state, and any operations whose targets could not be resolved.',
       },
       {
-        signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, _request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
-        description: 'Unavailable during P1; P3 owns this implementation.',
-        parameters: [{ name: 'agent', description: 'Input reserved for P3.' }, { name: '_request', description: 'Input reserved for P3.' }],
-        returns: 'No receipt; this placeholder always rejects execution.',
-        throws: ['Always rejects execution while the migration is pending.'],
+        signature: '@Remote(\'addArtifactNote\') addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt',
+        description: 'Add one user-only note after validating its exact visible artifact version.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the artifact.' }, { name: 'request', description: 'Exact artifact version and plain note text.' }],
+        returns: 'acceptance receipt after the note event commits.',
       },
       {
-        signature: '@Remote(\'removeArtifactNote\') removeArtifactNote(agent: Agent, _request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt',
-        description: 'Unavailable during P1; P3 owns this implementation.',
-        parameters: [{ name: 'agent', description: 'Input reserved for P3.' }, { name: '_request', description: 'Input reserved for P3.' }],
-        returns: 'No receipt; this placeholder always rejects execution.',
-        throws: ['Always rejects execution while the migration is pending.'],
+        signature: '@Remote(\'removeArtifactNote\') removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt',
+        description: 'Remove one active user-only note owned by the named logical artifact.',
+        parameters: [{ name: 'agent', description: 'Agent whose session owns the note.' }, { name: 'request', description: 'Logical artifact and add-event sequence identifying the note.' }],
+        returns: 'acceptance receipt after the removal event commits.',
       },
       {
         signature: '@Remote(\'saveArtifactAs\') async saveArtifactAs( agent: Agent, request: ScienceSaveArtifactAsRequest, signal: AbortSignal, ): Promise<ScienceSaveArtifactAsReceipt>',
         description: 'Duplicate one exact committed artifact version into a brand-new logical artifact in the same project. A viewer-only operation — never exposed as a model tool.',
         parameters: [{ name: 'agent', description: 'Agent whose session owns the new artifact\'s origin.' }, { name: 'request', description: 'Store version id to duplicate and the new logical name.' }, { name: 'signal', description: 'Client-owned cancellation for the Runtime operation.' }],
         returns: 'the new artifact\'s identity and first version.',
+      },
+    ],
+  },
+  {
+    key: 'scienceReads',
+    summary: 'Read-only Remote service over a session\'s project and durable attachment references.',
+    description: 'Read-only Remote service over a session\'s project and durable attachment references.',
+    methods: [
+      {
+        signature: '@Remote async scienceArtifact(sessionId: SessionId, versionId: VersionId): Promise<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>',
+        description: 'Read one session-authorized immutable version.',
+        parameters: [{ name: 'sessionId', description: 'Authorizing session.' }, { name: 'versionId', description: 'Exact version.' }],
+        returns: 'Verified bytes encoded as base64.',
+      },
+      {
+        signature: '@Remote async scienceChartState(sessionId: SessionId, versionId: VersionId): Promise<{ chart: ScienceChartState | null }>',
+        description: 'Read an exact version\'s editable chart state.',
+        parameters: [{ name: 'sessionId', description: 'Authorizing session.' }, { name: 'versionId', description: 'Exact version.' }],
+        returns: 'Chart state or null for non-chart versions.',
+      },
+      {
+        signature: '@Remote async textAttachment(sessionId: SessionId, attachmentId: AttachmentId): Promise<{ attachment: FileAttachmentRef; data: string }>',
+        description: 'Read a referenced UTF-8 file.',
+        parameters: [{ name: 'sessionId', description: 'Authorizing session.' }, { name: 'attachmentId', description: 'Durable file identity.' }],
+        returns: 'Validated text with its reference.',
+      },
+      {
+        signature: '@Remote async scienceLibrary(sessionId: SessionId): Promise<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>',
+        description: 'Read current project metadata.',
+        parameters: [{ name: 'sessionId', description: 'Authorizing session.' }],
+        returns: 'Current authorized store facts.',
+      },
+      {
+        signature: '@Remote async scienceVersions(sessionId: SessionId, versionIds: readonly VersionId[]): Promise<{ versions: ScienceVersionSummary[] }>',
+        description: 'Read current project metadata.',
+        parameters: [{ name: 'sessionId', description: 'Authorizing session.' }, { name: 'versionIds', description: 'Exact versions to resolve.' }],
+        returns: 'Current authorized store facts.',
       },
     ],
   },
@@ -2616,6 +2650,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract subprocess service. Subclass, implement spawn, and load the subclass as a plugin — it registers as `ctx.subprocess` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Executable paths belong to one execution world shared with the mounted filesystem provider.\n- spawn returns a live handle synchronously. Target identity remains provider-private; `done` resolves with the spawned command\'s exit facts and may reject for spawn or provider failures.\n- Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another\'s output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.\n- SubprocessHandle.terminate (and the spec\'s abort signal) starts the provider\'s documented procedure against its managed range. SubprocessHandle.waitForExit observes that same range so a consumer-owned teardown ladder can hold each tier on real quiescence; each provider documents its signalling and observability limits.\n- Disposal of the service terminates all still-running managed processes and awaits their exit.\n- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.',
     methods: [
       {
+        signature: 'abstract readonly executionWorld: \'host-local\' | \'remote\'',
+        description: 'Execution world for executable and working-directory paths. Host-path consumers require host-local before creating files or events.',
+        parameters: [],
+      },
+      {
         signature: 'abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>',
         description: 'Resolve one configured executable in this provider\'s execution world. Absolute paths are verified; bare names use the provider\'s scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.',
         parameters: [{ name: 'command', description: 'absolute executable path or bare PATH name.' }, { name: 'env', description: 'explicit environment entries used for lookup.' }, { name: 'signal', description: 'aborts remote or local lookup.' }],
@@ -2832,7 +2871,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'pruneSession(session: Session): PruneResult',
-        description: 'Prune every over-budget tool result from one stable current-surface snapshot. Each replacement preserves the complete event data except for `content`, cites the shadowed node so replay can recover the replacement input, and is immediately preceded by a `compaction/prune` shadow-price event pricing the shadowed node through the injected token meter, so pure consumers can subtract it without per-node state.',
+        description: 'Prune every over-budget tool result from one stable current-surface snapshot. Each replacement preserves the complete event data except for `content`, cites the shadowed node so replay can recover the replacement input, and is immediately preceded by a `compaction/prune` shadow-price event pricing the shadowed node through the injected token meter, so pure consumers can subtract it without per-node state.\n\nA `tool/result` whose originating `tool/call` name appears in `config.exemptTools` is skipped entirely, never truncated: an exempt result carries instructions rather than data, and a truncated instruction set is worse than an untouched one. A result whose call id has no matching `tool/call` in the log (an unknown call id) is treated as non-exempt and pruned normally.',
         parameters: [{ name: 'session', description: 'session whose current surface is rewritten.' }],
         returns: 'landed replacements and aggregate Unicode-code-point savings.',
         throws: ['when the session rejects a replacement; replacements committed earlier in the pass remain durable.'],
@@ -3818,7 +3857,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPreset',
-    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly copyable: boolean;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentPresetComposition',
@@ -3842,7 +3881,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetRow',
-    declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly copyable: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentResolver',
@@ -4170,7 +4209,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfinedArgv',
-    declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
+    declaration: 'export interface ConfinedArgv {\n    readonly env: Readonly<Record<string, string>>;\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
   },
   {
     name: 'ConfinedSandboxMode',
@@ -5118,7 +5157,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProjectionDefinition',
-    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    init(header: SessionHeader, inheritedEventCount: SessionLogOffset): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    stateVersion: number;\n}',
+    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    checkpointStateSeq?(this: void, state: NoInfer<S>): number;\n    init(header: SessionHeader, inheritedEventCount: SessionLogOffset): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    stateVersion: number;\n}',
   },
   {
     name: 'ProjectionSnapshot',
@@ -5322,7 +5361,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SaveImageAttachment',
-    declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
+    declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n    normalization?: \'normalize\' | \'verbatim\';\n}',
   },
   {
     name: 'SaveScienceArtifactAsRequest',
@@ -5343,6 +5382,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceArtifactId',
     declaration: 'export type ScienceArtifactId = ArtifactId;',
+  },
+  {
+    name: 'ScienceArtifactMediaType',
+    declaration: 'export type ScienceArtifactMediaType = \'image/png\' | \'text/csv\' | \'application/json\' | \'text/markdown\' | \'text/plain\';',
   },
   {
     name: 'ScienceArtifactNoteAddRequest',
@@ -5399,6 +5442,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceChartStateBase',
     declaration: 'export interface ScienceChartStateBase {\n    readonly elements: readonly ScienceChartElement[];\n    readonly ops: readonly ScienceChartOp[];\n}',
+  },
+  {
+    name: 'ScienceContentOrigin',
+    declaration: 'export type ScienceContentOrigin = \'run-auto\' | \'human-edit\' | \'import\';',
   },
   {
     name: 'ScienceEditReceipt',
@@ -5459,6 +5506,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScienceLanguage',
     declaration: 'export type ScienceLanguage = \'python\' | \'r\';',
+  },
+  {
+    name: 'ScienceLibraryArtifact',
+    declaration: 'export interface ScienceLibraryArtifact {\n    artifactId: string;\n    logicalName: string;\n    title?: string;\n    caption?: string;\n    originSessionId: string;\n    originSessionTitle?: string;\n    latest: {\n        versionId: string;\n        ordinal: number;\n        mediaType: ScienceArtifactMediaType;\n        byteCount: number;\n        createdAt: number;\n        health?: ScienceVersionHealthFlags;\n    };\n}',
+  },
+  {
+    name: 'ScienceLibraryHealth',
+    declaration: 'export interface ScienceLibraryHealth {\n    orphan: number;\n    reconstructed: number;\n    missingContent: number;\n}',
   },
   {
     name: 'ScienceLiveFigureChartState',
@@ -5525,8 +5580,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScienceScratchKey = Branded<\'ScienceScratchKey\'>;',
   },
   {
+    name: 'ScienceVersionHealthFlags',
+    declaration: 'export interface ScienceVersionHealthFlags {\n    reconstructed?: true;\n    missingContent?: true;\n}',
+  },
+  {
     name: 'ScienceVersionId',
     declaration: 'export type ScienceVersionId = VersionId;',
+  },
+  {
+    name: 'ScienceVersionSummary',
+    declaration: 'export interface ScienceVersionSummary {\n    versionId: string;\n    artifactId: string;\n    logicalName: string;\n    ordinal: number;\n    title?: string;\n    caption?: string;\n    contentOrigin: ScienceContentOrigin;\n    createdAt: number;\n    mediaType: string;\n    byteCount: number;\n    producer: {\n        sessionId: string;\n        sessionTitle?: string;\n        runId?: string;\n        toolCallId?: string;\n        requestHeaderSeq?: number;\n        turn?: number;\n    };\n    health?: ScienceVersionHealthFlags;\n}',
   },
   {
     name: 'Scoped',
@@ -6058,7 +6121,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsDescriptor',
-    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
+    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    effective: unknown;\n    secrets?: RedactedSecret[];\n}',
   },
   {
     name: 'SettingsDocumentOpenValue',
@@ -6070,7 +6133,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsNamespaceView',
-    declaration: 'export interface SettingsNamespaceView {\n    ns: string;\n    schema: JsonValue;\n    value: JsonValue;\n    base?: JsonValue;\n    user?: JsonValue;\n    applies: \'live\' | \'restart\';\n    secrets: SettingsSecretView[];\n    revision: number;\n}',
+    declaration: 'export interface SettingsNamespaceView {\n    ns: string;\n    schema: JsonValue;\n    value: JsonValue;\n    effective: JsonValue;\n    base?: JsonValue;\n    user?: JsonValue;\n    applies: \'live\' | \'restart\';\n    secrets: SettingsSecretView[];\n    revision: number;\n}',
   },
   {
     name: 'SettingsPathOp',
@@ -6326,7 +6389,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessHandle',
-    declaration: 'export interface SubprocessHandle {\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
+    declaration: 'export interface SubprocessHandle {\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    interrupt(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
   },
   {
     name: 'SubprocessOutcome',
@@ -6338,7 +6401,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessOutputRead',
-    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    spillPath?: string;\n}',
+    declaration: 'export interface SubprocessOutputRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n    utf8Validity: \'valid\' | \'invalid\' | \'unknown\';\n    spillPath?: string;\n}',
   },
   {
     name: 'SubprocessOutputReader',
@@ -6346,7 +6409,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubprocessSpawnSpec',
-    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    env?: NodeJS.ProcessEnv | undefined;\n}',
+    declaration: 'export interface SubprocessSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdio: SubprocessStdio;\n    graceMs: number;\n    signal?: AbortSignal | undefined;\n    environmentBase: \'scrubbed-parent\' | \'empty\';\n    env?: NodeJS.ProcessEnv | undefined;\n}',
   },
   {
     name: 'SubprocessStdinMode',

@@ -25,6 +25,9 @@ let ctx: Context | undefined
 try {
   loadEnv(NAME)
   ctx = await boot(NAME, resolveConfigPath(configPath, undefined))
+  const projectStore = ctx.scienceArtifactStore
+  const concurrentProjects = await Promise.all(Array.from({ length: 3 }, () => projectStore.openProject(process.cwd())))
+  const concurrentProjectCount = new Set(concurrentProjects.map(project => project.projectId)).size
   // Three idle kernels keep the main agent's first run at the default
   // filesystem thread-pool capacity throughout persistence and previews.
   const idleSessions = []
@@ -279,6 +282,7 @@ try {
     throw new Error(`${NAME}: cold Science wire projection lost its environment, runs, or artifacts`)
   }
   await writeFile(join(process.cwd(), 'science-cold-history.json'), JSON.stringify({
+    concurrentProjectCount,
     sandboxEnforcement: coldScience.environment.sandboxEnforcement,
     metrics: coldScience.metrics,
     recoveredEnvironment: { status: recoveredEnvironment.status, revision: recoveredEnvironment.revision },

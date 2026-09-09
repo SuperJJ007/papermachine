@@ -1,4 +1,5 @@
 {
+  "concurrentProjectCount": 1,
   "sandboxEnforcement": "full",
   "metrics": {
     "runCount": 5,

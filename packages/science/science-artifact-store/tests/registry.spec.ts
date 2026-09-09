@@ -32,6 +32,38 @@ afterEach(async () => {
 })
 
 describe('resolveProjectIdentity', () => {
+  it('gives concurrent first opens one project identity and one stored record', async () => {
+    const home = await makeDir('home')
+    const workspace = await makeDir('workspace')
+    const results = await Promise.all(Array.from({ length: 8 }, () => resolveProjectIdentity(workspace, home)))
+    expect(new Set(results.map(result => result.projectId)).size).toBe(1)
+    expect(results.filter(result => result.outcome === 'created')).toHaveLength(1)
+    expect(results.filter(result => result.outcome === 'reopened')).toHaveLength(7)
+    const marker = await readJson<RecordedMarker>(join(workspace, '.papermachine', 'project.json'))
+    const stored = await readJson<RecordedStoreProject>(join(results[0]!.storeRoot, 'project.json'))
+    expect(marker.projectId).toBe(results[0]!.projectId)
+    expect(stored.projectId).toBe(marker.projectId)
+  })
+
+  it('keeps one moved identity when two surviving copies open after the original is removed', async () => {
+    const home = await makeDir('home')
+    const original = await makeDir('original')
+    const first = await resolveProjectIdentity(original, home)
+    const left = await makeDir('left')
+    const right = await makeDir('right')
+    await cp(original, left, { recursive: true })
+    await cp(original, right, { recursive: true })
+    await rm(original, { recursive: true })
+    const results = await Promise.all([resolveProjectIdentity(left, home), resolveProjectIdentity(right, home)])
+    expect(results.map(result => result.outcome).sort()).toEqual(['copied', 'moved'])
+    expect(new Set(results.map(result => result.projectId)).size).toBe(2)
+    expect(results.find(result => result.outcome === 'moved')!.projectId).toBe(first.projectId)
+    for (const result of results) {
+      const stored = await readJson<RecordedStoreProject>(join(result.storeRoot, 'project.json'))
+      expect(stored.workspacePath).toBe(result.workspacePath)
+    }
+  })
+
   it('creates a fresh project for an unmarked workspace', async () => {
     const home = await makeDir('home')
     const workspace = await makeDir('workspace')

@@ -30,7 +30,9 @@ export interface StubSettingsScope<T> {
  * @returns the stub handle.
  */
 export function stubSettingsScope<T>(): StubSettingsScope<T> {
-  let snapshot: SettingsScopeSnapshot<T> = { effective: undefined, secrets: [],
+  let snapshot: SettingsScopeSnapshot<T> = {
+    effective: undefined,
+    secrets: [],
     status: 'loading', value: undefined, base: undefined, user: undefined,
     revision: undefined, writable: false, mode: 'host',
   }

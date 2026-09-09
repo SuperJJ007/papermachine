@@ -6,7 +6,7 @@ import { Buffer } from 'node:buffer'
 import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { promisify } from 'node:util'
+import { inspect, promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -90,7 +90,7 @@ function containsPath(parent: string, child: string): boolean {
 /** Refuse a generic temporary-root target before a real run can create scratch there. */
 function nonTemporaryHome(path: string): boolean {
   const resolved = resolve(path)
-  return !containsPath('/tmp', resolved)
+  return ['/tmp', tmpdir()].every(temp => !containsPath(resolve(temp), resolved) && !containsPath(resolved, resolve(temp)))
 }
 
 /** Convert a bigint stat record to the frozen executable identity string. */
@@ -608,7 +608,7 @@ function expectKernelExited(session: Session, language: ScienceLanguage, epoch: 
 
 /** Render one unexpected operational error for a machine-readable language report. */
 function failureDetail(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error ? inspect(error, { depth: null, colors: false }) : String(error)
 }
 
 /** Latches the first failure an operation-plus-cleanup sequence records, folding any later one into an `AggregateError`. */

@@ -36,7 +36,8 @@ const SCHEMA = {
 }
 
 function view(defaultPreset: string, revision = 0): SettingsNamespaceView {
-  return { effective: { defaultPreset },
+  return {
+    effective: { defaultPreset },
     ns: 'permission',
     schema: SCHEMA,
     value: { defaultPreset },

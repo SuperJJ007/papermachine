@@ -1,7 +1,7 @@
-import scienceRemote from '@deepseek-ai/dsh-tool-science/remote'
-export type {} from '@deepseek-ai/dsh-tool-science/remote'
 /** Platform-neutral assembly of generated Host Remote contributions. */
 
+import scienceRemote from '@deepseek-ai/dsh-tool-science/remote'
+export type {} from '@deepseek-ai/dsh-tool-science/remote'
 import type { Context } from '@deepseek-ai/cordis'
 import agentPresetsRemote from '@deepseek-ai/dsh-agent-presets/remote'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'

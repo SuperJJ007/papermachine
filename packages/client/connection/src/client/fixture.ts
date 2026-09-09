@@ -2740,7 +2740,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: true,
         value: {
-          presets: [...fixturePresets].map(([id, preset]) => ({ copyable: true,
+          presets: [...fixturePresets].map(([id, preset]) => ({
+            copyable: true,
             id,
             trust: preset.trust,
             isDefault: id === fixtureDefaultPreset,

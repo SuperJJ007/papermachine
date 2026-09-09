@@ -21,9 +21,6 @@
       "path": "../ui-sidebar"
     },
     {
-      "path": "../ui-slots"
-    },
-    {
       "path": "../store"
     },
     {

@@ -27,4 +27,4 @@ None while the temporary preset rejects turns before requests.
 
 ## Known Limitations and Deferred Work
 
-This is a migration skeleton. Science execution and the artifact sidebar are unavailable. A compiled brand package and matching Web artifacts are required for browser acceptance; configuration dumping alone does not prove browser activation.
+- This is a migration skeleton. Science execution and the artifact sidebar are unavailable. A compiled brand package and matching Web artifacts are required for browser acceptance; configuration dumping alone does not prove browser activation.

@@ -272,7 +272,8 @@ describe('Science Runtime real Loader composition', () => {
           stderr: { maxBytes: 1_024 },
         },
         graceMs: 3_000,
-        environmentBase: 'empty',
+        // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; the
+        // provider's scrubbed-parent default plus this explicit env still proves no ambient leak.
         env: {
           HOME: root,
           TMPDIR: root,

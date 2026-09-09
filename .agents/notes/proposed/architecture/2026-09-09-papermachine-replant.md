@@ -14,7 +14,7 @@ Use the approved 0.1.5-alpha.1 tree as the baseline and import the eight PaperMa
 
 Importing source is not acceptance. P1 requires a working branded profile, compiler and dependency checks, and an explicit owner for every temporary stub. Host behavior belongs to P2/P3; the sidebar belongs to P4; desktop composition belongs to P5. No missing compiler API is restored to upstream packages merely to make imported source compile.
 
-P1 source placeholders reject activation or execution explicitly. Their implementations remain recoverable from the import checkpoint; no placeholder manufactures a projection, subprocess handle, attachment receipt, or browser registration. Package-local pure helpers and imported tests remain in the compiler programs. The migration record owns the per-entry handoff inventory.
+P1 source placeholders reject activation or execution explicitly. Their implementations remain recoverable from the import checkpoint; no placeholder manufactures a projection, subprocess handle, attachment receipt, or browser registration. Host source and tests remain in the compiler programs. The disabled ui-science client reference and tests are deferred to P4, whose first step restores both before adapting the UI. This keeps obsolete UI APIs from obscuring Host compiler diagnostics during P2/P3. The migration record owns the per-entry handoff inventory.
 
 ## Alternatives considered
 

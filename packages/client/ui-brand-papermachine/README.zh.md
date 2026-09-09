@@ -27,4 +27,4 @@ kind: "package-reference"
 
 ## Known Limitations and Deferred Work
 
-在专用 PaperMachine 图标就绪前使用共享图案。运行时 profile 变更不能改变现有客户端产物中的品牌；需要使用目标公开环境重新构建。
+- 在专用 PaperMachine 图标就绪前使用共享图案。运行时 profile 变更不能改变现有客户端产物中的品牌；需要使用目标公开环境重新构建。

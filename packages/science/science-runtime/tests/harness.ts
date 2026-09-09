@@ -71,12 +71,13 @@ export class DirectSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.policies.push(policy)
+    // FIXME(replant P2.1): upstream ConfinedArgv dropped `env`; `this.env` stays settable for
+    // desktop-rung (ELECTRON_RUN_AS_NODE) tests pending P2.1's redesign of that merge seam.
     return {
       argv: [...this.argvPrefix, ...argv],
       enforcement: this.enforcement,
       denialSignatures: this.denialSignatures,
       runnerFailureRules: this.runnerFailureRules,
-      env: this.env,
     }
   }
 }
@@ -100,8 +101,9 @@ export class ControlledRun {
     private readonly mode: 'immediate' | 'deferred',
     output: ControlledOutput = {},
   ) {
+    // FIXME(replant P2.1): the fake follows the upstream handle; restore
+    // cooperative interruption in P2.1; keep process identity provider-private.
     this.handle = {
-      pid: 41,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -114,7 +116,6 @@ export class ControlledRun {
         this.terminations += 1
         this.completion.resolve({ exitCode: 0, signal: null })
       },
-      interrupt: () => {},
       waitForExit: async () => {
         this.waits += 1
         if (this.waits === 1) this.onFirstWait?.()
@@ -188,7 +189,9 @@ export interface ControlledOutput {
 
 /** Host-local fake subprocess provider for non-time-based lifecycle assertions. */
 export class ControlledSubprocess extends SubprocessRuntime {
-  override executionWorld: 'host-local' | 'remote' = 'host-local'
+  // FIXME(replant P2.1): upstream SubprocessRuntime dropped `executionWorld`; this stays
+  // a plain (non-override) test field until P2.1 redesigns the execution-world seam.
+  executionWorld: 'host-local' | 'remote' = 'host-local'
   /** Every fully resolved request issued by the Runtime. */
   readonly specs: SubprocessSpawnSpec[] = []
   /** Controlled requested-source runs in start order. */
@@ -245,27 +248,30 @@ export class ControlledSubprocess extends SubprocessRuntime {
 }
 
 /** Build one retained output reader from exact test facts. */
-function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, utf8Validity: FakeUtf8Probe = 'valid'): {
+// FIXME(replant P2.1): upstream SubprocessOutputRead dropped `utf8Validity`; the `utf8Validity`
+// parameter stays accepted (and unused past this comment) so call sites need no P2.1 rewrite,
+// but the fake reader no longer reports it until P2.1 redesigns the UTF-8-validity seam.
+function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, _utf8Validity: FakeUtf8Probe = 'valid'): {
   readFrom(fromByte: number): SubprocessOutputRead
 } {
   return {
     readFrom(_fromByte: number): SubprocessOutputRead {
-      return { text, nextOffset: bytes, lossy, utf8Validity }
+      return { text, nextOffset: bytes, lossy }
     },
   }
 }
 
 /** Return a probe handle that already reached process and whole-tree settlement. */
 function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Probe = 'valid'): SubprocessHandle {
+  // FIXME(replant P2.1): the fake follows the upstream handle; restore
+  // cooperative interruption in P2.1; keep process identity provider-private.
   return {
-    pid: 42,
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,
     collected: { stdout: reader(stdout, undefined, false, utf8Validity), stderr: reader(stderr, undefined, false, utf8Validity) },
     done: Promise.resolve({ exitCode: 0, signal: null }),
     terminate: () => {},
-    interrupt: () => {},
     waitForExit: async () => true,
   }
 }

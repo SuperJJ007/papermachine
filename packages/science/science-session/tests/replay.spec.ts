@@ -50,7 +50,7 @@ function appendPreModeMessageOutcome(session: Session): void {
       content: [{ type: 'text', text: 'pre-mode evidence' }],
       source: { kind: 'model', provider: 'test', model: 'test-model' },
     }),
-  }, { surfaceOp: 'append', sourceEventSeqs: [] })
+  }, { surfaceOp: 'append' })
   session.append('science/mode-bound', { version: 1, mode: mode() })
   const request = session.append('request/header', {
     header: { config: { provider: 'test', model: 'test-model' } },

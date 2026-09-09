@@ -375,7 +375,8 @@ describe('ScienceRuntime.bindEnvironment', () => {
     ])
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
-      expect(spec.environmentBase).toBe('empty')
+      // FIXME(replant P2.1): upstream SubprocessSpawnSpec dropped `environmentBase`; restore this
+      // assertion once P2.1 re-derives the empty-base probe semantic on the new env-merge seam.
       expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
       expect(spec.cwd).toMatch(/[\\/]probes[\\/]/)
     }

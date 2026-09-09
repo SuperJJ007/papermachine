@@ -38,10 +38,13 @@
   // belongs to the host aggregate, which excludes this program's `*.client.*`
   // in turn. `exclude` wins over `include`, so the test glob above stays broad.
   "exclude": [
-    "packages/client/*/tests/**/*.host.spec.ts"
+    "packages/client/*/tests/**/*.host.spec.ts",
+    // FIXME(replant P4): reconnect ui-science's reference and tests as P4's first step.
+    // Its disabled composition and deferred compiler scope are recorded in .agents/migrations/0.1.5/P1.md.
+    "packages/client/ui-science/tests/**/*"
   ],
   "references": [
-    {"path": "packages/client/ui-science"},
+    // FIXME(replant P4): see the ui-science exclusion above.
     {"path": "packages/client/ui-brand-papermachine"},
     // Producer-to-UI spill tests execute the real nested dispatch worker.
     { "path": "./packages/code-runtime/code-runtime-worker-thread" },

@@ -27,4 +27,4 @@ None; the plugin does not assemble provider requests.
 
 ## Known Limitations and Deferred Work
 
-The mark uses shared artwork until a PaperMachine-specific mark is available. Runtime profile changes cannot change branding baked into an existing client artifact; rebuild with the intended public environment.
+- The mark uses shared artwork until a PaperMachine-specific mark is available. Runtime profile changes cannot change branding baked into an existing client artifact; rebuild with the intended public environment.

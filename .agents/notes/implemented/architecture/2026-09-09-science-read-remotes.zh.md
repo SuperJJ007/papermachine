@@ -19,3 +19,5 @@ Science 读取方法属于领域，而非 Host 代理聚合。生成的 Remote �
 ## 考虑过的替代方案
 
 把领域读取放入通用会话控制器会让其发布和依赖与 Science 耦合。字节路由使用独立授权实现可能与 Remote 读取产生分歧。
+
+补丁范围、行数和上游状态见[移栽补丁台账](../process/2026-09-09-replant-upstream-patch-ledger.zh.md)。

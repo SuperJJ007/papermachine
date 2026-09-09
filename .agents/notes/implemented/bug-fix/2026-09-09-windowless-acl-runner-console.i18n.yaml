@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-09-windowless-acl-runner-console.md
-2026-09-09-windowless-acl-runner-console.md: 5e7dd1bca548e1dba11e97ad02227983e06e32f4
-2026-09-09-windowless-acl-runner-console.zh.md: d3bf51203a4f547264be3ad7dadcf18c627ea84a
+2026-09-09-windowless-acl-runner-console.md: 170d263197b71db27ab026860c6a4cfb76eaa79e
+2026-09-09-windowless-acl-runner-console.zh.md: a4ec283586ea8d6ac24b4a08a0ac42500186641d

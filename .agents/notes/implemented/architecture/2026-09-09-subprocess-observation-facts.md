@@ -25,3 +25,5 @@ Collected reads report UTF-8 validity of the exact returned byte slice, before r
 Consumers can validate local ownership and byte fidelity without obtaining a process id. Existing output text, offsets, loss, and spill behavior remain intact. Provider tests cover split multibyte input, partial offsets, literal replacement characters, and malformed bytes.
 
 This RE-APPLY item affects subprocess declarations and local/E2B provider observations. Upstream retains the bytes but does not publish these facts. No upstream report is submitted with this commit. The native containment and proxy decisions are independently useful and remain active; neither is superseded.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

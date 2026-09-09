@@ -19,3 +19,5 @@ Settings expose separately redacted saved and effective values. Restart-scoped o
 ## Alternatives considered
 
 A UI-only copy restriction can be bypassed by direct calls. Global host tools would leak capabilities into restricted preset scopes.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

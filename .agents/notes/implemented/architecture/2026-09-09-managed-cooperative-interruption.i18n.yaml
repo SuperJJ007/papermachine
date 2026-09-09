@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-managed-cooperative-interruption.md
-2026-09-09-managed-cooperative-interruption.md: 30ddbf6ded2f4e76975ab384e711ce2c08902a59
-2026-09-09-managed-cooperative-interruption.zh.md: b73c600051af67b194e9783ee165b872f234aa36
+2026-09-09-managed-cooperative-interruption.md: 7fd414974b939b734f3d5618449cabe0d2f726fe
+2026-09-09-managed-cooperative-interruption.zh.md: 39218e19e01a622512dbb1506fe9181f6587d864

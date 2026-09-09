@@ -25,3 +25,5 @@ ACL runner 在创建受限子进程之前检查 `GetConsoleCP`。已有控制台
 捕获的管道与 NUL 句柄在分配后保持有效。原生调用失败会明确报错，子进程不会退回非受限执行。探针使用 Windows Server、Node 24.19.0 和 Koffi 3.1.1：未修复时附着场景成功、detached 场景失败；修复后两者均成功。单测覆盖分配、恢复、已有附着和原生失败。这不代表已完成 Electron 安装包或 Science 内核验收。
 
 迁移审计允许此 RE-APPLY 补丁。上游改动为 ACL runner 的控制台辅助模块、五个 FFI 绑定及 runner 调用；`win32-process` 保持不变。本提交尚未向上游提交报告。
+
+补丁范围、行数和上游状态见[移栽补丁台账](../process/2026-09-09-replant-upstream-patch-ledger.zh.md)。

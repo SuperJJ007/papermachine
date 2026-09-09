@@ -25,3 +25,5 @@ subprocess provider 声明执行环境位置。本地报告 `host-local`，E2B �
 消费者无需获得进程 id，即可验证本地归属和字节保真性。现有输出文本、偏移、丢失与溢写行为保持不变。provider 测试覆盖拆分的多字节输入、部分偏移、字面替换字符及损坏字节。
 
 此 RE-APPLY 项涉及 subprocess 声明和本地、E2B provider 的观测。上游保留字节，但未发布这些事实。本提交尚未向上游提交报告。原生收容与代理决定仍各有独立用途，继续有效，均未被取代。
+
+补丁范围、行数和上游状态见[移栽补丁台账](../process/2026-09-09-replant-upstream-patch-ledger.zh.md)。

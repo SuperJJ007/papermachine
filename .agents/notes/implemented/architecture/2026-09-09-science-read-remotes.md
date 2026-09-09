@@ -19,3 +19,5 @@ File attachments use the upstream verbatim file reference. V3 carrier scanning e
 ## Alternatives considered
 
 Putting domain reads into a generic session controller couples its release and dependencies to Science. Separate byte authorization would risk disagreement with Remote reads.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

@@ -19,3 +19,5 @@ Status: implemented
 ## 考虑过的替代方案
 
 只在恢复时检查会让冷读取和水合接受不一致状态。另设检查点 schema 会重复验证。
+
+补丁范围、行数和上游状态见[移栽补丁台账](../process/2026-09-09-replant-upstream-patch-ledger.zh.md)。

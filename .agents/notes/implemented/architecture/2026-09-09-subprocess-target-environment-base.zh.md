@@ -25,3 +25,5 @@ Science 解释器探测与内核启动需要从所选运行环境构造变量，
 现有消费者显式保留清理后的继承环境。测试覆盖真实本地启动、managed 目标序列化、E2B 目标与控制分离、代理覆盖、删除标记及 Windows 大小写折叠。操作系统自行加入的进程变量不属于 provider 的环境构造。
 
 fork 补丁涉及 subprocess 请求类型、本地 spawn 与 runner 目标准备、E2B 环境序列化及其调用方，以及消费者请求声明。上游已有代理归一化和控制与目标分离，但没有空目标选项。这实现迁移审计中 subprocess 的 RE-APPLY 项；本提交尚未向上游提交报告。
+
+补丁范围、行数和上游状态见[移栽补丁台账](../process/2026-09-09-replant-upstream-patch-ledger.zh.md)。

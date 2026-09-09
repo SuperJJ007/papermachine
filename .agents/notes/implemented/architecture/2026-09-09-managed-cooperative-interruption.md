@@ -19,3 +19,5 @@ Confinement contributes required environment entries after caller overrides. Sci
 ## Alternatives considered
 
 Exposing target PIDs would let consumers bypass process ownership. Termination cannot represent a recoverable kernel interrupt.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

@@ -25,3 +25,5 @@ The [native containment](2026-08-28-subprocess-native-containment.md) and [proxy
 Existing consumers explicitly retain scrubbed inheritance. Tests cover real local spawning, managed target serialization, E2B target/control separation, proxy overrides, tombstones, and Windows case folding. OS-added process variables remain outside the provider's environment construction.
 
 The fork patch affects subprocess request types, local spawn and runner target preparation, E2B environment serialization and its caller, plus consumer request declarations. Upstream has proxy normalization and control/target separation but no empty target choice. This implements the migration audit's subprocess RE-APPLY item; no upstream report is submitted with this commit.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

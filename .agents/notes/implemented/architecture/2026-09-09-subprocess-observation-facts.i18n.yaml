@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-subprocess-observation-facts.md
-2026-09-09-subprocess-observation-facts.md: 8a9b275127228c6bbbd026d06e4dbda23177d66b
-2026-09-09-subprocess-observation-facts.zh.md: 78d133c479e3cc5195e40d8fa0b00b9a25291bb9
+2026-09-09-subprocess-observation-facts.md: 5589ffe105d148d56d102e81546257583e74973c
+2026-09-09-subprocess-observation-facts.zh.md: 5e2a65abec9c9b52da2d90d0deb4c13047b50bf2

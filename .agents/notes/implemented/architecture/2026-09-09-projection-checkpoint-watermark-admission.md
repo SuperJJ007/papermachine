@@ -19,3 +19,5 @@ Invalid rows disappear from cached views and force full replay when the supplied
 ## Alternatives considered
 
 Checking only during restore leaves cold views and hydration able to accept inconsistent state. A second checkpoint schema would duplicate validation.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

@@ -25,3 +25,5 @@ The [ACL sandbox decision](../feature/2026-08-08-windows-acl-restricted-token-sa
 Captured pipe and NUL handles survive allocation. Native failures remain loud; children never fall back to unrestricted execution. The probe uses Windows Server with Node 24.19.0 and Koffi 3.1.1: the unpatched attached case succeeds, the unpatched detached case fails, and both patched cases succeed. Unit tests cover allocation, restoration, existing attachment, and native failures. This does not claim packaged Electron or Science kernel acceptance.
 
 The migration audit permits this RE-APPLY patch. Its upstream footprint is the ACL runner's console helper, five FFI bindings, and the runner call; `win32-process` remains unchanged. No upstream report is submitted with this commit.
+
+Patch scope, line counts, and upstream status are recorded in the [replant patch ledger](../process/2026-09-09-replant-upstream-patch-ledger.md).

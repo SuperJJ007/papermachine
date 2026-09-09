@@ -3,7 +3,7 @@
 import { Buffer } from 'node:buffer'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isJsonValue } from '@deepseek-ai/dsh-util-values'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import {
@@ -525,13 +525,13 @@ const kernelStateEventSchema = z.object({
 
 /** A Science event whose payload has passed the package's strict decoder. */
 export type DecodedScienceDomainEvent =
-  | { readonly type: 'science/mode-bound'; readonly seq: number; readonly time: number; readonly data: ScienceModeBoundEvent }
-  | { readonly type: 'science/environment-bound'; readonly seq: number; readonly time: number; readonly data: ScienceEnvironmentBoundEvent }
-  | { readonly type: 'science/run-started'; readonly seq: number; readonly time: number; readonly data: ScienceRunStartedEvent }
-  | { readonly type: 'science/run-finished'; readonly seq: number; readonly time: number; readonly data: ScienceRunFinishedEvent }
-  | { readonly type: 'science/artifact-saved'; readonly seq: number; readonly time: number; readonly data: ScienceArtifactSavedEvent }
-  | { readonly type: 'science/outcome-published'; readonly seq: number; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
-  | { readonly type: 'science/kernel-state'; readonly seq: number; readonly time: number; readonly data: ScienceKernelStateEvent }
+  | { readonly type: 'science/mode-bound'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceModeBoundEvent }
+  | { readonly type: 'science/environment-bound'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceEnvironmentBoundEvent }
+  | { readonly type: 'science/run-started'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceRunStartedEvent }
+  | { readonly type: 'science/run-finished'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceRunFinishedEvent }
+  | { readonly type: 'science/artifact-saved'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceArtifactSavedEvent }
+  | { readonly type: 'science/outcome-published'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
+  | { readonly type: 'science/kernel-state'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceKernelStateEvent }
 
 /**
  * Decode one mode binding value.

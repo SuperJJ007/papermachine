@@ -12,7 +12,7 @@
 import { resolve } from 'node:path'
 import { ArtifactId, VersionId, type ReconcileArtifactSavedEvent } from '@deepseek-ai/dsh-science-artifact-store'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionHeader, SessionPersistence, SessionPersistenceRevision, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionHeader, SessionInspection, SessionPersistence, SessionPersistenceRevision, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-science-session'
 
 /** Inputs for one project's `collectProjectArtifactEvents` walk. */
@@ -41,7 +41,7 @@ export interface CollectProjectArtifactEventsResult {
   /**
    * Every `science/artifact-saved` event found, folded per `versionId`
    * (last write wins across every scanned session, in the order
-   * `SessionPersistence.listSnapshots()` returned them).
+   * `SessionPersistence.list()` returned them).
    */
   readonly events: ReadonlyMap<VersionId, ReconcileArtifactSavedEvent>
   /** `true` only when listing, every admitted session read, and every relevant event parse succeeded without truncation. */
@@ -56,7 +56,7 @@ export interface CollectProjectArtifactEventsResult {
 
 /** Restart-local progress for one project's bounded session-log walk. */
 export interface CollectProjectArtifactEventsCursor {
-  /** Current matching-session order from `SessionPersistence.listSnapshots()`. */
+  /** Current matching-session order from `SessionPersistence.list()`. */
   readonly sessionOrder: readonly SessionId[]
   /** Unread, previously unreadable, or grown-since-cached sessions, in next-attempt order. */
   readonly pendingSessionIds: readonly SessionId[]
@@ -168,7 +168,7 @@ function sameSessionEvents(
  * warning, and a malformed event within an otherwise-readable log is
  * skipped the same way — one bad log or event never stops the walk. A
  * session already cached from an earlier attempt is trusted only while its
- * `SessionPersistence.listSnapshots()` revision is unchanged; a session
+ * `SessionPersistence.list()` revision is unchanged; a session
  * whose log grew or was rewritten since it was cached is re-queued instead,
  * so `complete: true` always reflects the live state of every matching
  * session, not a stale earlier read of one still-active session.
@@ -180,7 +180,7 @@ export async function collectProjectArtifactEvents(
 ): Promise<CollectProjectArtifactEventsResult> {
   let snapshots: readonly SessionPersistenceSnapshot[]
   try {
-    snapshots = await request.sessionPersistence.listSnapshots()
+    snapshots = await request.sessionPersistence.list()
   } catch (error) {
     request.onWarning?.(`science-runtime: reconciliation could not list session logs: ${String(error)}`)
     return {
@@ -221,9 +221,15 @@ export async function collectProjectArtifactEvents(
     || eventsBySession.size !== (request.cursor?.eventsBySession.size ?? 0)
 
   for (const sessionId of batchIds) {
-    let inspection: Awaited<ReturnType<SessionPersistence['inspect']>>
+    let inspection: SessionInspection
     try {
-      inspection = await request.sessionPersistence.inspect(sessionId)
+      const handle = await request.sessionPersistence.open(sessionId, 'read')
+      try {
+        const { events } = await handle.read()
+        inspection = { meta: handle.header, inheritedEventCount: handle.inheritedEventCount, events }
+      } finally {
+        await handle.close()
+      }
     } catch (error) {
       request.onWarning?.(`science-runtime: reconciliation skipped an unreadable session log "${sessionId}": ${String(error)}`)
       failed.push(sessionId)

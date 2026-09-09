@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-09-papermachine-replant.md
-2026-09-09-papermachine-replant.md: a83a836d719f5b7558b2f4f79957a570a969d566
-2026-09-09-papermachine-replant.zh.md: d560beb26c28258022d86b2653a2ed69c517b79d
+2026-09-09-papermachine-replant.md: ab7ccb7dbf9debea66fcb34aa858650afd0bc846
+2026-09-09-papermachine-replant.zh.md: 7eaf4cfca09f53d7f7c71af98fe29ede645734df

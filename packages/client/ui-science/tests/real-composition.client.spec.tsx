@@ -15,10 +15,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent } from '@testing-library/react'
-import type {
-  ChatConversationViewNode, ChatSnapshot, ISession, SessionId, ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ChatConversationViewNode, ChatSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import { conversationContextKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'

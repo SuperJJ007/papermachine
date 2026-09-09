@@ -1,6 +1,7 @@
 /** Session-scoped Science project-store byte loaders. */
 import { describe, expect, it, vi } from 'vitest'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceArtifactContentRef } from '../src/client/science-attachment-loader.ts'
 import { createScienceImageLoader, createScienceTextLoader } from '../src/client/science-attachment-loader.ts'
 

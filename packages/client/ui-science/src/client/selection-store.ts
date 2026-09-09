@@ -9,8 +9,8 @@
  */
 
 import type { ScienceLibraryArtifact } from './library-artifact.ts'
-import { defineStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 
 /** One artifact tab open in the viewer: a logical chart and the durable version it currently shows. */

@@ -54,6 +54,10 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  scienceArtifactStore: 'science.md',
+  scienceEdits: 'science.md',
+  scienceRuntime: 'science.md',
+  sessionAttachments: 'attachment.md',
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
@@ -146,6 +150,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  sciencePresetRoot: 'not a service: product preset directory value — packages/bundle/science-app/README.md owns its configuration use',
   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
@@ -660,6 +665,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
 
 /** TypeScript lib and pinned framework types with no repository-owned data page. */
 export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'Iterable',
   'AbortSignal',
   'AsyncIterable',
   'Context',
@@ -683,6 +689,47 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  AnnotateScienceArtifactRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  AnnotateVersionInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  AppendVersionInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  ArtifactId: 'Science API documentation is owned by packages/science/science-artifact-store/src/ids.ts',
+  ArtifactNoteRecord: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  ArtifactRecord: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  BindScienceEnvironmentRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  CreateArtifactInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  ExtractableEvent: 'Science API documentation is owned by packages/session/session-attachment-index/src/index.ts',
+  FigureStateRecord: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  InstallScienceEnvironmentPackagesRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  InstallScienceEnvironmentPackagesResult: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  NoteId: 'Science API documentation is owned by packages/science/science-artifact-store/src/ids.ts',
+  OpenedProject: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  ProjectId: 'Science API documentation is owned by packages/science/science-artifact-store/src/ids.ts',
+  PutNoteInput: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  ReconcileArtifactSavedEvent: 'Science API documentation is owned by packages/science/science-artifact-store/src/reconcile.ts',
+  ReconcileCursor: 'Science API documentation is owned by packages/science/science-artifact-store/src/reconcile.ts',
+  ReconcileResult: 'Science API documentation is owned by packages/science/science-artifact-store/src/reconcile.ts',
+  ReconciliationSummary: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  SaveScienceArtifactAsRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  ScienceArtifactNoteAddRequest: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceArtifactNoteReceipt: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceArtifactNoteRemoveRequest: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceArtifactVersion: 'Science API documentation is owned by packages/science/science-session/src/types.ts',
+  ScienceChartEditReceipt: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceChartEditRequest: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceChartEditResult: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  ScienceChartPreviewResult: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  ScienceEditReceipt: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceEditRequest: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceEnvironmentBinding: 'Science API documentation is owned by packages/science/science-session/src/types.ts',
+  ScienceRunHandle: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  ScienceSaveArtifactAsReceipt: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  ScienceSaveArtifactAsRequest: 'Science API documentation is owned by packages/science/tool-science/src/types.ts',
+  SessionAttachmentExtractorEventType: 'Science API documentation is owned by packages/session/session-attachment-index/src/types.ts',
+  StartScienceRunRequest: 'Science API documentation is owned by packages/science/science-runtime/src/types.ts',
+  VersionHealthPatch: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  VersionHealthRecord: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
+  VersionId: 'Science API documentation is owned by packages/science/science-artifact-store/src/ids.ts',
+  VersionRecord: 'Science API documentation is owned by packages/science/science-artifact-store/src/types.ts',
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
   BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',

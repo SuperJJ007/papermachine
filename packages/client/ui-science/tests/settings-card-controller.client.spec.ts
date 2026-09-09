@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   SCIENCE_RUNTIME_NS, ScienceSettingsCardController, type ScienceRuntimeSettingsSection,
 } from '../src/client/settings-card-controller.ts'

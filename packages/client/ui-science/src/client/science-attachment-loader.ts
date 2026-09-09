@@ -11,7 +11,8 @@
  * never needs to revoke one.
  */
 
-import type { ISession, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISession, ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 

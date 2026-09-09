@@ -11,11 +11,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { VersionId } from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionPersistence, {
   SessionPersistenceRevision,
   type SessionInspection,
+  type SessionHandle,
+  type SessionAccess,
   type SessionLocation,
   type SessionPersistenceSnapshot,
 } from '@deepseek-ai/dsh-session-persistence'
@@ -43,7 +45,7 @@ function tmp(prefix: string): string {
 
 /** Controllable in-memory `SessionPersistence` test double: pre-seeded sessions, per-id read failures, call counters. */
 class TestPersistence extends SessionPersistence {
-  override readonly supportsRawArtifacts = false
+  readonly supportsRawArtifacts = false
   static inject: string[] = []
 
   readonly durable = new Map<SessionId, SessionInspection>()
@@ -54,11 +56,11 @@ class TestPersistence extends SessionPersistence {
   inspectCalls = 0
 
   locate(_meta: SessionHeader): SessionLocation | undefined { return undefined }
-  create(_meta: SessionHeader): Promise<void> { return Promise.resolve() }
+  create(_meta: SessionHeader): Promise<SessionHandle> { throw new Error('unused test create') }
   append(_id: SessionId, _events: readonly SessionEvent[]): Promise<void> { return Promise.resolve() }
 
   load(id: SessionId): Promise<SessionInspection> {
-    return this.readFrom(id, 0)
+    return this.inspect(id)
   }
 
   inspect(id: SessionId): Promise<SessionInspection> {
@@ -77,13 +79,13 @@ class TestPersistence extends SessionPersistence {
       : { meta: stored.meta, events: stored.events.filter(event => event.seq >= fromSeq) }
   }
 
-  list(): Promise<SessionHeader[]> {
+  listHeaders(): Promise<SessionHeader[]> {
     this.listCalls += 1
     if (this.listFailure !== undefined) return Promise.reject(this.listFailure)
     return Promise.resolve([...this.durable.values()].map(value => value.meta))
   }
 
-  listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
+  list(): Promise<SessionPersistenceSnapshot[]> {
     this.listSnapshotCalls += 1
     if (this.listFailure !== undefined) return Promise.reject(this.listFailure)
     return Promise.resolve([...this.durable.values()].map((value, index) => ({
@@ -92,13 +94,35 @@ class TestPersistence extends SessionPersistence {
     })))
   }
 
-  setDurable(inspection: SessionInspection): void {
-    this.durable.set(inspection.meta.id, inspection)
+  async open(id: SessionId, access: SessionAccess): Promise<SessionHandle> {
+    const stored = await this.inspect(id)
+    return {
+      id, access, header: stored.meta, inheritedEventCount: stored.inheritedEventCount,
+      read: async (offset = 0, length = stored.events.length) => ({
+        events: structuredClone(stored.events.slice(offset, offset + length)), eventState: 'detached',
+      }),
+      append: async () => { throw new Error('unused test append') },
+      flush: async () => {},
+      close: async () => {},
+      [Symbol.asyncDispose]: async () => {},
+    }
+  }
+
+  async flush(): Promise<void> {}
+
+  async stat(id: SessionId): Promise<SessionPersistenceSnapshot> {
+    const snapshot = (await this.list()).find(value => value.header.id === id)
+    if (snapshot === undefined) throw new Error('missing test session')
+    return snapshot
+  }
+
+  setDurable(inspection: Omit<SessionInspection, 'inheritedEventCount'>): void {
+    this.durable.set(inspection.meta.id, { ...inspection, inheritedEventCount: SessionLogOffset(0) })
   }
 }
 
 function header(id: string, cwd: string, overrides: Partial<SessionHeader> = {}): SessionHeader {
-  return { version: 0, id: SessionId(id), createdAt: 1000, cwd, ...overrides }
+  return { version: SESSION_FORMAT_VERSION, isSeeded: false, id: SessionId(id), createdAt: 1000, cwd, ...overrides }
 }
 
 /** Raw, undecoded `science/artifact-saved` event — the exact on-disk shape `SessionPersistence.inspect()` returns. */

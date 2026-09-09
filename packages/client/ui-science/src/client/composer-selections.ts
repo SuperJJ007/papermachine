@@ -1,7 +1,8 @@
 /** Session-local Science targets staged for the main composer. */
 
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 
 function sameSelection(left: ScienceEditSelection, right: ScienceEditSelection): boolean {

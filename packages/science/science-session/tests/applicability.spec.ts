@@ -1,3 +1,4 @@
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { assertScienceSessionApplicability } from '../src/applicability.ts'
 import { emptyScienceFoldState } from '../src/fold-state.ts'
@@ -17,7 +18,7 @@ describe('Science Session applicability policy', () => {
     applyScienceEvent(state, modeEvent)
     expect(() => { assertScienceSessionApplicability('science', state, modeEvent) })
       .not.toThrow()
-    expect(() => { applyScienceEvent(state, { ...modeEvent, seq: 1 }) })
+    expect(() => { applyScienceEvent(state, { ...modeEvent, seq: SessionSeq(1) }) })
       .toThrow(/bound only once/)
   })
 

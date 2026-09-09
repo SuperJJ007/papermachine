@@ -8,7 +8,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-science-runtime'
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { SCIENCE_PRESET_ID, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding, ScienceKernel, ScienceKernelEndReason, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -82,19 +81,13 @@ export function closedKernelFacts(kernel: ScienceKernel): ClosedKernelFacts | un
 }
 
 /**
- * Whether the exact live Session currently runs under the `science` preset.
- *
- * Reads the resolved preset (creation header, overridden by the last
- * `agent-preset/selected` event), not the header alone: a session that
- * switched preset while blank keeps its creation-time header forever, and
- * every turn since the switch runs under the newer composition — the same
- * fact `dsh-host-apiproxy` resolves this way for tool visibility, transcript
- * presenters, and resume/adoption.
- * @param session - candidate Session.
- * @returns whether the session's resolved agent preset is `SCIENCE_PRESET_ID`.
+ * Unavailable during P1; P2 owns this implementation.
+ * @param _session - Input reserved for P2.
+ * @throws Always rejects execution while the migration is pending.
  */
-export function isScienceSession(session: Session): boolean {
-  return resolveSessionPreset(session) === SCIENCE_PRESET_ID
+export function isScienceSession(_session: Session): boolean {
+  // FIXME(replant): P2: agentPreset projection integration.
+  throw new Error('Science migration pending — P2: agentPreset projection integration')
 }
 
 /** Render one interpreter binding line, omitting source, credentials, and Host paths. */
@@ -163,7 +156,7 @@ export async function ensureScienceBound(
     // preset that bound Science mode" if that ever becomes a different id.
     // The caller already confirmed isScienceSession(session), whose predicate
     // requires this same resolver to name the Science preset.
-    const presetId = resolveSessionPreset(session) as typeof SCIENCE_PRESET_ID
+    const presetId = SCIENCE_PRESET_ID
     session.append('science/mode-bound', {
       version: 1,
       mode: { modeId: 'science', presetId, modeRevision: config.modeRevision },

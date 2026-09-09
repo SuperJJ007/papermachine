@@ -1,6 +1,6 @@
 /** Pure Science process projection over conversation nodes and the browser-safe Science projection. */
 
-import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceKernelEndReason,
 } from '@deepseek-ai/dsh-science-session/types'

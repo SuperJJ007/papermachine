@@ -7,8 +7,8 @@ import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
-import { applyScienceArtifactNotes, decodeScienceChartState, foldScience, MAX_SCIENCE_ARTIFACT_NOTE_LENGTH, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
-import type { ScienceArtifactNotesProjection, ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
+import { ScienceVersionId } from '@deepseek-ai/dsh-science-session'
+import type { ScienceArtifactVersion } from '@deepseek-ai/dsh-science-session'
 import type { ScienceChartElement, ScienceChartState } from '@deepseek-ai/dsh-science-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { scienceElementCurrentSummary } from './element-summary.ts'
@@ -364,52 +364,16 @@ export class ScienceEditService extends TypertRemoteService {
   }
 
   /**
-   * Validate exact current artifact selections and queue one structured edit
-   * message. Media type and live-figure-object state — the store's, since
-   * the T1/T2 artifact-authority migration — gate each target: a region
-   * target's raster is read back from the project artifact store and
-   * admitted as an ordinary session message attachment, so the model-visible
-   * image stays reconstructable from the session log alone; an element
-   * target must match one addressable chart entry's id, kind, axes, label,
-   * and current-value summary, read from the store's `figure_state` row and
-   * never minting an attachment.
-   * @param agent - exact live agent resolved by the Remote lookup policy.
-   * @param request - selected versions, targets, and shared user instruction.
-   * @returns durable-inbox admission receipt.
+   * Unavailable during P1; P2 owns this implementation.
+   * @param agent - Input reserved for P2.
+   * @param _request - Input reserved for P2.
+   * @returns No receipt; this placeholder always rejects execution.
+   * @throws Always rejects execution while the migration is pending.
    */
   @Remote('submit')
-  async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt> {
-    const state = foldScience(agent.session.snapshotEvents())
-    const resolved = await resolveScienceEdit(state.artifacts, request, async (artifact) => {
-      const store = await this.ctx.scienceArtifactStore.getVersion(artifact.projectId, artifact.versionId)
-      if (store === undefined) {
-        throw new ScienceEditError('Science edit target no longer identifies a committed store version', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
-      }
-      const figureState = store.mediaType !== 'image/png'
-        ? undefined
-        : await this.ctx.scienceArtifactStore.getFigureState(artifact.projectId, artifact.versionId)
-      return {
-        mediaType: store.mediaType,
-        chart: figureState === undefined ? undefined : decodeScienceChartState(JSON.parse(figureState.stateJson)),
-      }
-    })
-    const regionImages = new Map<string, ImageAttachmentRef>()
-    for (const { artifact, target } of resolved.targets) {
-      if (target.kind !== 'normalized-region') continue
-      const key = String(artifact.versionId)
-      if (regionImages.has(key)) continue
-      const data = await this.ctx.scienceArtifactStore.readBlob(artifact.projectId, artifact.sha256)
-      // Verbatim: the message must show the model the exact committed raster,
-      // not a normalized re-encode of it.
-      regionImages.set(key, await this.ctx.attachments.saveImage({
-        data,
-        mediaType: 'image/png',
-        name: artifact.logicalName.slice(artifact.logicalName.lastIndexOf('/') + 1),
-        normalization: 'verbatim',
-      }))
-    }
-    agent.followup(createScienceEditMessage(resolved, regionImages))
-    return { accepted: true }
+  async submit(agent: Agent, _request: ScienceEditRequest): Promise<ScienceEditReceipt> {
+    // FIXME(replant): P2: verbatim artifact image admission.
+    throw new Error(`Science migration pending — P2: verbatim artifact image admission (session ${agent.session.id})`)
   }
 
   /**
@@ -478,53 +442,29 @@ export class ScienceEditService extends TypertRemoteService {
   }
 
   /**
-   * Add one user-only note after validating its exact visible artifact version.
-   * @param agent - Agent whose session owns the artifact.
-   * @param request - Exact artifact version and plain note text.
-   * @returns acceptance receipt after the note event commits.
+   * Unavailable during P1; P3 owns this implementation.
+   * @param agent - Input reserved for P3.
+   * @param _request - Input reserved for P3.
+   * @returns No receipt; this placeholder always rejects execution.
+   * @throws Always rejects execution while the migration is pending.
    */
   @Remote('addArtifactNote')
-  addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt {
-    const state = foldScience(agent.session.snapshotEvents())
-    const artifact = state.artifacts.find(candidate =>
-      candidate.artifactId === request.artifactId && candidate.version === request.version)
-    if (artifact === undefined) {
-      throw new ScienceEditError('Science artifact note target does not identify a committed version', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
-    }
-    const text = resolveFreeText(request.text, 'artifact note')
-    if (text.length > MAX_SCIENCE_ARTIFACT_NOTE_LENGTH) {
-      invalid(`Science edit artifact note must be at most ${String(MAX_SCIENCE_ARTIFACT_NOTE_LENGTH)} characters`)
-    }
-    agent.session.append('science/artifact-note-added', {
-      version: 1,
-      artifactId: artifact.artifactId,
-      artifactVersion: artifact.version,
-      text,
-      createdAt: Date.now(),
-    }, { ignorable: true })
-    return { accepted: true }
+  addArtifactNote(agent: Agent, _request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt {
+    // FIXME(replant): P3: required artifact note writer.
+    throw new Error(`Science migration pending — P3: required artifact note writer (session ${agent.session.id})`)
   }
 
   /**
-   * Remove one active user-only note owned by the named logical artifact.
-   * @param agent - Agent whose session owns the note.
-   * @param request - Logical artifact and add-event sequence identifying the note.
-   * @returns acceptance receipt after the removal event commits.
+   * Unavailable during P1; P3 owns this implementation.
+   * @param agent - Input reserved for P3.
+   * @param _request - Input reserved for P3.
+   * @returns No receipt; this placeholder always rejects execution.
+   * @throws Always rejects execution while the migration is pending.
    */
   @Remote('removeArtifactNote')
-  removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt {
-    const activeNotes = agent.session.snapshotEvents().reduce<ScienceArtifactNotesProjection>(applyScienceArtifactNotes, [])
-    const active = activeNotes.some(note => note.seq === request.noteSeq && note.artifactId === request.artifactId)
-    if (!active) {
-      throw new ScienceEditError('Science artifact note does not identify an active note', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
-    }
-    agent.session.append('science/artifact-note-removed', {
-      version: 1,
-      artifactId: request.artifactId,
-      noteSeq: request.noteSeq,
-      removedAt: Date.now(),
-    }, { ignorable: true })
-    return { accepted: true }
+  removeArtifactNote(agent: Agent, _request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt {
+    // FIXME(replant): P3: required artifact note writer.
+    throw new Error(`Science migration pending — P3: required artifact note writer (session ${agent.session.id})`)
   }
 
   /**

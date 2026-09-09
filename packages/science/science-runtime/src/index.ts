@@ -1862,11 +1862,13 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     return profile
   }
 
-  /** Refuse all Host-scratch work outside the local subprocess execution world. */
+  /**
+   * Unavailable during P1; P2 owns this implementation.
+   * @throws Always rejects execution while the migration is pending.
+   */
   private assertHostLocal(): void {
-    if (this.ctx.subprocess.executionWorld !== 'host-local') {
-      throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science private Host scratch requires a host-local subprocess provider')
-    }
+    // FIXME(replant): P2: host-local subprocess verification.
+    throw new Error('Science migration pending — P2: host-local subprocess verification')
   }
 
   /** Require an exact currently attached Science Session and its strict projection. */

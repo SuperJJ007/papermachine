@@ -18,19 +18,6 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 // for this file's own type-checking (the `export type *` re-export below
 // does not have that effect).
 import type {} from './domain.ts'
-import { SCIENCE_PROJECTION_STATE_VERSION } from './ids.ts'
-import { applyScienceArtifactNotes, scienceArtifactNotesSchema } from './artifact-notes.ts'
-import {
-  applyScienceProjectionState,
-  emptyScienceProjectionState,
-  scienceProjectionChanged,
-  scienceProjectionSchema,
-  scienceProjectionStateSchema,
-  scienceProjectionStateSeq,
-  viewScienceProjectionState,
-} from './projection.ts'
-import type { ScienceProjectionState } from './projection-private.ts'
-import type { ScienceArtifactNotesProjection } from './types.ts'
 import { toClientScienceProjection } from './projection-value.ts'
 
 // Type-only re-exports keep event and projection declaration merging visible
@@ -80,32 +67,11 @@ export const name = 'science-session'
 export const inject: readonly string[] = []
 
 /**
- * Register the Science projection when the host composes the projection
- * registry. No attachment extractor exists any more: `science/artifact-saved`
- * carries no artifact bytes, and the project artifact store — not the
- * session-scoped attachment store — owns artifact bytes.
- * @param ctx - host context that may carry `ctx.sessionProjections`.
+ * Unavailable during P1; P2 owns this implementation.
+ * @param _ctx - Input reserved for P2.
+ * @throws Always rejects execution while the migration is pending.
  */
-export function apply(ctx: Context): void {
-  ctx.inject(['sessionProjections'], (projectionCtx) => {
-    projectionCtx.sessionProjections.register<'science', ScienceProjectionState>({
-      key: 'science',
-      stateSchema: scienceProjectionStateSchema,
-      checkpointStateSchema: scienceProjectionStateSchema,
-      checkpointStateSeq: scienceProjectionStateSeq,
-      init: emptyScienceProjectionState,
-      apply: applyScienceProjectionState,
-      wire: { viewSchema: scienceProjectionSchema, view: viewScienceProjectionState },
-      viewChanged: scienceProjectionChanged,
-      stateVersion: SCIENCE_PROJECTION_STATE_VERSION,
-    })
-    projectionCtx.sessionProjections.register<'scienceArtifactNotes', ScienceArtifactNotesProjection>({
-      key: 'scienceArtifactNotes',
-      stateSchema: scienceArtifactNotesSchema,
-      init: () => [],
-      apply: applyScienceArtifactNotes,
-      wire: { viewSchema: scienceArtifactNotesSchema, view: state => state },
-      stateVersion: 1,
-    })
-  })
+export function apply(_ctx: Context): void {
+  // FIXME(replant): P2: Science checkpoint admission.
+  throw new Error('Science migration pending — P2: Science checkpoint admission')
 }

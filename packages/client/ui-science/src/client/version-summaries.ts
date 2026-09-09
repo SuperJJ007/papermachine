@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceVersionSummary } from './library-artifact.ts'

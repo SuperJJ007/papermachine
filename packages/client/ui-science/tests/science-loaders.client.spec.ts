@@ -2,7 +2,8 @@
 /** Session-scoped artifact loaders and current version fact conversion. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import { createScienceImageUrlLoader, createScienceTextUrlLoader } from '../src/client/science-artifact-url-loader.ts'
 import { createScienceChartStateLoader } from '../src/client/science-chart-state-loader.ts'

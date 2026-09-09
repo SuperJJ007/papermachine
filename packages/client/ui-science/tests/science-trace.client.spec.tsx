@@ -3,7 +3,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'

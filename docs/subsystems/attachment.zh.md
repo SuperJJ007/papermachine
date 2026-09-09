@@ -348,4 +348,81 @@ retirePrompt(agent: Agent, requestId: string): void
 Types: [Agent](core.zh.md) · [SessionId](core.zh.md)
 
 Source: [`packages/client/file-upload/src/index.ts`](../../packages/client/file-upload/src/index.ts)
+
+<a id="ctxsessionattachments--sessionattachmentindex"></a>
+
+### `ctx.sessionAttachments` — `SessionAttachmentIndex`
+
+Generic Session attachment-reference registry. Subscribes to no event bus itself — every method is a pure, synchronous read over event values the caller already holds (live `Session.snapshotEvents()`, or rows parsed from a stored artifact).
+
+```ts cordis-catalog
+/**
+ * Register one domain's extractor for an extractor-required known event
+ * type. Effect-owned: disposing the calling fiber (or calling the returned
+ * disposer) removes the registration, and a subsequent read of that event
+ * type fails loud with {@link SessionAttachmentIndexError} instead of
+ * silently authorizing nothing.
+ * @param eventType - a known event type this package does not itself
+ *   classify `built-in` or `attachment-free`; typed against the
+ *   merge-extensible {@link SessionAttachmentExtractorMap}.
+ * @param extractor - validates the event's own durable fields and returns
+ *   every complete reference it authorizes (never a bare id).
+ * @returns the exact disposer that unregisters this extractor.
+ */
+register<K extends SessionAttachmentExtractorEventType>( eventType: K, extractor: (event: SessionEvent<K>) => readonly (ImageAttachmentRef | FileAttachmentRef)[], ): () => void
+
+/**
+ * Extract every complete attachment reference one durable event
+ * authorizes. A `built-in` type is scanned directly; an `attachment-free`
+ * type (or an unrecognized type, which persistence admits only when
+ * `ignorable` is set) authorizes nothing; a known type outside both closed
+ * lists requires a live registration and fails loud when one is absent.
+ * @param event - one durable Session event (live or a parsed durable row).
+ * @returns every reference the event durably names, in encounter order.
+ * @throws {@link SessionAttachmentIndexError} when a known extractor-required
+ *   type has no live registration.
+ */
+extract(event: ExtractableEvent): readonly (ImageAttachmentRef | FileAttachmentRef)[]
+
+/**
+ * Resolve the first reference matching one opaque attachment id across an
+ * ordered event sequence — the live single-reference authorization read.
+ * @param events - the exact Session's events (or a prefix/suffix of them).
+ * @param attachmentId - the opaque id a client requested.
+ * @returns the matching reference, or `undefined` when no event names it.
+ */
+findReferencedImage(events: Iterable<ExtractableEvent>, attachmentId: string): ImageAttachmentRef | undefined
+
+/**
+ * Resolve the first file reference matching one opaque attachment id
+ * across an ordered event sequence — the live single-reference
+ * authorization read, mirroring {@link findReferencedImage}.
+ * @param events - the exact Session's events (or a prefix/suffix of them).
+ * @param attachmentId - the opaque id a client requested.
+ * @returns the matching reference, or `undefined` when no event names it.
+ */
+findReferencedFile(events: Iterable<ExtractableEvent>, attachmentId: string): FileAttachmentRef | undefined
+
+/**
+ * Collect every distinct image reference across an ordered event sequence,
+ * deduped by attachment id (last write wins for a repeated id) — the
+ * Session-export media-collection read.
+ * @param events - one artifact's parsed durable rows, in log order.
+ * @returns every distinct image reference, keyed by its string attachment id.
+ */
+collectReferencedImages(events: Iterable<ExtractableEvent>): ReadonlyMap<string, ImageAttachmentRef>
+
+/**
+ * Collect every distinct file reference across an ordered event sequence,
+ * deduped by attachment id (last write wins for a repeated id), mirroring
+ * {@link collectReferencedImages}.
+ * @param events - one artifact's parsed durable rows, in log order.
+ * @returns every distinct file reference, keyed by its string attachment id.
+ */
+collectReferencedFiles(events: Iterable<ExtractableEvent>): ReadonlyMap<string, FileAttachmentRef>
+```
+
+Types: [SessionEvent](session.zh.md)
+
+Source: [`packages/session/session-attachment-index/src/index.ts`](../../packages/session/session-attachment-index/src/index.ts)
 <!-- END GENERATED cordis-surface -->

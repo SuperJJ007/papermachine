@@ -11,11 +11,11 @@
 
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConversationNode, ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode, ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: ChatNode narrows the generic view-node store's value for the
 // 'tool-call' target the same way ui-conversation's own tool-node reader does.
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
+import { conversationContextKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from './selection-store.ts'
 import type { ScienceRenderableVersion } from './version-summaries.ts'

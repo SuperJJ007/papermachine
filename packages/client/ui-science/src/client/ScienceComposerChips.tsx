@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react'
 import { IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
 import type { ScienceDisplayTitleFact } from './artifact-display-title.ts'

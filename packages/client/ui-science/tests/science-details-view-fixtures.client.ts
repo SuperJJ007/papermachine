@@ -16,7 +16,9 @@ import { useRef } from 'react'
 import { screen } from '@testing-library/react'
 import { vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore, type ConversationSnapshot, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { type ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { type SessionId } from '@deepseek-ai/dsh-session'
 import type {
   ScienceArtifactId, ScienceArtifactNote, ScienceClientArtifactVersion, ScienceClientProjection, ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session/types'

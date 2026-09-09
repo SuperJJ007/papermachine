@@ -24,8 +24,10 @@
  * browser, is what has not restarted yet.
  */
 
-import type { SettingsScope, SettingsSecretPresence, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsSecretPresence } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /**
  * Namespace R6a's `with-settings` Runtime entry registers. Spelled here

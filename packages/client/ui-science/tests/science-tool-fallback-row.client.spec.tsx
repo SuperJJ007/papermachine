@@ -8,7 +8,7 @@
 
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   ScienceToolFallbackRow, scienceToolResultText, type ScienceToolFallbackClasses,
 } from '../src/client/ScienceToolFallbackRow.tsx'

@@ -84,7 +84,7 @@ describe('strict Science fold', () => {
         () => decodeScienceDomainEvent({
           ...candidate,
           data: { ...data, unexpected: true },
-        } as SessionEvent),
+        } as unknown as SessionEvent),
         candidate.type,
       ).toThrow()
     }

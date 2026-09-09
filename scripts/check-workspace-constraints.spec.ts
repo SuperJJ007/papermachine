@@ -1,8 +1,10 @@
 /** Experimental-package publication and dependency constraints. */
 
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   checkDshFamilyVersion,
+  checkWorkspaceManifest,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   expectedDshPackageFiles,
@@ -119,5 +121,24 @@ describe('package payload constraints', () => {
       'cordis.patch.yml',
       'lib/types/**/*.d.ts',
     ])
+  })
+})
+
+describe('Science publication payloads', () => {
+  it.each([
+    'packages/fs/tool-fs',
+    'packages/science/science-runtime',
+    'packages/science/tool-science',
+    'packages/bundle/science-app',
+  ])('requires every shipped payload entry in %s', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as
+      WorkspaceManifest['manifest'] & { files: string[] }
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    for (const missing of manifest.files) {
+      const incomplete = { ...manifest, files: manifest.files.filter(file => file !== missing) }
+      expect(checkWorkspaceManifest({ dir, manifest: incomplete })).toContainEqual(expect.stringContaining('package.json files must be'))
+    }
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files, 'unowned'] } }))
+      .toContainEqual(expect.stringContaining('package.json files must be'))
   })
 })

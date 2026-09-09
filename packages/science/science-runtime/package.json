@@ -36,6 +36,9 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/with-settings.js",
+    "lib/types-*.js",
+    "assets",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],

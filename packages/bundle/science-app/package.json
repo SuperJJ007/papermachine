@@ -25,6 +25,7 @@
   "files": [
     "lib/index.js",
     "cordis.patch.yml",
+    "presets",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

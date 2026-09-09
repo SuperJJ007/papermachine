@@ -27,6 +27,8 @@
   },
   "files": [
     "lib/index.js",
+    "lib/read-only.js",
+    "lib/read-image-*.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

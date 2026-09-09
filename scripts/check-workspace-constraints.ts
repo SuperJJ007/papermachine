@@ -149,6 +149,11 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
+  // Science compositions load these secondary entries, shared chunks, kernel assets, and presets from published packages.
+  '@deepseek-ai/dsh-tool-fs': ['lib/read-only.js', 'lib/read-image-*.js'],
+  '@deepseek-ai/dsh-science-runtime': ['lib/with-settings.js', 'lib/types-*.js', 'assets'],
+  '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js', 'lib/read-service.js', 'lib/element-summary.js'],
+  '@deepseek-ai/dsh-science-app': ['presets'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

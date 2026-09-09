@@ -56,6 +56,9 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/edit-service.js",
+    "lib/read-service.js",
+    "lib/element-summary.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",

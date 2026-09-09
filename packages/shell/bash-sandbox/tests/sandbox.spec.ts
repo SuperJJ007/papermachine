@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { SANDBOX_UNAVAILABLE, SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -18,7 +17,7 @@ import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
-import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '../src/helpers.ts'
+import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '@deepseek-ai/dsh-sandbox'
 import type { Config } from '@deepseek-ai/dsh-bash-sandbox'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-spec-'))
@@ -78,14 +77,6 @@ async function setup(
   await ctx.plugin(SandboxBashExecutor, { graceMs: 200, ...execConfig })
   const bash = ctx.shell as SandboxBashExecutor
   return { ctx, bash, calls }
-}
-
-function output(text: string): CollectedOutput {
-  return { text, truncated: false }
-}
-
-function runResult(exitCode: number | null, stderr: string): ShellRunResult {
-  return { exitCode, signal: null, timedOut: false, aborted: false, timeoutMs: 1000, stdout: output(''), stderr: output(stderr) }
 }
 
 function executionPolicy(mode: SandboxMode, workspaceRoot = resolve(process.cwd())): SandboxExecutionPolicy {
@@ -367,19 +358,19 @@ describe('per-call sandbox policy (the session and escalation carrier)', () => {
 
 describe('classifyDenial', () => {
   it('never classifies a clean exit or a signal kill as a denial', () => {
-    expect(classifyDenial(runResult(0, 'Permission denied'), UNIX_SIGNATURES)).toBe(false)
-    expect(classifyDenial(runResult(null, 'Permission denied'), UNIX_SIGNATURES)).toBe(false)
+    expect(classifyDenial(0, 'Permission denied', UNIX_SIGNATURES)).toBe(false)
+    expect(classifyDenial(null, 'Permission denied', UNIX_SIGNATURES)).toBe(false)
   })
 
   it('classifies failed runs by the wrap\'s own dialect, conservatively', () => {
-    expect(classifyDenial(runResult(1, 'touch: cannot touch /x: Read-only file system'), UNIX_SIGNATURES)).toBe(true)
-    expect(classifyDenial(runResult(1, 'sh: /x: Permission denied'), UNIX_SIGNATURES)).toBe(true)
+    expect(classifyDenial(1, 'touch: cannot touch /x: Read-only file system', UNIX_SIGNATURES)).toBe(true)
+    expect(classifyDenial(1, 'sh: /x: Permission denied', UNIX_SIGNATURES)).toBe(true)
     // Bare EPERM is not a Linux runner's dialect: mount/kill/ptrace fail with
     // it unsandboxed too, and the mode vocabulary governs file effects only —
     // claiming a file denial here would tell the model the sandbox blocked
     // something it never governed.
-    expect(classifyDenial(runResult(1, 'mount: Operation not permitted'), UNIX_SIGNATURES)).toBe(false)
-    expect(classifyDenial(runResult(1, 'No such file or directory'), UNIX_SIGNATURES)).toBe(false)
+    expect(classifyDenial(1, 'mount: Operation not permitted', UNIX_SIGNATURES)).toBe(false)
+    expect(classifyDenial(1, 'No such file or directory', UNIX_SIGNATURES)).toBe(false)
   })
 
   it('matches exactly the active backend\'s dialect: EPERM classifies under Seatbelt, EACCES does not under bwrap', () => {
@@ -387,8 +378,8 @@ describe('classifyDenial', () => {
     // text IS how the kernel refuses a governed file write; under bwrap's
     // EROFS-only dialect, `Permission denied` is ordinary DAC, not the
     // sandbox — per-wrap signatures are what keep both classifications honest.
-    expect(classifyDenial(runResult(1, 'bash: /etc/x: Operation not permitted'), ['operation not permitted'])).toBe(true)
-    expect(classifyDenial(runResult(1, 'sh: /x: Permission denied'), ['read-only file system'])).toBe(false)
+    expect(classifyDenial(1, 'bash: /etc/x: Operation not permitted', ['operation not permitted'])).toBe(true)
+    expect(classifyDenial(1, 'sh: /x: Permission denied', ['read-only file system'])).toBe(false)
   })
 })
 

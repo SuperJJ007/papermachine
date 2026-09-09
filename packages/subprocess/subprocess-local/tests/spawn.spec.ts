@@ -1387,3 +1387,19 @@ describe('environment and spill-file hardening', () => {
     expect(result.signal).toBe(process.platform === 'win32' ? null : 'SIGTERM')
   })
 })
+
+describe('retained output byte validity', () => {
+  it('distinguishes replacement characters from malformed and incomplete byte slices', () => {
+    const collector = new OutputCollector(64, undefined, 'utf8', tmpdir())
+    collector.push(Buffer.from([0xe4]))
+    expect(collector.readFrom(0).utf8Validity).toBe('invalid')
+    collector.push(Buffer.from([0xbd, 0xa0]))
+    expect(collector.readFrom(0)).toMatchObject({ text: '你', utf8Validity: 'valid' })
+    expect(collector.readFrom(1).utf8Validity).toBe('invalid')
+    collector.push(Buffer.from('�'))
+    expect(collector.readFrom(3)).toMatchObject({ text: '�', utf8Validity: 'valid' })
+    collector.push(Buffer.from([0xff]))
+    expect(collector.readFrom(6).utf8Validity).toBe('invalid')
+    collector.seal()
+  })
+})

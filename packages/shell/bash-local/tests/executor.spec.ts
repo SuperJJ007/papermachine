@@ -296,11 +296,11 @@ describe('LocalBashExecutor.start (background process handles)', () => {
   it('reports both unread stderr and an asynchronous provider rejection exactly once', async () => {
     const { ctx, bash } = await setup()
     const emptyReader: SubprocessOutputReader = {
-      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      readFrom: () => ({ utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false }),
     }
     const stderrText = 'target stderr'
     const stderrReader: SubprocessOutputReader = {
-      readFrom: offset => ({
+      readFrom: offset => ({ utf8Validity: 'valid' as const,
         text: stderrText.slice(offset),
         nextOffset: stderrText.length,
         lossy: false,
@@ -329,7 +329,7 @@ describe('LocalBashExecutor.start (background process handles)', () => {
   it('settles an unprintable provider rejection instead of rejecting done', async () => {
     const { ctx, bash } = await setup()
     const emptyReader: SubprocessOutputReader = {
-      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      readFrom: () => ({ utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false }),
     }
     const providerError = new Error('unprintable provider error')
     Object.defineProperty(providerError, Symbol.toPrimitive, {

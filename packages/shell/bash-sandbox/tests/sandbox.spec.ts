@@ -572,7 +572,7 @@ describe('background sandbox facts', () => {
   it('does not invent runner evidence when a provider rejection has no structured reason', async () => {
     const { ctx, bash } = await setup()
     const emptyReader: SubprocessOutputReader = {
-      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      readFrom: () => ({ utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false }),
     }
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
       stdin: undefined,

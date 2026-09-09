@@ -202,6 +202,8 @@ interface SubprocessOutputRead {
   nextOffset: number
   /** True when the requested offset slid out of the in-memory tail window. */
   lossy: boolean
+  /** UTF-8 validity of the returned raw byte slice before replacement decoding; unknown means original bytes are unavailable. */
+  utf8Validity: 'valid' | 'invalid' | 'unknown'
   /** Path to the full-stream spill file, when one was created and remains intact. */
   spillPath?: string
 }

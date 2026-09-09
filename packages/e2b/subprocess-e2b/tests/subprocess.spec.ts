@@ -364,22 +364,22 @@ describe('E2BOutputReader', () => {
     reader.push(Buffer.from('ab'))
     reader.push(Buffer.from('cdef'))
     expect(reader.size).toBe(6)
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, spillPath: '/remote/spill' })
-    expect(reader.readFrom(2)).toEqual({ text: 'cdef', nextOffset: 6, lossy: false })
-    expect(reader.readFrom(5)).toEqual({ text: 'f', nextOffset: 6, lossy: false })
-    expect(reader.readFrom(99)).toEqual({ text: '', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: true, spillPath: '/remote/spill' })
+    expect(reader.readFrom(2)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(5)).toEqual({ utf8Validity: 'valid' as const, text: 'f', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(99)).toEqual({ utf8Validity: 'valid' as const, text: '', nextOffset: 6, lossy: false })
     reader.invalidateSpill()
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true })
+    expect(reader.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: true })
   })
 
   it('drops whole head chunks and withholds absent or over-cap spills', () => {
     const withoutSpill = new E2BOutputReader(2, undefined, '/unused')
     withoutSpill.push(Buffer.from('ab'))
     withoutSpill.push(Buffer.from('cd'))
-    expect(withoutSpill.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(withoutSpill.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
     const overCap = new E2BOutputReader(2, 3, '/too-small')
     overCap.push(Buffer.from('abcd'))
-    expect(overCap.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(overCap.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
   })
 })
 
@@ -547,7 +547,7 @@ describe('E2BSubprocessHandle', () => {
 
     await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
     expect(fake.handle.disconnects).toBe(1)
-    expect(handle.collected.stdout?.readFrom(0)).toEqual({
+    expect(handle.collected.stdout?.readFrom(0)).toEqual({ utf8Validity: 'valid' as const,
       text: 'tput',
       nextOffset: 13,
       lossy: true,
@@ -758,13 +758,13 @@ describe('E2BSubprocessHandle', () => {
     await expect(handle.done).resolves.toEqual({ exitCode: 7, signal: null })
     expect(fake.handle.sent).toEqual(['batch'])
     expect(fake.handle.closes).toBe(1)
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const,
       text: 'cdef',
       nextOffset: 6,
       lossy: true,
       spillPath: '/runtime/two/stdout.log',
     })
-    expect(handle.collected.stderr!.readFrom(0)).toEqual({ text: '345', nextOffset: 5, lossy: true })
+    expect(handle.collected.stderr!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: '345', nextOffset: 5, lossy: true })
     expect(fake.removed).not.toContain('/runtime/two/stdout.log')
   })
 
@@ -778,7 +778,7 @@ describe('E2BSubprocessHandle', () => {
     await fake.stderr('')
     fake.finish()
     await handle.done
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true })
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
     expect(fake.removed).toContain('/runtime/oversize/stdout.log')
     const command = fake.commandsSeen.find(value => value.includes('dsh_e2b_tee='))!
     expect(command).toContain('"$dsh_e2b_head" -c 3')
@@ -1824,5 +1824,20 @@ describe('E2BSubprocessRuntime', () => {
     expect(getSandbox).not.toHaveBeenCalled()
     expect(live).toEqual(new Set())
     expect(fake.directories).toEqual([])
+  })
+})
+
+describe('remote retained output byte validity', () => {
+  it('validates recovered bytes before replacement decoding', () => {
+    const reader = new E2BOutputReader(64, undefined, '/unused')
+    reader.push(Buffer.from([0xe4]))
+    expect(reader.readFrom(0).utf8Validity).toBe('invalid')
+    reader.push(Buffer.from([0xbd, 0xa0]))
+    expect(reader.readFrom(0)).toMatchObject({ text: '你', utf8Validity: 'valid' })
+    expect(reader.readFrom(1).utf8Validity).toBe('invalid')
+    reader.push(Buffer.from('�'))
+    expect(reader.readFrom(3)).toMatchObject({ text: '�', utf8Validity: 'valid' })
+    reader.push(Buffer.from([0xff]))
+    expect(reader.readFrom(6).utf8Validity).toBe('invalid')
   })
 })

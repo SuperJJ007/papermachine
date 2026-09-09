@@ -11,7 +11,11 @@ kind: "package-reference"
 
 在任何于宿主机上运行子进程的组合中挂载 `dsh-subprocess-local`。它解析本地可执行文件，为普通 Linux 与 Windows 命令以及受支持的 Linux 终端会话提供由 OS 所有的受管范围，并通过 `node-pty` 提供真实终端会话；不受支持的宿主使用明确披露的较弱 fallback。它没有任何配置，因此每项处置方式、限制、终端尺寸与宽限期都随 spawn 请求来自调用方能力 seam。输出收集在内存中保留一段有界尾部，并可选地用 spill 文件恢复完整流；子进程从清理后的环境起步；dispose（资源释放）会终止并等待每个选定范围或会话完全停稳。
 
+## 目标进程观测
+
 普通进程请求必须指定 `environmentBase`：`scrubbed-parent` 保留清理后的环境变量及本地 provider 归一化后的代理设置；`empty` 只传入显式 `env` 条目，也允许显式代理变量。该选择仅作用于目标进程，managed runner 和 E2B 控制命令保留各自的启动环境。操作系统或目标程序可能在启动后自行添加变量。
+
+provider 将 `executionWorld` 声明为 `host-local` 或 `remote`。每次收集读取通过 `utf8Validity` 报告返回字节片段在替换解码之前的有效性。本地与 E2B 读取器保留原始字节，报告 `valid` 或 `invalid`；即使后续完整读取有效，截断多字节字符的片段仍然无效。`unknown` 仅用于无法恢复原始字节的 provider。
 
 ## 目录
 

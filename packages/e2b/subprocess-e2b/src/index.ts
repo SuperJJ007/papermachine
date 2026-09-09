@@ -58,6 +58,8 @@ function validateNoNullByte(subject: string, value: string): void {
 
 /** E2B command manager registered as `ctx.subprocess`. */
 export class E2BSubprocessRuntime extends SubprocessRuntime {
+  readonly executionWorld = 'remote' as const
+
   static inject = ['e2b']
 
   static Config: z<Config> = z.object({

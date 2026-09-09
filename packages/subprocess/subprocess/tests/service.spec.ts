@@ -16,12 +16,14 @@ import type {
  * is all an implementation owes the abstract class.
  */
 class StubSubprocessRuntime extends SubprocessRuntime {
+  readonly executionWorld = 'host-local' as const
+
   async resolveExecutable(command: string): Promise<string> {
     return `/bin/${command}`
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    const read: SubprocessOutputRead = { text: '', nextOffset: 0, lossy: false }
+    const read: SubprocessOutputRead = { utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false }
     const collected = spec.stdio.stdout !== 'pipe' && spec.stdio.stdout !== 'inherit'
       ? { stdout: { readFrom: () => read } }
       : {}
@@ -61,7 +63,7 @@ describe('SubprocessRuntime seam', () => {
       graceMs: 1,
     })
     expect(Object.hasOwn(handle, 'pid')).toBe(false)
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: '', nextOffset: 0, lossy: false })
     handle.terminate()
     await expect(handle.waitForExit()).resolves.toBe(true)
     const outcome = await handle.done

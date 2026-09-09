@@ -172,16 +172,18 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
 describe('spawn construction (pure, every platform)', () => {
   /** A subprocess service that records spawn specs and settles instantly. */
   class CapturingSubprocessRuntime extends SubprocessRuntime {
+    readonly executionWorld = 'host-local' as const
+
     specs: SubprocessSpawnSpec[] = []
     done: Promise<SubprocessOutcome> = Promise.resolve({ exitCode: 0, signal: null })
     stderrText = ''
     override async resolveExecutable(command: string): Promise<string> { return command }
     override spawnTerminal(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
     private readonly stdoutReader: SubprocessOutputReader = {
-      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+      readFrom: () => ({ utf8Validity: 'valid' as const, text: '', lossy: false, nextOffset: 0 }),
     }
     private readonly stderrReader: SubprocessOutputReader = {
-      readFrom: offset => ({
+      readFrom: offset => ({ utf8Validity: 'valid' as const,
         text: this.stderrText.slice(offset),
         lossy: false,
         nextOffset: this.stderrText.length,

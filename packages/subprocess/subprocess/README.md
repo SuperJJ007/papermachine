@@ -11,7 +11,11 @@ English | [中文](README.zh.md)
 
 `ctx.subprocess` resolves executables, starts explicitly specified child processes or real terminal sessions, streams or collects bounded output, and terminates the full managed process range. Configure one subprocess implementation for each composition, choosing local or remote execution according to where commands must run. Each request sets argv, working directory, stdio, environment overrides, termination grace, and cancellation, with no shell interpretation or hidden execution defaults. Child environments remove ambient credentials and `DSH_*` values before applying explicit overrides; callers own deadlines, teardown policy, and model-facing rendering, while collected output remains readable after exit.
 
+## Target process observations
+
 Ordinary spawn requests require `environmentBase`: `scrubbed-parent` retains scrubbed ambient entries and the local provider's normalized proxy policy; `empty` supplies only explicit `env` entries. Explicit proxies remain allowed. This choice applies to the target process; managed runners and E2B control commands retain their separate bootstrap environments. The OS or target executable may add its own variables after launch.
+
+Providers declare `executionWorld` as `host-local` or `remote`. Each collected read reports `utf8Validity` for exactly its returned byte slice before replacement decoding. Local and E2B readers retain original bytes and report `valid` or `invalid`; a cut through a multibyte character is invalid even when a later complete read is valid. `unknown` is reserved for providers without recoverable original bytes.
 
 ## Table of Contents
 

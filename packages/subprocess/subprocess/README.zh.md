@@ -11,7 +11,11 @@ kind: "package-reference"
 
 `ctx.subprocess` 可解析可执行文件、启动显式指定的子进程或真实终端会话、流式读取或有界收集输出，并终止完整的受管进程范围。每个组合配置一个 subprocess 实现，并根据命令运行位置选择本地或远程执行。每次请求都指定 argv、工作目录、stdio、环境覆盖、终止宽限期与取消信号，不会添加 shell 解释或隐藏的执行默认值。子进程环境会先移除环境中的凭据与 `DSH_*` 值，再应用显式覆盖；时限、拆卸策略与面向模型的渲染由调用方负责，收集的输出在进程退出后仍可读取。
 
+## 目标进程观测
+
 普通进程请求必须指定 `environmentBase`：`scrubbed-parent` 保留清理后的环境变量及本地 provider 归一化后的代理设置；`empty` 只传入显式 `env` 条目，也允许显式代理变量。该选择仅作用于目标进程，managed runner 和 E2B 控制命令保留各自的启动环境。操作系统或目标程序可能在启动后自行添加变量。
+
+provider 将 `executionWorld` 声明为 `host-local` 或 `remote`。每次收集读取通过 `utf8Validity` 报告返回字节片段在替换解码之前的有效性。本地与 E2B 读取器保留原始字节，报告 `valid` 或 `invalid`；即使后续完整读取有效，截断多字节字符的片段仍然无效。`unknown` 仅用于无法恢复原始字节的 provider。
 
 ## 目录
 

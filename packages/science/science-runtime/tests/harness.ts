@@ -189,8 +189,6 @@ export interface ControlledOutput {
 
 /** Host-local fake subprocess provider for non-time-based lifecycle assertions. */
 export class ControlledSubprocess extends SubprocessRuntime {
-  // FIXME(replant P2.1): upstream SubprocessRuntime dropped `executionWorld`; this stays
-  // a plain (non-override) test field until P2.1 redesigns the execution-world seam.
   executionWorld: 'host-local' | 'remote' = 'host-local'
   /** Every fully resolved request issued by the Runtime. */
   readonly specs: SubprocessSpawnSpec[] = []
@@ -248,15 +246,12 @@ export class ControlledSubprocess extends SubprocessRuntime {
 }
 
 /** Build one retained output reader from exact test facts. */
-// FIXME(replant P2.1): upstream SubprocessOutputRead dropped `utf8Validity`; the `utf8Validity`
-// parameter stays accepted (and unused past this comment) so call sites need no P2.1 rewrite,
-// but the fake reader no longer reports it until P2.1 redesigns the UTF-8-validity seam.
-function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, _utf8Validity: FakeUtf8Probe = 'valid'): {
+function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, utf8Validity: FakeUtf8Probe = 'valid'): {
   readFrom(fromByte: number): SubprocessOutputRead
 } {
   return {
     readFrom(_fromByte: number): SubprocessOutputRead {
-      return { text, nextOffset: bytes, lossy }
+      return { utf8Validity, text, nextOffset: bytes, lossy }
     },
   }
 }

@@ -15,7 +15,7 @@ import { closeSync, mkdtempSync, openSync, rmdirSync, unlinkSync, writeSync } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
-import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { scrubbedParentEnv, utf8ValidityOf } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   CollectedOutput,
@@ -23,6 +23,7 @@ import type {
   SubprocessHandle,
   SubprocessOutcome,
   SubprocessOutputMode,
+  SubprocessOutputRead,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import type { BoundProcessOwner, ManagedProcessLaunch } from './managed-owner.ts'
@@ -244,13 +245,14 @@ export class OutputCollector {
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 for the first read).
    * @returns the delta text, the offset for the next read, the `lossy` flag, and the spill path when one was created.
    */
-  readFrom(fromByte: number): { text: string; nextOffset: number; lossy: boolean; spillPath?: string } {
+  readFrom(fromByte: number): SubprocessOutputRead {
     const windowStart = this.total - this.bytes
     const buffer = Buffer.concat(this.chunks)
     const lossy = fromByte < windowStart
     const slice = lossy ? buffer : buffer.subarray(fromByte - windowStart)
     return {
       text: slice.toString('utf8'),
+      utf8Validity: utf8ValidityOf(slice),
       nextOffset: this.total,
       lossy,
       ...this.spillFile !== undefined ? { spillPath: this.spillFile } : {},

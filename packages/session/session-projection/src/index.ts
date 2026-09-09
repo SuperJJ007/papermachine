@@ -58,7 +58,7 @@ export interface ProjectionDefinition<
    * @param state - schema-validated persisted state.
    * @returns the internal watermark, which must equal the checkpoint row sequence.
    */
-  checkpointStateSeq?(state: NoInfer<S>): number
+  checkpointStateSeq?(this: void, state: NoInfer<S>): number
   /**
    * State for the empty log and its immutable Session metadata.
    * @param header - immutable metadata for the Session being projected.

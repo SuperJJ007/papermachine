@@ -1080,7 +1080,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
     const pending = kernel.execute(await prepareRun(harness.root, 'run-interrupt', {
       action: 'sleep', sleepMs: 10_000, trapSigint: true, signalReadyPath,
     }))
-    await vi.waitFor(() => expect(existsSync(signalReadyPath)).toBe(true))
+    await vi.waitFor(() => { expect(existsSync(signalReadyPath)).toBe(true) })
     kernel.interrupt()
     await expect(pending).resolves.toMatchObject({ status: 'interrupted', detail: '' })
     await kernel.end('test-teardown')

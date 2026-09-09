@@ -1411,11 +1411,11 @@ it.skipIf(process.platform === 'win32')('cooperative interruption leaves the pro
     graceMs: 100,
   }))
   try {
-    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('ready'))
+    await vi.waitFor(() => { expect(handle.collected.stdout?.readFrom(0).text).toContain('ready') })
     handle.interrupt()
-    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('interrupted'))
+    await vi.waitFor(() => { expect(handle.collected.stdout?.readFrom(0).text).toContain('interrupted') })
     handle.stdin?.write('next\n')
-    await vi.waitFor(() => expect(handle.collected.stdout?.readFrom(0).text).toContain('continued'))
+    await vi.waitFor(() => { expect(handle.collected.stdout?.readFrom(0).text).toContain('continued') })
   } finally {
     handle.terminate()
     await handle.done

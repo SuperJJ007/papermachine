@@ -6,6 +6,8 @@ The **native-OS-chooser backend** of the [directory-picker seam](../directory-pi
 
 **Dual-face package**: the browser half (`./client`) registers a renderless flow occupant into [ui-workspace's](../../client/ui-workspace/README.md) two directory-flow holes — each `open` request drives `host.pickDirectory` and reports the one outcome (picked path / cancel / failure) through the hole's owner conversation. Both directory-flow declarations must be live before either contribution installs. One cordis.yml row therefore composes both sides of the native interaction; the client carries no capability-kind branching, and mounting a second flow package fails at load (the holes are `single` kind).
 
+Windows selected paths are copied by UTF-16 length into a Node-owned Buffer before decoding, without creating an external ArrayBuffer unsupported by Electron.
+
 ## Model Experience
 
 None, as the backend serves the GUI host's directory selection; nothing here reaches a model request.

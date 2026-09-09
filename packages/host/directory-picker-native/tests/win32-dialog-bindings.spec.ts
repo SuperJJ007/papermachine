@@ -106,6 +106,12 @@ function installFakeKoffi(world: ComWorld): void {
             }
             case 'CoTaskMemFree': return (ptr: unknown) => { world.freed.push(ptr) }
             case 'lstrlenW': return (ptr: unknown) => ((ptr as FakePtr).text as string).length
+            case 'RtlMoveMemory': return (target: Buffer, source: FakePtr, len: number) => {
+              const bytes = Buffer.from((source.text as string) + '\0', 'utf16le')
+              expect(len).toBe(bytes.length)
+              expect(target.length).toBe(len)
+              bytes.copy(target)
+            }
             case 'GetCurrentThreadId': return () => 31337
             case 'SetThreadDpiAwarenessContext': {
               if (!world.hasThreadDpi) throw new Error(`${dll}: SetThreadDpiAwarenessContext not found`)
@@ -128,19 +134,7 @@ function installFakeKoffi(world: ComWorld): void {
       proto: (declaration: string) => ({ declaration }),
       pointer: (type: unknown) => type,
       sizeof: (type: string) => { void type; return FAKE_POINTER_SIZE },
-      view: (value: unknown, len: number): ArrayBuffer => {
-        // Models the real CoTaskMemAlloc'd buffer: exactly (text.length + 1)
-        // UTF-16 code units (the terminating NUL included). A view past that
-        // reads unallocated memory — a real page-boundary fault when the
-        // allocation sits at the end of a committed page — so the fake
-        // throws instead of silently returning it.
-        const text = (value as FakePtr).text as string
-        const allocatedBytes = (text.length + 1) * 2
-        if (len > allocatedBytes) throw new Error(`view(${len}) exceeds the ${allocatedBytes}-byte allocation`)
-        const bytes = Buffer.alloc(len)
-        bytes.write(text, 'utf16le')
-        return bytes.buffer
-      },
+      view: () => { throw new Error('Electron rejects external ArrayBuffers') },
       register: (fn: (hwnd: unknown, lparam: unknown) => number) => { world.registered += 1; return { fn } },
       unregister: () => { world.unregistered += 1 },
       decode: (value: unknown, offsetOrType: unknown): unknown => {
@@ -192,8 +186,9 @@ describe('loadWin32DialogBindings over the fake COM world', () => {
   it.each([
     ['an ASCII path', 'C:\\Users\\alex\\Documents'],
     ['a path with spaces and CJK characters', 'D:\\研究 数据\\项目'],
+    ['a path with surrogate pairs', 'D:\\研究 数据\\项目😀'],
     ['an empty path', ''],
-  ])('reads %s by its exact lstrlenW length, not a fixed-size view', async (_label, path) => {
+  ])('copies %s without an external ArrayBuffer', async (_label, path) => {
     const world = comWorld({ path })
     installFakeKoffi(world)
     const { loadWin32DialogBindings } = await loadBindingsModule()

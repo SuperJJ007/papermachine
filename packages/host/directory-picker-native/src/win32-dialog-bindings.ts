@@ -25,27 +25,18 @@ interface Koffi {
   register(fn: (...args: unknown[]) => unknown, type: unknown): unknown
   unregister(callback: unknown): void
   sizeof(type: string): number
-  view(ref: unknown, len: number): ArrayBuffer
 }
 
 /**
- * Read a UTF-16 string at a native address, sized by `lstrlenW` rather than
- * a fixed view. `GetDisplayName`'s result is a `CoTaskMemAlloc`'d buffer
- * exactly `(length + 1) * 2` bytes long — `length` UTF-16 code units plus
- * the terminating NUL — so viewing more than that reads unallocated memory;
- * when the allocation sits near the end of a committed page this faults the
- * process instead of returning garbage
- * (https://github.com/SuperJJ007/papermachine/issues/5). `lstrlenW` reports
- * `length` excluding the NUL, so `(length + 1) * 2` covers exactly the
- * allocation, terminator included; an empty string (`length === 0`) views
- * the 2-byte NUL-only allocation and decodes to `''` with no special case.
- * koffi's `_Out_ void **` out-params surface a raw address, and
- * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
- * on real Windows — so view the exact-length memory directly instead.
+ * Copy the COM UTF-16 allocation into a Node-owned buffer before decoding.
+ * Electron's V8 memory cage rejects the external ArrayBuffer created by
+ * koffi.view(), even when its length matches the native allocation.
+ * lstrlenW excludes the NUL; copying it keeps empty strings valid too.
  */
-function readUtf16(koffi: Koffi, lstrlenW: KoffiFunction, address: unknown): string {
+function readUtf16(copyMemory: KoffiFunction, lstrlenW: KoffiFunction, address: unknown): string {
   const length = lstrlenW(address) as number
-  const bytes = Buffer.from(koffi.view(address, (length + 1) * 2))
+  const bytes = Buffer.alloc((length + 1) * 2)
+  copyMemory(bytes, address, bytes.length)
   return bytes.toString('utf16le', 0, length * 2)
 }
 
@@ -107,6 +98,7 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
   const coCreateInstance = ole32.func('__stdcall', 'CoCreateInstance', 'int32', ['void *', 'void *', 'uint32', 'void *', 'void *'])
   const coTaskMemFree = ole32.func('__stdcall', 'CoTaskMemFree', 'void', ['void *'])
   const lstrlenW = kernel32.func('__stdcall', 'lstrlenW', 'int', ['void *'])
+  const copyMemory = kernel32.func('__stdcall', 'RtlMoveMemory', 'void', ['void *', 'void *', 'size_t'])
   const getCurrentThreadId = kernel32.func('__stdcall', 'GetCurrentThreadId', 'uint32', [])
 
   const protoShow = koffi.proto('int32 __stdcall DshDialogShow(void *self, void *owner)')
@@ -165,7 +157,7 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
             const nameOut: unknown[] = [null]
             const gotName = method(item, SLOT_GET_DISPLAY_NAME, protoGetDisplayName)(SIGDN_FILESYSPATH, nameOut)
             if (gotName < 0) return { hr: gotName }
-            const path = readUtf16(koffi, lstrlenW, nameOut[0])
+            const path = readUtf16(copyMemory, lstrlenW, nameOut[0])
             coTaskMemFree(nameOut[0])
             return { hr: gotName, path }
           } finally {

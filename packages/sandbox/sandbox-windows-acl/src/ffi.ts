@@ -73,6 +73,11 @@ export interface Win32Bindings extends Win32ProcessBindings {
   getTempPathW(length: number, buffer: Buffer): number
   setEnvironmentVariableW(name: string, value: string): number
   setConsoleCtrlHandler(handler: null, add: number): number
+  getConsoleWindow(): NativePtr | null
+  getConsoleCP(): number
+  allocConsole(): number
+  showWindow(window: NativePtr, command: number): number
+  setStdHandle(which: number, handle: NativePtr): number
   createFileW(
     fileName: string,
     desiredAccess: number,
@@ -221,6 +226,7 @@ let cached: Win32Bindings | undefined
 
 function bindings(): Win32Bindings {
   if (cached !== undefined) return cached
+  const user32 = koffi.load('user32.dll')
   cached = extendWin32ProcessBindings(({ kernel32, advapi32, bind }) => ({
     openProcess: bind(kernel32, 'OpenProcess', PVOID, ['uint32', 'int', 'uint32']),
     openProcessToken: bind(advapi32, 'OpenProcessToken', 'int', [PVOID, 'uint32', PPVOID]),
@@ -250,6 +256,11 @@ function bindings(): Win32Bindings {
     getTempPathW: bind(kernel32, 'GetTempPathW', 'uint32', ['uint32', PVOID]),
     setEnvironmentVariableW: bind(kernel32, 'SetEnvironmentVariableW', 'int', ['str16', 'str16']),
     setConsoleCtrlHandler: bind(kernel32, 'SetConsoleCtrlHandler', 'int', [PVOID, 'int']),
+    getConsoleWindow: bind(kernel32, 'GetConsoleWindow', PVOID, []),
+    getConsoleCP: bind(kernel32, 'GetConsoleCP', 'uint32', []),
+    allocConsole: bind(kernel32, 'AllocConsole', 'int', []),
+    showWindow: bind(user32, 'ShowWindow', 'int', [PVOID, 'int']),
+    setStdHandle: bind(kernel32, 'SetStdHandle', 'int', ['int', PVOID]),
     createFileW: bind(kernel32, 'CreateFileW', PVOID, [
       'str16', 'uint32', 'uint32', PVOID, 'uint32', 'uint32', PVOID,
     ]),

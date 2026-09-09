@@ -11,6 +11,8 @@ kind: "package-library"
 
 在 Windows 上，本包将子进程的写入限制在工作区和私有临时目录内。`workspace-write` 授予对这两个位置的写入权限，`read-only` 则均不授予。挂载 `dsh-sandbox-local` 后，受限的 bash 和 PowerShell 命令会自动获得此行为；调用方也可以直接使用公开 `AclSandbox` API，并捕获标准流。任何 Win32 操作失败都会阻止子进程在不受限制的情况下启动。该保证特意标记为部分强制，因为进程启动会保留 Everyone 访问权限，NTFS 硬链接也可以通过其他路径暴露同一文件；调用方可通过报告的 `partial` 强制级别检测此限制。
 
+runner 保留已有控制台，包括无窗口控制台。没有控制台时，runner 在受限启动前分配并隐藏自己的控制台，再恢复继承的管道与 NUL 句柄。控制台初始化失败会拒绝执行。
+
 ## 目录
 
 - [使用本包](#use-this-package)

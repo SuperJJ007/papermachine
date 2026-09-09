@@ -5,7 +5,7 @@
  * production confined execution walks.
  */
 
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -458,4 +458,34 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
       expect(result.stderr).toContain('windows-acl-run: ')
     }
   }, 15_000)
+})
+
+// Node-only coverage keeps console initialization independent of PowerShell availability.
+describe.skipIf(!isWin32)('windowless ACL runner', () => {
+  it.each([false, true])('preserves piped output with detached=%s', async (detached) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-acl-console-'))
+    const workspace = join(root, 'workspace')
+    const temp = join(root, 'temp')
+    mkdirSync(workspace)
+    mkdirSync(temp)
+    try {
+      const child = spawn(process.execPath, ['--import', 'tsx/esm', runnerEntry,
+        '--workspace', workspace, '--temp', temp, '--mode', 'read-only', '--',
+        process.execPath, '-e', 'console.log("restricted-console-ready")',
+      ], { windowsHide: true, detached, signal: AbortSignal.timeout(15_000), stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+      const status = await new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      expect(stderr).toBe('')
+      expect(status).toBe(0)
+      expect(stdout.trim()).toBe('restricted-console-ready')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

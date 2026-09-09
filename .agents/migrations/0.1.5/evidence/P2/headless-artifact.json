@@ -1,0 +1,36 @@
+{
+  "sessionId": "session-5a35dad2-46b4-4ead-b566-becd5b76eac9",
+  "source": "/Users/superjj/ccproj/pm-p2-acceptance/home/sessions/--Users-superjj-ccproj-pm-replant--/session-5a35dad2-46b4-4ead-b566-becd5b76eac9/session.v3.jsonl.zstd",
+  "artifactEvents": [
+    {
+      "type": "science/artifact-saved",
+      "seq": 24,
+      "time": 1788961869189,
+      "data": {
+        "version": 1,
+        "artifact": {
+          "artifactId": "c8e6a522-cd7f-4fea-9a3b-62c961a7520e",
+          "logicalName": "p2-acceptance.png",
+          "version": 1,
+          "title": "p2-acceptance.png",
+          "projectId": "b637b590-80c9-4a6b-a92c-14eff10cdbd2",
+          "versionId": "9a7e29b0-9afc-4a27-af0b-188d8bb966a6",
+          "sha256": "505b90894c0fc294557ed8f19ed940936a811a15488d9f4fa8954db49390050b",
+          "seenAt": 1788961869189
+        }
+      }
+    }
+  ],
+  "toolCalls": [
+    {
+      "seq": 20,
+      "name": "run_python"
+    }
+  ],
+  "runResults": [
+    {
+      "seq": 23,
+      "status": "success"
+    }
+  ]
+}

@@ -111,6 +111,7 @@ it('serves byte-identical GET and bodyless HEAD through the registered exact rou
   const url = `http://localhost/api/science-artifact?sessionId=${sessionId}&versionId=${version.versionId}`
   const get = await route.fetch(new Request(url))
   expect(await get.text()).toBe('x,y\n1,2\n')
+  expect(get.headers.get('content-disposition')).toContain('result-v1.csv')
   const head = await route.fetch(new Request(url, { method: 'HEAD' }))
   expect(head.headers.get('content-length')).toBe('8')
   expect(await head.text()).toBe('')
@@ -244,4 +245,17 @@ it('rejects a file that grows after the initial stat', async () => {
   await writeFile(path, 'x'.repeat(33))
   vi.mocked(fs.stat).mockResolvedValueOnce(initial)
   await expect(service.workspaceFile(sessionId, 'growing.txt')).rejects.toThrow('limit')
+})
+
+
+it('encodes non-ASCII download names and keeps extensionless fallback names', async () => {
+  const { artifact: owner, version } = await artifact()
+  const route = register.mock.calls[0]![0]
+  const url = `http://localhost/api/science-artifact?sessionId=${sessionId}&versionId=${version.versionId}`
+  const getOwner = vi.spyOn(ctx.scienceArtifactStore, 'getArtifact')
+  getOwner.mockResolvedValueOnce({ ...owner, logicalName: "分析('x').csv" })
+  const disposition = (await route.fetch(new Request(url))).headers.get('content-disposition')!
+  expect(disposition).toContain("filename*=UTF-8''%E5%88%86%E6%9E%90%28%27x%27%29-v1.csv")
+  getOwner.mockResolvedValueOnce(undefined)
+  expect((await route.fetch(new Request(url))).headers.get('content-disposition')).toContain(`${version.versionId}-v1`)
 })

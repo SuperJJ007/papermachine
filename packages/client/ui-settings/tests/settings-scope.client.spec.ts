@@ -92,7 +92,7 @@ describe('SettingsScopeController', () => {
       status: 'loading', value: undefined, revision: undefined, writable: false, mode: 'host',
     })
     await mirror.load()
-    expect(scope.getSnapshot()).toEqual({ effective: undefined, secrets: [],
+    expect(scope.getSnapshot()).toEqual({ effective: { preference: 'dark' }, secrets: [], base: undefined, user: undefined,
       status: 'ready', value: { preference: 'dark' }, revision: 3, writable: true, mode: 'host',
     })
   })

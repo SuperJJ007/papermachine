@@ -221,6 +221,47 @@ async function resolveWorkspacePath(state: SessionReadState, requestedPath: stri
   return { workspace, target, display: delta.split(sep).join('/') }
 }
 
+/**
+ * Content-Disposition filename for one Science artifact raw-bytes download:
+ * the logical name with its own extension stripped, `-v<ordinal>` inserted,
+ * and that same extension re-appended (`chart.png` v3 → `chart-v3.png`). A
+ * logical name with no extension keeps none — this never fabricates one from
+ * `mediaType`.
+ * @param logicalName - the owning artifact's current logical name.
+ * @param ordinal - the downloaded version's 1-based position among its artifact's versions.
+ * @returns the filename, still requiring RFC 5987/6266 encoding before use in a header.
+ */
+function scienceArtifactDownloadFilename(logicalName: string, ordinal: number): string {
+  const ext = extname(logicalName)
+  const base = ext === '' ? logicalName : logicalName.slice(0, -ext.length)
+  return `${base}-v${ordinal}${ext}`
+}
+
+/**
+ * Percent-encode a filename for RFC 5987's `ext-value` production, the
+ * `filename*=UTF-8''…` half of `Content-Disposition`. `encodeURIComponent`
+ * already escapes everything outside `unreserved`/most `sub-delims`; RFC
+ * 5987 §3.2.1 additionally excludes `!'()*` from `attr-char`, so those four
+ * are percent-encoded a second pass.
+ * @param filename - the filename to encode.
+ * @returns the `attr-char`-safe percent-encoded value.
+ */
+function encodeRfc5987Filename(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/gu, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+/**
+ * ASCII-only fallback for `Content-Disposition`'s plain `filename=` parameter
+ * (RFC 6266 recommends pairing it with `filename*` for user agents that
+ * ignore the extended form). Non-printable-ASCII and quote/backslash
+ * characters — which would otherwise break the quoted-string — degrade to `_`.
+ * @param filename - the filename to sanitize.
+ * @returns an ASCII, quote/backslash-free filename of the same length.
+ */
+function asciiFallbackFilename(filename: string): string {
+  return filename.replace(/[^\u0020-\u007E]|["\\]/gu, '_')
+}
+
 /** Read-only Remote service over a session's project and durable attachment references. */
 export class ScienceReadService extends TypertRemoteService {
   static inject = ['sessionQuery', 'scienceArtifactStore', 'sessionAttachments', 'attachments', 'typert']
@@ -465,8 +506,12 @@ export class ScienceReadService extends TypertRemoteService {
     try {
       const data = await this.ctx.scienceArtifactStore.readBlob(artifact.projectId, artifact.sha256)
       request.signal.throwIfAborted()
+      const owner = await this.ctx.scienceArtifactStore.getArtifact(artifact.projectId, artifact.artifactId)
+      const filename = scienceArtifactDownloadFilename(owner?.logicalName ?? artifact.versionId, artifact.ordinal)
+      const disposition = `attachment; filename="${asciiFallbackFilename(filename)}"; filename*=UTF-8''${encodeRfc5987Filename(filename)}`
       return new Response(request.method === 'HEAD' ? null : data.slice(), { headers: {
         'Content-Type': artifact.mediaType, 'Content-Length': String(data.byteLength),
+        'Content-Disposition': disposition,
         'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "sandbox; default-src 'none'",
       } })

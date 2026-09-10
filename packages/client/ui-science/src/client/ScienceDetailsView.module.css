@@ -280,7 +280,7 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 12px;
-  padding-top: 14px;
+  padding: 14px 10px 0;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   container-type: inline-size;
   /* Elevated surface: this panel's own .elementReference chips (and the

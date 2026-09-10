@@ -21,9 +21,12 @@ afterEach(() => {
 })
 
 function runPnpm(root: string, args: string[]): void {
+  // pnpm injects this override into script children; the fixture owns its run policy.
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => name.toLowerCase() !== 'pnpm_config_verify_deps_before_run'))
   const result = spawnSync(process.execPath, [pnpm, '--config.manage-package-manager-versions=false', '--config.offline=true', '--config.store-dir=' + join(root, 'store'), ...args], {
     cwd: root,
-    env: { ...process.env, CI: 'true' },
+    env: { ...env, CI: 'true' },
     encoding: 'utf8',
     timeout: 20_000,
   })
@@ -106,7 +109,7 @@ function sourceState(root: string): Record<string, unknown> {
 function staleDependencyState(root: string): void {
   const path = join(root, 'node_modules/.pnpm-workspace-state-v1.json')
   const state = JSON.parse(readFileSync(path, 'utf8')) as { settings: { autoInstallPeers: boolean } }
-  state.settings.autoInstallPeers = false
+  state.settings.autoInstallPeers = !state.settings.autoInstallPeers
   writeFileSync(path, JSON.stringify(state))
 }
 

@@ -2,12 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { ProductEnvironment } from '../src/product-environment.ts'
 import { writeEnvironmentBinding } from '../src/environment-binding.ts'
 const roots: string[] = []
 const resources = fileURLToPath(new URL('../resources', import.meta.url))
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 async function setup() {
   const home = await mkdtemp(join(tmpdir(), 'desktop-environment-')); roots.push(home)
   const environment = new ProductEnvironment(home, resources)
@@ -19,6 +19,9 @@ it('allows an unbound staged health probe but refuses an unbound workspace launc
   await expect(environment.writeOverlay(join(home, 'active'))).rejects.toThrow('not installed')
 })
 it('writes identical machine configuration into staged and active profiles without restoring obsolete product rows', async () => {
+  const platform = process.platform === 'win32' ? 'win32' : 'darwin'
+  vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+  vi.spyOn(process, 'arch', 'get').mockReturnValue('x64')
   const { home, environment } = await setup()
   const prefix = join(home, 'desktop-environments/environments/general/current')
   const bin = process.platform === 'win32' ? prefix : join(prefix, 'bin')

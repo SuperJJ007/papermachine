@@ -114,11 +114,11 @@ describe('Python closure deployment', () => {
   it('exposes automatic source refresh before an unguarded preflight run', () => {
     const root = fixture('deny')
     staleDependencyState(root)
-    const before = sourceState(root)
     const shim = join(root, 'packages/cli/node_modules/.bin/core')
-    const inode = lstatSync(shim).ino
+    writeFileSync(shim, readFileSync(shim, 'utf8') + '\n# stale fixture shim\n')
+    const before = sourceState(root)
     runPnpm(root, ['run', 'verify-runtime-closure'])
-    expect(lstatSync(shim).ino).not.toBe(inode)
+    expect(readFileSync(shim, 'utf8')).not.toContain('# stale fixture shim')
     expect(sourceState(root)).not.toEqual(before)
   }, 30_000)
 
@@ -136,7 +136,7 @@ describe('Python closure deployment', () => {
       env: { ...process.env, npm_execpath: 'test-pnpm.mjs' },
     })
     expect(dryRun.status).toBe(0)
-    const command = dryRun.stdout.split('\n').find(line => line.endsWith(' run verify-runtime-closure'))!
+    const command = dryRun.stdout.split(/\r?\n/).find(line => line.endsWith(' run verify-runtime-closure'))!
     const args = command.split('test-pnpm.mjs ')[1]!.split(' ')
     if (reject) {
       expect(() => { runPnpm(root, args) }).toThrow('fixture closure rejected')

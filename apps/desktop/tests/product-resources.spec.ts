@@ -29,7 +29,7 @@ describe('desktop product resources', () => {
     vi.stubGlobal('fetch', fetch)
     const executable = await prepareProductResources('darwin-arm64', root)
     expect(await readFile(executable)).toEqual(binary)
-    expect((await stat(executable)).mode & 0o111).not.toBe(0)
+    if (process.platform !== 'win32') expect((await stat(executable)).mode & 0o111).not.toBe(0)
     await prepareProductResources('darwin-arm64', root)
     expect(fetch).toHaveBeenCalledTimes(1)
   })

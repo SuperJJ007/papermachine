@@ -52,7 +52,7 @@ Profile 集成 driver 使用仅限仓库内部的 `tests/fixtures/production-pro
 
 `installProfilePackages(cwd, home, packages)` 为各协议 harness 提供相同的校验和链接能力。调用方拥有隔离 workspace 并负责清理；包名称和版本仍以真实 manifest 为准。
 
-向 `runLoaderSmoke` 传入 `profilePackages`，将仅由测试 overlay 使用的 npm 包名称映射到其真实包目录。harness 验证每个目录的 manifest 名称匹配且版本非空，然后在启动前将其链接到隔离 home 的 `profiles/node_modules`。这样，Loader 包清单和普通 Node 解析都能找到 source 模式 workspace import 加载的同一个包。包缺失、manifest 不匹配或链接冲突都会失败；harness 不伪造 manifest，也不跳过无法解析的引用。`DSH_HOME` 必须位于生成的 cwd 内，清理 cwd 时移除所有 fixture 链接。产品安装依赖保持不变。参见 [overlay 包来源决策](../../../.agents/notes/implemented/testing/2026-09-10-smoke-overlay-package-provenance.zh.md)。
+向 `runLoaderSmoke` 传入 `profilePackages`，将仅由测试 overlay 使用的 npm 包名称映射到其真实包目录。harness 验证每个目录的 manifest 名称匹配且版本非空，然后在启动前将其链接到隔离 home 的 `profiles/node_modules`。这样，Loader 包清单和普通 Node 解析都能找到 source 模式 workspace import 加载的同一个包。快照 patch 预先创建的链接仅在指向相同真实目录时复用。包缺失、manifest 不匹配或链接冲突都会失败；harness 不伪造 manifest，也不跳过无法解析的引用。`DSH_HOME` 必须位于生成的 cwd 内，清理 cwd 时移除所有 fixture 链接。产品安装依赖保持不变。参见 [overlay 包来源决策](../../../.agents/notes/implemented/testing/2026-09-10-smoke-overlay-package-provenance.zh.md)。
 
 ### 驱动 fixture 轮次
 

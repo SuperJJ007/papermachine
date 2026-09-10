@@ -12,6 +12,7 @@
  */
 
 import { clearedProxyEnv } from '@deepseek-ai/dsh-http-proxy'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -236,7 +237,7 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
  * @param cwd - isolated workspace that owns the home and removes it after the test.
  * @param configuredHome - selected Harness home, resolved relative to cwd.
  * @param packages - npm names mapped to real directories with matching versioned manifests.
- * @returns completion after every package link exists; rejects invalid identities or unowned homes.
+ * @returns completion after every package link exists; reuses matching targets and rejects conflicts, invalid identities or unowned homes.
  */
 export async function installProfilePackages(
   cwd: string,
@@ -256,6 +257,12 @@ export async function installProfilePackages(
     }
     const link = join(home, 'profiles', 'node_modules', name)
     await mkdir(dirname(link), { recursive: true })
+    if (existsSync(link)) {
+      if (await realpath(link) !== packageDir) {
+        throw new Error(`runLoaderSmoke: overlay package ${name} resolves to two directories`)
+      }
+      continue
+    }
     await symlink(packageDir, link, 'junction')
   }
 }

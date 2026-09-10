@@ -12,7 +12,7 @@ Source-mode smoke tests resolve workspace imports through tsconfig paths, while 
 
 The [loader-smoke harness](../../../../packages/test-support/loader-smoke/README.md#overlay-package-provenance) owns explicit `profilePackages` mappings for overlay-only packages. It validates the real directory's name and version and creates package links only inside the test-owned home before launching the shipped CLI. The headless adapter explicitly supplies replay and per-composition package directories for PTY, LSP, product subagents, ACP subagents and the Python code runtime. The product dependency graph, profile configuration, inventory collector and request comparison remain unchanged.
 
-The owning tests resolve the linked manifest from a profile path, reject missing or mismatched packages and unowned homes, and check cleanup. Recorded-session replay exercises the complete inventory-enabled application. An unresolved package continues to fail; successful model replay cannot substitute for this check.
+The installer reuses a link already prepared by a snapshot patch only when its canonical directory matches the declared package directory; a conflicting target still fails before launch. The owning tests cover both cases and resolve the linked manifest from a profile path, reject missing or mismatched packages and unowned homes, and check cleanup. Recorded-session replay exercises the complete inventory-enabled application. An unresolved package continues to fail; successful model replay cannot substitute for this check.
 
 ## Alternatives considered
 

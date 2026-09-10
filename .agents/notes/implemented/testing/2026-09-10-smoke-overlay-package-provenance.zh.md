@@ -12,7 +12,7 @@ Source 模式 smoke 测试通过 tsconfig paths 解析 workspace import，而交
 
 [loader-smoke harness](../../../../packages/test-support/loader-smoke/README.zh.md#overlay-package-provenance) 拥有仅供测试 overlay 使用的显式 `profilePackages` 映射。它校验真实目录的名称与版本，并在启动交付 CLI 前，只在测试拥有的 home 中创建包链接。headless adapter 显式声明 replay 包和各 composition 的额外包目录，涵盖 PTY、LSP、产品子代理、ACP 子代理与 Python code runtime。产品依赖图、profile 配置、inventory collector 和请求比较保持不变。
 
-所属测试从 profile 路径解析被链接的 manifest，拒绝缺失或不匹配的包与非自有 home，并检查清理。Recorded-session replay 验证完整的 inventory-enabled 应用。无法解析的包仍然失败；模型重放成功不能代替这项检查。
+安装器仅在规范化目录与声明的包目录一致时复用快照 patch 预先创建的链接；目标冲突仍在启动前失败。所属测试覆盖这两种情形，并从 profile 路径解析被链接的 manifest，拒绝缺失或不匹配的包与非自有 home，并检查清理。Recorded-session replay 验证完整的 inventory-enabled 应用。无法解析的包仍然失败；模型重放成功不能代替这项检查。
 
 ## Alternatives considered
 

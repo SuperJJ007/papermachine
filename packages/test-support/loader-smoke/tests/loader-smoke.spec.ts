@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -119,6 +119,25 @@ describe('runLoaderSmoke', () => {
 
 
 describe('isolated profile overlay package provenance', () => {
+  it.each([false, true])('checks a package link prepared by the patch materializer (conflict=%s)', async (conflict) => {
+    const packages: Record<string, string> = {}
+    const run = runLoaderSmoke({
+      label: 'prepared overlay', tempDirPrefix: 'loader-overlay-prepared-',
+      binScript: fixture('success'), configPath, tsconfigPath, profilePackages: packages,
+      prepare: async (cwd) => {
+        const directory = join(cwd, 'overlay')
+        await mkdir(directory)
+        await writeFile(join(directory, 'package.json'), JSON.stringify({ name: '@smoke/overlay', version: '1.0.0' }))
+        packages['@smoke/overlay'] = directory
+        const parent = join(cwd, '.dsh', 'profiles', 'node_modules', '@smoke')
+        await mkdir(parent, { recursive: true })
+        await symlink(conflict ? cwd : directory, join(parent, 'overlay'), 'junction')
+      },
+    })
+    if (conflict) await expect(run).rejects.toThrow('resolves to two directories')
+    else await expect(run).resolves.toHaveProperty('stdout')
+  })
+
   it.each([false, true])('resolves the real package manifest and removes its links (cwd home=%s)', async (cwdHome) => {
     const packages: Record<string, string> = {}
     const env: NodeJS.ProcessEnv = {}

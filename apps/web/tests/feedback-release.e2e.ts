@@ -82,6 +82,8 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     await page.getByRole('menuitem', { name: /^Model\b/ }).click()
     await page.getByRole('menuitemradio', { name, exact: true }).click()
     await expect.poll(() => trigger.getAttribute('aria-label')).toContain(name)
+    // The durable projection can update the label before the selection reply closes the menu.
+    await expect.poll(() => trigger.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
   }
 
   beforeAll(async () => {
@@ -219,14 +221,17 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const rated = page.getByRole('button', { name: 'Remove rating' })
     await expect.poll(() => rated.getAttribute('aria-pressed')).toBe('true')
     await expectFeedbackRelease('feedback/message-put', 1)
-    await page.getByRole('button', { name: 'Add a note' }).click()
-    await page.getByRole('textbox', { name: 'Feedback note' }).fill('Read both files before answering.')
+    // Dislike collects the category and note in the dialog; typing releases nothing.
+    await page.getByRole('button', { name: 'Bad response' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Submit feedback' })
+    await dialog.getByRole('button', { name: 'Task result', exact: true }).click()
+    await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('Read both files before answering.')
     expect(captured()).toHaveLength(releasedCount)
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await page.getByText('Read both files before answering.', { exact: true }).waitFor()
+    await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
+    await expect.poll(() => dialog.count()).toBe(0)
     await expectFeedbackRelease('feedback/message-put', 2)
     await rated.click()
-    await expect.poll(() => like.getAttribute('aria-pressed')).toBe('false')
+    await expect.poll(() => page.getByRole('button', { name: 'Bad response' }).getAttribute('aria-pressed')).toBe('false')
     await expectFeedbackRelease('feedback/message-delete', 1)
     const agent = scaffold.ctx.agents.get(sessionId)
     if (agent === undefined) throw new Error('feedback session has no active agent')
@@ -238,7 +243,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     ])
     expect(events.filter(event => event.type === 'feedback/message-put')).toMatchObject([
       { data: { sessionId, item: { rating: 'positive' } } },
-      { data: { sessionId, item: { rating: 'positive', note: 'Read both files before answering.' } } },
+      { data: { sessionId, item: { rating: 'negative', note: 'Read both files before answering.', category: 'task-result' } } },
     ])
     expect(events.filter(event => event.type === 'feedback/message-delete')).toMatchObject([{ data: { sessionId } }])
     expect(events.filter(event => event.type === 'turn/end')).toHaveLength(1)
@@ -250,7 +255,9 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     const feedback = events.flatMap<Record<string, string | undefined>>((event) => {
       switch (event.type) {
         case 'feedback/record': return [{ type: event.type, text: event.data.text }]
-        case 'feedback/message-put': return [{ type: event.type, rating: event.data.item.rating, note: event.data.item.note }]
+        case 'feedback/message-put': return [{
+          type: event.type, rating: event.data.item.rating, note: event.data.item.note, category: event.data.item.category,
+        }]
         case 'feedback/message-delete': return [{ type: event.type }]
         default: return []
       }

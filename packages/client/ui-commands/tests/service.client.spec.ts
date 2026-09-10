@@ -14,7 +14,7 @@ import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientSessionContext, ConsumeTokenRequest, InputTriggerPick, InputTriggerSource, SubmitAttachment } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { CommandContribution, CommandDecoration, CommandUiSpec, SelectOption } from '../src/client/contract.ts'
+import type { CommandContribution, CommandDecoration, PopupSelectSpec, SelectOption } from '../src/client/contract.ts'
 import type { CommandDescriptor } from '../src/client/directory.ts'
 import { CommandUiRuntime } from '../src/client/service.ts'
 
@@ -157,7 +157,7 @@ function menuPick(source: InputTriggerSource, name: string, session: ClientSessi
   return source.onPick(pick)
 }
 
-const themeUi = (over: Partial<CommandUiSpec> = {}): CommandUiSpec => ({
+const themeUi = (over: Partial<PopupSelectSpec> = {}): PopupSelectSpec => ({
   kind: 'popupSelect',
   options: () => Promise.resolve([{ id: 'dark', label: 'Dark' }]),
   onSelect: () => undefined,
@@ -382,6 +382,43 @@ describe('dispatch (menu column)', () => {
     expect(outcome.claim.token).toBe('/goal ')
     expect(outcome.claim.hint).toBe('goal text')
     expect(executeCalls).toEqual([])
+  })
+
+  it('action decoration: a menu pick consumes the span and runs the callback without executing', async () => {
+    const { command, source, mint, warm, executeCalls } = await bench()
+    const scope = mint('s1')
+    const consumes: ConsumeTokenRequest[] = []
+    scope.ctx.on('slash/input-consume-token', (r) => {
+      consumes.push(r)
+      return true
+    })
+    const run = vi.fn()
+    command.decorate({ name: 'plan', available: () => true, ui: { kind: 'action', run } })
+    await warm(proj('s1'))
+    expect(menuPick(source, 'plan', proj('s1'), 5)).toBe('handled')
+    expect(consumes).toEqual([{ guard: { kind: 'span', span: { start: 0, end: 5, draftRev: 3 } } }])
+    expect(run).toHaveBeenCalledWith(proj('s1'))
+    expect(executeCalls).toEqual([])
+    expect(command.popupFor(scope.ctx).state.getSnapshot().open).toBe(false)
+  })
+
+  it('action decoration: a bare enter runs even with attachments; an argued line bypasses it', async () => {
+    const { command, source, mint, warm } = await bench()
+    const scope = mint('s1')
+    const consumes: ConsumeTokenRequest[] = []
+    scope.ctx.on('slash/input-consume-token', (r) => {
+      consumes.push(r)
+      return true
+    })
+    const run = vi.fn()
+    command.decorate({ name: 'plan', available: () => true, ui: { kind: 'action', run } })
+    await warm(proj('s1'))
+    await expect(source.matchEnter!(proj('s1'), '/plan', new AbortController().signal, { attachments: 1 })).resolves.toBe('handled')
+    expect(consumes).toEqual([{ guard: { kind: 'bare-token', token: '/plan' } }])
+    expect(run).toHaveBeenCalledTimes(1)
+    // An argued line never consults the decoration.
+    await expect(source.matchEnter!(proj('s1'), '/plan later', new AbortController().signal, { attachments: 0 })).resolves.not.toBe('handled')
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
   it('host bare → consume-token span guard on the session scope + detached execute', async () => {

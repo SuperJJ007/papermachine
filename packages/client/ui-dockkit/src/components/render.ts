@@ -23,10 +23,12 @@ export interface PaneCallbacks {
   readonly onDividerPressed: (splitId: SplitId, index: number, event: ReactPointerEvent<HTMLElement>) => void
   /** Why a pane cannot split right now, or `undefined` while it can. */
   readonly splitBlock: (paneId: PaneId) => SplitBlock | undefined
-  /** Hide budget-blocked split controls without hiding width-blocked controls. */
-  readonly hideSplitAtCapacity?: boolean
+  /** Hide blocked split controls instead of rendering them disabled. */
+  readonly hideSplitWhenBlocked?: boolean
   /** Whether a pane's strip draws the add control. */
   readonly canAddTab: (paneId: PaneId) => boolean
+  /** Whether a tab draws its close control and its menu's close item. */
+  readonly canCloseTab: (tabId: TabId) => boolean
   /** Live drop preview, or `undefined` while nothing is being dragged. */
   readonly dropTarget: DropTarget | undefined
   /** Show both horizontal landing regions while a body split is being targeted. */

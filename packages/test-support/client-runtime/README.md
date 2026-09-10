@@ -29,7 +29,7 @@ This package gives a browser feature spec a real runtime to mount against: creat
 
 ### Setting up a feature spec
 
-`SlotTestRuntime.create()` assembles the runtime, `declare(children)` registers an auto frame whose per-key `<div data-slot>` wrappers become snapshot roots, `mount(plugin)` runs the feature on a real fiber, and `renderSlot(key, owner)` returns the slot-local view with scoped queries and in-place updates:
+`SlotTestRuntime.create()` assembles the runtime, `declare(children)` registers an auto frame whose per-key `<div data-slot>` wrappers become snapshot roots, `mount(plugin)` runs the feature on a real fiber, and `renderSlot(key, owner, opts?)` returns the slot-local view with scoped queries and in-place updates:
 
 ```text
 const runtime = await SlotTestRuntime.create()
@@ -41,6 +41,8 @@ await runtime.dispose()
 ```
 
 `mount` prechecks required services and fails loud when one is missing — `provide(name, value)` supplies an extra service first. The runtime provides an unavailable `fileUpload` stub so assemblies can mount; replace `runtime.fileUpload.upload` before mounting when a test exercises upload behavior. `storeOf(key, scopeKey)` returns the live store instance the renderer hands a slot's component for identity and action-driven-write assertions.
+
+The optional render options select a keyed entry with `entryKey` or a list item with `only`; `view.update(owner)` retains that selection. `runtime.panelInfo` supplies the default `usePanelInfo` source with no global panel selected. Release it with `releasePanelInfoSource()` before mounting the production Layout owner. `dispose()` releases both default Workspace and panel-info root sources; early release is idempotent and does not remove replacement owners.
 
 ### Local DOM snapshots
 

@@ -139,7 +139,7 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('table', { name: 'alpha.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('alpha', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Provenance', exact: true }).click()
-    expect(await details.getByText(
+    await expect.poll(() => details.getByText(
       'This version was produced in a different session (Source session A) — nothing to show here.',
       { exact: true },
     ).count()).toBe(1)

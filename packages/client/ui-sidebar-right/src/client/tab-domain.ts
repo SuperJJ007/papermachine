@@ -77,18 +77,19 @@ export class TabDomain {
   /**
    * Reconcile one session's occurrences with its committed layout.
    *
-   * Called by the seat after every commit, and only then: aborting a vanished
-   * record runs the types' cleanup, which writes their stores.
+   * Called when a store is adopted and after its commits; removing a record
+   * aborts the types' cleanup, which may write their stores.
    * @param sessionId - the session whose layout committed.
-   * @param layout - that session's layout as committed.
+   * @param layout - Committed layout, or undefined when the adopted store has no surface.
    */
-  sync(sessionId: SessionId, layout: LayoutState): void {
+  sync(sessionId: SessionId, layout: LayoutState | undefined): void {
     const held = this.session(sessionId)
     for (const [tabId, occurrence] of held) {
-      if (layout.tabs[tabId] !== undefined) continue
+      if (layout?.tabs[tabId] !== undefined) continue
       held.delete(tabId)
       occurrence.controller.abort()
     }
+    if (layout === undefined) return
     for (const tab of Object.values(layout.tabs)) {
       const occurrence = held.get(tab.id) ?? this.hold(sessionId, tab.id, { address: tab.contentId, params: undefined, revision: 0 })
       const pane = findTabPane(layout, tab.id)

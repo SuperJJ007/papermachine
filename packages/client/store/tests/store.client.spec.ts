@@ -320,6 +320,34 @@ describe('partial persistence across reconstruction', () => {
     expect(rows.has('preferences.a')).toBe(false)
   })
 
+  it('round trips an owner-defined nested preference projection through a scoped key', () => {
+    const rows = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => rows.get(key) ?? null,
+      setItem: (key: string, value: string) => { rows.set(key, value) },
+      removeItem: (key: string) => { rows.delete(key) },
+    })
+    const handle = defineStore({
+      init: () => ({ panel: { width: 400, shown: false } }),
+      persist: 'nested',
+      persistence: {
+        save: state => state.panel.width,
+        restore: (saved, initial) => {
+          if (typeof saved !== 'number') throw new Error('Expected a width')
+          return { panel: { ...initial.panel, width: saved } }
+        },
+      },
+      actions: { resize: (draft, width: number) => { draft.panel = { width, shown: true } } },
+    })
+    const first = handle.create('a')
+    first.actions.resize(720)
+    expect(rows.get('nested.a')).toBe('720')
+    expect(handle.create('a').getSnapshot()).toEqual({ panel: { width: 720, shown: false } })
+    expect(handle.create('b').getSnapshot().panel.width).toBe(400)
+    first.clearPersisted()
+    expect(rows.has('nested.a')).toBe(false)
+  })
+
   it('rejects a non-object persisted value for an object store and retains its initial state', () => {
     vi.stubGlobal('localStorage', { getItem: () => 'null', setItem: vi.fn() })
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})

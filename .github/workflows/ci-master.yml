@@ -14,14 +14,11 @@ on:
           - larger-runner-benchmark
           - consolidated-runner-benchmark
 
-# Master runs platform runtime checks, Wine, and two self-hosted standby drills.
-# The drills outlast the interval between master merges, so
-# push is exempt from cancellation (see ci-failover-runbook). workflow_dispatch
-# keeps cancelling: a re-dispatched runner benchmark holds up to 12 larger
-# runners for 15 minutes in this same group.
+# New master pushes and manual runs replace obsolete checks in this workflow/ref.
+# Standby drills share cancellation; use completed runs as readiness evidence.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

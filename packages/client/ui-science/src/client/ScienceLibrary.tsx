@@ -1,4 +1,4 @@
-/** Project-wide artifact library hosted by the public Sidebar guide. */
+/** Project-wide artifact library hosted by its native Sidebar page. */
 import { useEffect, useState } from 'react'
 import type { RemoteError } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconChevronDownOutline14, IconChevronRightOutline14, relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -13,13 +13,13 @@ import { ArtifactFileTile } from './ArtifactFileTile.tsx'
 import { artifactImageLabels } from './ArtifactContent.tsx'
 import css from './ScienceDetailsView.module.css'
 
-/** Readers injected into the guide seat. */
+/** Readers injected into the library page. */
 export interface ScienceLibraryInjected {
   loadLibrary: ScienceDetailsInjected['loadLibrary']
   loadImage: ScienceImageLoader
 }
-/** Framework-bound library guide props. */
-export type ScienceLibraryProps = PropsRuntime<'sidebar.right.tab.guide'> & PropsLocale<'science'> & PropsStore<ScienceSelectionStore> & ScienceLibraryInjected
+/** Framework-bound library page props. */
+export type ScienceLibraryProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'science'> & PropsStore<ScienceSelectionStore> & ScienceLibraryInjected
 
 /** Render the project library and navigate through the owning tab's session-scoped actions. */
 export function ScienceLibrary({

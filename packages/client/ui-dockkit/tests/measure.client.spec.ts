@@ -57,21 +57,21 @@ describe('measurePaneFits', () => {
     const root = surface()
     const bare = document.createElement('section')
     bare.dataset.dockkitPane = 'bare'
-    root.append(pane('wide', 420), bare)
+    root.append(pane('wide', 520), bare)
     expect(paneElements(root).map(([id]) => id)).toEqual(['wide', 'bare'])
     const fits = measurePaneFits(root)
     expect(fits.get(asPane('wide'))).toEqual({ row: true, column: true })
     expect(fits.get(asPane('bare'))).toEqual({ row: true, column: true })
   })
 
-  // 308px: halves of 150px inside the borders, against 104px of controls plus one chip.
+  // 308px: halves of 152px inside the borders, against 104px of controls plus one chip.
   it('reads the chip minimum from a rendered chip\'s computed style, padding included for a content box', () => {
     const root = surface()
     const narrow = pane('p', 308)
     root.append(narrow)
-    // No chip rendered: the stylesheet's 59px, so 163 > 150.
+    // No chip rendered: the stylesheet's 100px, so 204 > 152.
     expect(measurePaneFits(root).get(asPane('p'))?.row).toBe(false)
-    // 44px of content plus 4px + 4px of padding is 52: 156 > 150.
+    // 44px of content plus 4px + 4px of padding is 52: 156 > 152.
     const rendered = chip(narrow, { minWidth: '44px', paddingLeft: '4px', paddingRight: '4px', boxSizing: 'content-box' })
     expect(measurePaneFits(root).get(asPane('p'))?.row).toBe(false)
     // The same declaration as a border box is the whole footprint: 148 fits.
@@ -84,10 +84,10 @@ describe('measurePaneFits', () => {
     expect(measurePaneFits(root).get(asPane('p'))?.row).toBe(false)
   })
 
-  // 336px: halves of 164px against 163 with the stylesheet's 4px divider, 162 with an 8px one.
+  // 416px: halves of 204px against 204 with the stylesheet's zero divider, 202 with an 8px one.
   it('reads the divider\'s thickness from a rendered divider, and the stylesheet\'s before one exists', () => {
     const root = surface()
-    root.append(pane('p', 336))
+    root.append(pane('p', 416))
     expect(measurePaneFits(root).get(asPane('p'))?.row).toBe(true)
     const divider = document.createElement('div')
     divider.dataset.dockkitDivider = 's:0'

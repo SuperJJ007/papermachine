@@ -6,7 +6,7 @@ import type { FsObservation } from '@deepseek-ai/dsh-fs'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { WorkspaceFiles } from '../src/index.ts'
 import type { WorkspaceFileWatchFrame } from '../src/types.ts'
-import { agent, openWorkspace, type Harness } from './harness.ts'
+import { openWorkspace, type Harness } from './harness.ts'
 
 let harness: Harness
 const closeStreams: Array<() => Promise<unknown>> = []
@@ -38,7 +38,7 @@ function open(
   service: WorkspaceFiles,
   controller = new AbortController(),
 ): { next(): Promise<IteratorResult<WorkspaceFileWatchFrame>>; controller: AbortController } {
-  const iterator = service.changes(agent, controller.signal)[Symbol.asyncIterator]()
+  const iterator = service.changes(harness.scope, controller.signal)[Symbol.asyncIterator]()
   closeStreams.push(async () => {
     controller.abort()
     await iterator.return?.()
@@ -149,7 +149,7 @@ describe('workspaceFiles.changes — ending', () => {
     })
     let service: WorkspaceFiles | undefined
     const fiber = await harness.ctx.plugin(Object.assign((ctx: Context) => {
-      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxLines: 1, maxEntries: 1 })
+      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1 })
     }, { inject: ['fs', 'sandboxPolicy'] }))
     try {
       if (service === undefined) throw new Error('plugin body did not run')
@@ -245,7 +245,7 @@ describe('workspaceFiles.changes — ending', () => {
   it('stops delivering to a generation the consumer returned from', async () => {
     const service = harness.endpoint()
     const controller = new AbortController()
-    const iterator = service.changes(agent, controller.signal)[Symbol.asyncIterator]()
+    const iterator = service.changes(harness.scope, controller.signal)[Symbol.asyncIterator]()
     closeStreams.push(async () => {
       controller.abort()
       await iterator.return?.()
@@ -267,7 +267,7 @@ describe('workspaceFiles.changes — ending', () => {
   it('ends every open generation when the owning fiber is disposed', async () => {
     let service: WorkspaceFiles | undefined
     const fiber = await harness.ctx.plugin(Object.assign((ctx: Context) => {
-      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxLines: 1, maxEntries: 1 })
+      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1 })
     }, { inject: ['fs', 'sandboxPolicy'] }))
     if (service === undefined) throw new Error('plugin body did not run')
     const stream = open(service)

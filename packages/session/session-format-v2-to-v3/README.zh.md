@@ -194,7 +194,7 @@ V2 `session-log-deepseek/delivery-accepted` 若携带 `data.sessionFormatVersion
 <a id="known-limitations-and-deferred-work"></a>
 
 - **历史预设歧义** — 已发布 `code` 引用无法区分与旧内置标识同名的自定义预设；[精确重命名](#header-and-presets)不依赖宿主。
-- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。持久化负责发布最终后继代；已有 V3 代不重新运行其入边。V3 尚未发布；本包不为已写出的开发期 V3 文件提供兼容或修复。
+- **不迁移文件或设置** — 本包绝不修改已提交代或 `settings.yaml`。持久化负责发布最终后继代；已有 V3 代不重新运行其入边。格式发布状态见[状态记录](../../../docs/session-format-status.zh.md)，兼容性义务见[已发布格式策略](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)。
 
 <a id="dev-note"></a>
 ### 开发备注

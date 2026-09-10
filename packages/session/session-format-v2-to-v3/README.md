@@ -194,7 +194,7 @@ The edge preserves historical request meaning and model configuration; it does n
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Historical preset ambiguity** — released `code` references cannot distinguish a custom preset with the legacy built-in id; the [exact rename](#header-and-presets) is host-independent.
-- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. V3 is unreleased; compatibility or repair for already-written development V3 files is not provided.
+- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. See [format release status](../../../docs/session-format-status.md) and the compatibility obligations in the [released-format policy](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -268,11 +268,11 @@ describe('gate graph validation', () => {
   )
 
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
-    'keeps review request policy tests in %s',
+    'keeps weighted approval policy tests in %s',
     (mode) => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
-      expect(ids).toContain('request-review')
+      expect(ids).toContain('approval-policy')
     },
   )
 

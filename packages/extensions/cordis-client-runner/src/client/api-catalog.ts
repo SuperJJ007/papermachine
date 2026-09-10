@@ -83,9 +83,21 @@ export interface TypeApiEntry {
 export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'layout',
-    summary: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply.',
-    description: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply. The attachPanels wiring hook stays on the concrete class (root-entry assembly only).',
+    summary: 'Panel navigation and geometry actions exposed through ctx.layout.',
+    description: 'Panel navigation and geometry actions exposed through ctx.layout.',
     methods: [
+      {
+        signature: 'selectPanel(panelId: MainPanelId | null): void',
+        description: 'Select a global central panel without changing the current Session.',
+        parameters: [{ name: 'panelId', description: 'registered main key, or null to show the Conversation.' }],
+        throws: ['if the selected main key is not registered; preserves the current selection.'],
+      },
+      {
+        signature: 'beginNavigation(): AbortSignal',
+        description: 'Start an asynchronous navigation, superseding any earlier pending navigation.',
+        parameters: [],
+        returns: 'a signal aborted by the next navigation or layout disposal; check it before committing UI state.',
+      },
       {
         signature: 'toggleSidebar(): void',
         description: 'Toggle the sidebar panel (closed ⟷ contract default width).',
@@ -314,6 +326,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Workspace archive and directory operations consumed by Client UI domains.',
     description: 'Workspace archive and directory operations consumed by Client UI domains.',
     methods: [
+      {
+        signature: 'openSession(sessionId: SessionId): void',
+        description: 'Select a Session and show its Conversation as one UI navigation action.',
+        parameters: [{ name: 'sessionId', description: 'listed or retained Session to display.' }],
+      },
+      {
+        signature: 'openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>',
+        description: 'Connect a Workspace and open its Session unless a later navigation supersedes it.',
+        parameters: [{ name: 'workspaceId', description: 'target Workspace.' }, { name: 'beforeOpen', description: 'optional synchronous preparation for the selected Session, skipped after supersession.' }],
+        returns: 'completion; a superseded request may create a Session but does not open it.',
+      },
+      {
+        signature: 'forkSession(sessionId: SessionId): Promise<void>',
+        description: 'Fork a Session and open the child unless a later navigation supersedes it.',
+        parameters: [{ name: 'sessionId', description: 'source Session.' }],
+        returns: 'completion; a superseded request leaves its child available without selecting it.',
+      },
       {
         signature: 'connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>',
         description: 'Resolve the reusable or newly created blank Session for a Workspace.',
@@ -610,6 +639,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LocaleSnapshot {\n    active: LocaleId;\n    locales: readonly LocaleDefinition[];\n    revision: number;\n}',
   },
   {
+    name: 'MainPanelId',
+    declaration: 'export type MainPanelId = Branded<\'MainPanelId\'>;',
+  },
+  {
     name: 'MatchedShare',
     declaration: 'export type MatchedShare<E extends SlotEntryDef, M> = E[\'kind\'] extends \'chain\' ? {\n    matched: M;\n} : object;',
   },
@@ -843,7 +876,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StoreSpec',
-    declaration: 'export interface StoreSpec<T, A extends ActionsDecl<T>> {\n    init: () => T;\n    persist?: string;\n    actions: A;\n}',
+    declaration: 'export interface StoreSpec<T, A extends ActionsDecl<T>> {\n    init: () => T;\n    persist?: string;\n    persistence?: {\n        save: (state: T) => unknown;\n        restore: (saved: unknown, initial: T) => T;\n    };\n    transient?: readonly (keyof T)[];\n    actions: A;\n}',
   },
   {
     name: 'SubmissionHandle',

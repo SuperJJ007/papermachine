@@ -10,6 +10,8 @@ Web GUI 以一条真实组装链交付——chromium 页面 → client 插件 bu
 
 ## 决策
 
+布局断言先等待字体加载、框架过渡完成及 Conversation 宽度发布，再读取尺寸；触发合成 resize 后，还需等待其调度的 React 更新，才能测量通过 portal 挂载的面板。目录树的子目录和根目录读取使用相同的 Remote 等待预算。工作区重载场景在打开另一个路径编辑器前，等待 Session 选择恢复及输入框获得焦点，因为迟到的聚焦会取消路径草稿。响应式文件标签场景将实测通道宽度放在容器查询档位内部，并为平台字体度量保留明确余量。
+
 `pnpm run test:web` 携带 `apps/web/tests/` 下的无密钥、确定性浏览器 e2e 车道：录制的会话日志 fixture 经 `@deepseek-ai/dsh-llm-replay` 对真实进程内 web 组合回放；用户可见状态使用规范化的 aria 预期输出，持久化的世界状态则使用进程内断言。配套的产品约定包括 `dsh-llm-replay` 的节奏控制、消费检查与已校验的索引式覆写 patch；跨包的 `dsh-llm` 失败通过自有数据属性保留经校验的提供方信息；已交付的 web 组合挂载 `llm-retry`，以处理瞬态模型失败。
 
 ### Scaffold：`apps/web/tests/scaffold.ts`

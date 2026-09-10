@@ -233,6 +233,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     const close = async (): Promise<void> => {
       await column.locator('[data-sidebar-right-toggle]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      // Closing publishes state before the frame's grid transition finishes.
+      await appFrame(page).evaluate(async (frame) => {
+        await Promise.allSettled(frame.getAnimations().map(animation => animation.finished))
+      })
       await expect.poll(() => detailsTrack(page)).toBe(0)
       await panel.waitFor({ state: 'hidden' })
     }
@@ -243,8 +247,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     // CSS width assigned by the grid solver.
     await expect.poll(() => sidebarSnapshot(page), { timeout: 5_000 })
       .toMatchObject({ mode: 'push', panelContentWidth: normalWidth, panelOuterWidth: normalWidth + 1, resizeHandleWidth: 8 })
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
-    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
+    await expect.poll(async () => ({
+      filesVisible: await column.locator('[data-files-state="tree"]').isVisible(),
+      errors: tripwire.pageErrors,
+    })).toEqual({ filesVisible: true, errors: [] })
     await column.locator('[data-dockkit-add-tab]').click()
     const split = column.locator('[data-dockkit-split-button]').first()
     await expect.poll(() => split.isDisabled()).toBe(false)
@@ -253,7 +259,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await panes.first().locator('[data-dockkit-tab]').filter({ hasText: 'Files' }).click()
     await expect.poll(() => panes.first().locator('[data-files-state="tree"]').count()).toBe(1)
     const retainedA = await paneSnapshot(page)
-    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Start']])
+    expect(retainedA.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files', 'Start'], ['Files']])
     await checkpoint('A normal: two panes')
 
     await column.locator('[data-sidebar-right-mode="fullscreen"]').click()
@@ -272,12 +278,13 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await expect.poll(() => detailsTrack(page)).toBe(0)
     await open()
     expect(await panel.getAttribute('data-sidebar-right-panel')).toBe('push')
-    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
     const workspaceDirectory = column.locator('[data-files-entry="directory"] > button').filter({ hasText: /^workspace$/ })
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()
     await expect.poll(() => workspaceDirectory.getAttribute('aria-expanded')).toBe('true')
-    await expect.poll(() => column.locator('[data-files-row="loading"]').count()).toBe(0)
+    // The child listing crosses the same Remote as the root listing above.
+    await column.locator('[data-files-row="loading"]').waitFor({ state: 'hidden', timeout: 15_000 })
     expect(await column.locator('[data-files-row="failed"]').count()).toBe(0)
     const retainedB = await paneSnapshot(page)
     expect(retainedB.map(pane => pane.tabs.map(tab => tab.title))).toEqual([['Files']])
@@ -312,7 +319,8 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
 
     try {
       await page.setViewportSize({ width: 1024, height: viewport.height })
-      await expect.poll(() => columns(page)).toEqual([280, 400, 344])
+      // Frame measurement and the grid transition can finish after setViewportSize returns.
+      await expect.poll(() => columns(page), { timeout: 5_000 }).toEqual([280, 400, 344])
       await dragSidebar(page, 420)
       await expect.poll(() => columns(page)).toEqual([420, 604, 0])
       expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)

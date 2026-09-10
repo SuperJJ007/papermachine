@@ -134,7 +134,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-Every request in this plugin's registration scope contains the independently registered glob and grep guidance below. Agent-scoped tool restrictions can hide either schema without removing its prompt section.
+At assembly time, each section checks `ctx.tools.get(name, scope)` and renders only while its tool is visible. The grep paragraph includes its read follow-up sentence only while read is visible. The original text and section order stay unchanged for the same supported tool set, including PTC capabilities behind `run_code`. This scope-dependent text selection applies to system-prompt sections. Tool schema descriptions remain registration-time text; in particular, the grep schema still recommends read even in a scope that hides read. Scope-dependent schema wording is not implemented.
 
 ##### Glob guidance with `sampleOverCapGlobResults: true`
 
@@ -156,11 +156,11 @@ Use the grep tool — not shell grep or rg — to search file contents. Use read
 
 #### Token effect
 
-Fixed guidance cost per request while the tools are registered; the required sampling choice selects one glob variant.
+Guidance cost follows the visible tools; the required sampling choice selects one glob variant.
 
 #### KV Cache effect
 
-Prefix-stable while the plugin scope, sampling choice, and guidance text are unchanged. Activation, disposal, or changing the choice may invalidate reuse from this prompt section.
+Prefix-stable while the visible tool set, plugin scope, sampling choice, and guidance text are unchanged. Restrictions, activation, disposal, or changing the choice may invalidate reuse from the first changed section.
 
 ### Tool schemas
 

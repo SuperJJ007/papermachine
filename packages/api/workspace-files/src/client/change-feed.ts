@@ -7,8 +7,7 @@
  * arrives, hands each frame to the followers of its path, and disposes the
  * stream when the last follower leaves. A follower buffers session changes
  * until `stat` supplies its Host absolute path, then filters queued and live
- * frames by that path, with `\\` normalized to `/`. Resource addresses identify
- * reload requests; they never determine a notification path.
+ * frames by that path, with `\\` normalized to `/`.
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceFileChange, WorkspaceFileWatchFrame } from '../types.ts'
@@ -26,7 +25,7 @@ function keyOf(path: string): string {
 
 /** Notices of one follower, delivered in order and pulled by its consumer. */
 class Follower implements AsyncIterable<WorkspaceFileNotice> {
-  private readonly pending: Array<{ readonly key: string | undefined; readonly notice: WorkspaceFileNotice }> = []
+  private readonly pending: Array<{ readonly key: string; readonly notice: WorkspaceFileNotice }> = []
   private readonly started = Promise.withResolvers<boolean>()
   private wake: (() => void) | undefined
   private ended = false
@@ -39,15 +38,9 @@ class Follower implements AsyncIterable<WorkspaceFileNotice> {
   readonly ready = this.started.promise
 
   /**
-   * @param address - resource address used for reload lookup.
    * @param leave - unregisters this follower and its abort listener.
    */
-  constructor(readonly address: string, private readonly leave: () => void) {}
-
-  /** The normalized Host path, absent until a successful stat. */
-  get key(): string | undefined {
-    return this.hostKey
-  }
+  constructor(private readonly leave: () => void) {}
 
   /**
    * Select the Host path for queued and future changes.
@@ -65,9 +58,9 @@ class Follower implements AsyncIterable<WorkspaceFileNotice> {
   /**
    * Queue one notice.
    * @param notice - what the consumer receives next.
-   * @param key - normalized Host path for a change; absent for a reload.
+   * @param key - normalized Host path for the change.
    */
-  push(notice: WorkspaceFileNotice, key?: string): void {
+  push(notice: WorkspaceFileNotice, key: string): void {
     this.pending.push({ key, notice })
     this.wake?.()
   }
@@ -90,7 +83,7 @@ class Follower implements AsyncIterable<WorkspaceFileNotice> {
       while (true) {
         const next = this.pending.shift()
         if (next !== undefined) {
-          if (next.key === undefined || this.hostKey === undefined || next.key === this.hostKey) yield next.notice
+          if (this.hostKey === undefined || next.key === this.hostKey) yield next.notice
           continue
         }
         if (this.ended) return
@@ -153,22 +146,6 @@ class SessionFeed {
   remove(follower: Follower): void {
     this.followers.delete(follower)
     if (this.followers.size === 0) this.close()
-  }
-
-  /**
-   * Reload an address and every follower bound to the same Host path.
-   * @param address - the resource address requesting a reload.
-   */
-  requestRestat(address: string): void {
-    const keys = new Set<string>()
-    for (const follower of this.followers) {
-      if (follower.address === address && follower.key !== undefined) keys.add(follower.key)
-    }
-    for (const follower of this.followers) {
-      if (follower.address === address || (follower.key !== undefined && keys.has(follower.key))) {
-        follower.push({ kind: 'restat' })
-      }
-    }
   }
 
   private async pump(): Promise<void> {
@@ -250,7 +227,7 @@ export class ChangeFeed {
   constructor(private readonly remote: WorkspaceFilesRemote) {}
 
   /**
-   * Follow one resource address in one session before its Host path is known.
+   * Follow one resource in one session before its Host path is known.
    *
    * The follower is registered on call, not on first pull. Changes delivered
    * to this Client are queued while stat is pending. The first follower starts
@@ -262,18 +239,17 @@ export class ChangeFeed {
    * any session write can trigger a retry; after binding, only matching queued
    * and live changes pass.
    * @param sessionId - the session whose workspace holds the file.
-   * @param address - the resource address, used only for reload lookup.
    * @param signal - ends the follow.
    * @returns a single-consumer subscription with Host-path binding and explicit disposal.
    */
-  follow(sessionId: SessionId, address: string, signal: AbortSignal): Follower {
+  follow(sessionId: SessionId, signal: AbortSignal): Follower {
     const feed = signal.aborted ? undefined : this.feedOf(sessionId)
     const leave = (): void => {
       signal.removeEventListener('abort', leave)
       follower.end()
       feed?.remove(follower)
     }
-    const follower = new Follower(address, leave)
+    const follower = new Follower(leave)
     if (feed === undefined) {
       follower.end()
     } else {
@@ -281,15 +257,6 @@ export class ChangeFeed {
       signal.addEventListener('abort', leave, { once: true })
     }
     return follower
-  }
-
-  /**
-   * Ask an address and its same-session Host-path peers to `stat` again.
-   * @param sessionId - the session whose workspace holds the file.
-   * @param address - the resource address requesting a reload.
-   */
-  requestRestat(sessionId: SessionId, address: string): void {
-    this.sessions.get(sessionId)?.requestRestat(address)
   }
 
   /**

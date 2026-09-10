@@ -50,8 +50,6 @@ export interface ResourceSnapshot<Value> {
   readonly value: Value | undefined
   /** The latest frame's failure; present only while `status` is `failed`. */
   readonly failure: RemoteFailure | undefined
-  /** Ask the provider for a fresh frame; a no-op when its protocol has no provider or no `reload`. */
-  readonly reload: () => void
 }
 
 /**
@@ -84,11 +82,6 @@ export interface ResourceProvider<P extends ResourceProtocol> {
    * @returns the frame stream; it must stop once `ctx.signal` aborts.
    */
   open(address: string, ctx: ResourceOpenContext): AsyncIterable<RemoteResult<ResourceProtocolMap[P]>>
-  /**
-   * Produce a fresh frame on the open stream. Absent when the protocol has no refresh.
-   * @param address - the full address, a `dsh-resource://<type>/…` URL.
-   */
-  reload?(address: string): void
 }
 
 /**

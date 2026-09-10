@@ -625,7 +625,7 @@ export function ScienceDetailsView({
           actions.setTabVersion(selection)
           tab.actions.openResource(tab.contentId, { params: { version: selection.version } })
         },
-        showLibrary: () => { tab.actions.openTab('guide') },
+        showLibrary: () => { tab.actions.openTab('science-library') },
         closeTab: (id) => { actions.closeTab(id); tab.actions.close() },
         openTab: (selection) => {
           actions.openTab(selection)

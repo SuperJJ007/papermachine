@@ -21,8 +21,8 @@
  * builtin resumes when the extension unregisters. Everything else colliding on
  * a kind throws, as does a second registration of an `id`.
  *
- * Thunked copy (`title`, `guide[].title`) is read again on every use, so a
- * language change needs no re-registration.
+ * Thunked copy (`title`, `guide[].title`, `guide[].description`) is read again
+ * on every use, so a language change needs no re-registration.
  */
 import type { ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
@@ -57,21 +57,23 @@ const RANKS: Readonly<Record<SidebarRightTabPriority, number>> = {
 /** The band a definition that names none is in. */
 const DEFAULT_BAND: SidebarRightTabPriority = 'extension'
 
-/** One entry box the guide page offers, contributed by the type it opens (picking it opens that type as a page). */
+/** One entry capsule the guide page offers, contributed by the type it opens (picking it opens that type as a page). */
 export interface SidebarRightGuideEntry {
   /** Ascending position among every registered type's entries. */
   readonly order: number
   /**
-   * The box's heading.
-   * @returns the heading in the current language.
+   * The capsule's title.
+   * @returns the title in the current language.
    */
   readonly title: () => string
   /**
-   * One line under the heading.
-   * @returns the line in the current language.
+   * One line under the title on what picking the capsule opens. The guide shows
+   * it only while it lists few enough entries to stay light; a crowded guide
+   * falls back to titles alone, so a type must stand on its title.
+   * @returns the description in the current language.
    */
-  readonly description: () => string
-  /** Optional glyph, drawn at the box's leading edge. */
+  readonly description?: () => string
+  /** Optional glyph, drawn before the title; without one the guide draws its cube placeholder. */
   readonly icon?: ComponentType<IconProps>
 }
 

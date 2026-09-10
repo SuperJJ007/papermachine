@@ -46,7 +46,8 @@ concurrency:
   # github.workflow identifies the caller inside a reusable workflow and keeps
   # an ordinary CI run from cancelling a full release validation on the same ref.
   group: build-single-exe-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
+  # Release-owned builds are part of an intentional publication transaction.
+  cancel-in-progress: ${{ !inputs.release }}
 
 permissions:
   contents: read

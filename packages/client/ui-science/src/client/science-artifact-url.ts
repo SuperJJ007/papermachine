@@ -2,7 +2,12 @@
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 
-/** @param sessionId - Project-authorizing session. @param versionId - Immutable version. @returns Same-origin byte route. */
+/**
+ * Build the authorized route for one immutable artifact version.
+ * @param sessionId - Project-authorizing session.
+ * @param versionId - Immutable version.
+ * @returns Same-origin byte route.
+ */
 export function scienceArtifactUrl(sessionId: SessionId, versionId: VersionId): string {
   return `/api/science-artifact?${new URLSearchParams({ sessionId, versionId })}`
 }

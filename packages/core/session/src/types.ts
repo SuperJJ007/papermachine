@@ -138,7 +138,7 @@ export interface CreateSessionOptions {
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**
-   * Exact fork-inherited prefix length when `meta.isSeeded` is true. In v2 the
+   * Exact fork-inherited prefix length when `meta.isSeeded` is true. The
    * constructor seed is exactly this inherited prefix; the constructor
    * appends the child-owned tagged marker at the cut.
    */

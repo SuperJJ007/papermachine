@@ -31,11 +31,6 @@ import type {
 } from './contract/input.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
-/**
- * The outward conversation face (`ctx.conversation`): the scope-addressed
- * verbs and the input registry other plugins may reach — and exactly what a
- * test fake must supply.
- */
 /** One ordinary composer submission offered to feature handlers before normal prompt admission. */
 export interface ComposerSubmission {
   readonly sessionId: SessionId
@@ -47,10 +42,21 @@ export interface ComposerSubmission {
 /** Undefined declines; a returned promise owns the submission outcome. */
 export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
 
+/** Session-addressed input and View operations exposed to Client plugins as `ctx.conversation`. */
 export interface IConversation {
-  /** @param handler - Feature admission handler. @returns Registration disposer. */
+  /**
+   * Offer ordinary composer submissions to a feature before normal prompt admission.
+   * @param handler - Returns undefined to decline or a promise owning the submission outcome.
+   * @returns Disposer that removes this handler from subsequent submissions.
+   */
   registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
-  /** @param sessionId - Addressed session. @param view - Public view id. @param focus - Target-owned focus key. */
+  /**
+   * Open the originating Session in the Conversation main panel and commit its View and focus.
+   * @param sessionId - Addressed Session, whose Conversation store must have been registered.
+   * @param view - Public View id.
+   * @param focus - Target-owned focus key.
+   * @throws when the Session has no registered Conversation store.
+   */
   openView(sessionId: SessionId, view: string, focus: string): void
 
   /** The per-session input machine registry (SessionInputResolver face). */
@@ -180,7 +186,12 @@ export class ConversationController extends Service implements IConversation {
     open(view, focus)
   }
 
-  /** @param sessionId - Store owner. @param open - Shell view writer. @returns Registration disposer. */
+  /**
+   * Bind view navigation to the session that owns the mounted conversation store.
+   * @param sessionId - Store owner.
+   * @param open - Shell view writer.
+   * @returns Disposer that removes this binding only while it remains current.
+   */
   bindViewOpener(sessionId: SessionId, open: (view: string, focus: string) => void): () => void {
     this.viewOpeners.set(sessionId, open)
     return () => { if (this.viewOpeners.get(sessionId) === open) this.viewOpeners.delete(sessionId) }

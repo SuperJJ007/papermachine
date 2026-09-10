@@ -10,7 +10,7 @@ Every model dispatch checks complete message content for files, including nested
 
 ## Decision
 
-[`contentHasFile`](../../../../packages/llm/llm/src/content.ts) uses direct iteration instead of recursive `Array.some` callbacks. It preserves early exit, nested tool-result traversal, and false results for other block kinds. It stores no identities, validation results, or freeze proofs. Image detection, file projection, request construction, and the 238 ms request-history budget are unchanged.
+[`contentHasFile`](../../../../packages/llm/llm/src/content.ts) uses direct iteration instead of recursive `Array.some` callbacks. It preserves early exit, nested tool-result traversal, and false results for other block kinds. It stores no identities, validation results, or freeze proofs. Image detection, file projection, and request construction keep their existing behavior. The [request-freeze calibration](2026-09-06-agent-request-freeze-provenance.md) owns the request-history budget.
 
 ## Measurement evidence
 

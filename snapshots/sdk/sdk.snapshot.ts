@@ -630,7 +630,7 @@ async function runScenario(scenario: CorpusScenario): Promise<{
         if (scenario.manifest.environment?.DSH_SNAPSHOT_FEEDBACK === '1') {
           const feedback = result.events.filter(event => event.type.startsWith('feedback/'))
           expect(feedback.map(event => event.type)).toEqual([
-            'feedback/record', 'feedback/message-put', 'feedback/message-put', 'feedback/message-delete',
+            'feedback/record', 'feedback/record', 'feedback/message-put', 'feedback/message-put', 'feedback/message-delete',
           ])
         }
         await waitForRootEvent(

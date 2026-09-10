@@ -1,8 +1,8 @@
 /**
- * The guide tab's identity, the page-address scheme, and the seed factory.
+ * The guide tab's identity, the page-address scheme, and default page selection.
  *
  * These live in the contract because two sides need them and neither may read
- * the other: the store seeds every new pane with a guide tab, and the guide
+ * the other: the store seeds new panes from the registry, and the guide
  * domain registers the type under the same kind.
  *
  * The docking kit treats `kind` as opaque, so these strings mean something only
@@ -10,7 +10,27 @@
  * type would use — the guide is not special in the machinery, only in being
  * always available.
  */
-import type { TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { SidebarRightTabRegistry } from '../tab-registry.ts'
+
+/** One pane's initial page, resolved from the current registered guide entries. */
+export interface SidebarRightSeed {
+  readonly kind: string
+  readonly title: string
+}
+
+/**
+ * Resolve the default page from the registered entry count.
+ * @param tabs - current tab registry.
+ * @returns the sole entry, or the guide when there are zero or multiple entries.
+ */
+export function defaultSeed(tabs: SidebarRightTabRegistry): SidebarRightSeed {
+  const [only, ...others] = tabs.guide()
+  const single = only !== undefined && others.length === 0
+  const kind = single ? only.kind : GUIDE_KIND
+  const definition = tabs.get(kind)
+  if (definition === undefined) throw new Error(`sidebarRight: default tab kind "${kind}" is not registered`)
+  return { kind, title: definition.title(pageAddress(kind)) }
+}
 
 /** The guide tab's kind. */
 export const GUIDE_KIND = 'guide'
@@ -24,18 +44,4 @@ export const GUIDE_KIND = 'guide'
  */
 export function pageAddress(kind: string): string {
   return `sidebar://${kind}`
-}
-
-/**
- * Build the guide tab a new pane is seeded with.
- *
- * The title is captured at mint time because it goes into the surface's
- * operation sequence, which records what happened and must not change meaning
- * later. A language change relabels the type, not tabs already open.
- * @param id - tab id minted by the caller.
- * @param title - the guide type's display name at mint time.
- * @returns the guide tab record.
- */
-export function makeGuideTab(id: TabId, title: string): TabRecord {
-  return { id, kind: GUIDE_KIND, contentId: pageAddress(GUIDE_KIND), title }
 }

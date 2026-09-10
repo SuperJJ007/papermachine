@@ -71,6 +71,17 @@ export interface PaneMeasure {
   readonly chipsWidth: number
   /** Width of the fill: free space, not a control. */
   readonly fillWidth: number
+  /**
+   * Footprint of the rendered split control (its width plus the strip's gap)
+   * for embedders that hide blocked split controls: a half too narrow to
+   * split hides its own control, so the rule leaves the footprint out of the
+   * fixed part. Leaving it out is also what keeps the reading stable — the
+   * control hiding sheds the same footprint from the strip, and a reading
+   * that counted it would flip with the control's visibility and re-render
+   * forever. Absent or 0 keeps the control in the fixed part, for embedders
+   * that render a blocked control disabled.
+   */
+  readonly splitControlWidth?: number
 }
 
 /** Pixel minimums the room rule holds each half to. */
@@ -79,18 +90,19 @@ export interface SplitMinimums {
   readonly divider: number
   /** One chip at its minimum: the smallest strip that still names a tab. */
   readonly chip: number
-  /** The smallest body under a strip: one secondary text line inside the body's padding. */
+  /** The smallest body under a strip: one secondary text line inside 12px of the body's own insets. */
   readonly body: number
 }
 
 /**
  * The minimums where no computed style can be read, mirroring
- * `dockkit.module.css`: `.splitRow > .divider` is 4px wide; `.tab` is 44px of
- * content plus 10px + 5px of padding (content-box), 59px; the body's 12px
- * padding above and below one 13px secondary line at 1.6 line-height is 45px,
- * held to 48px.
+ * `dockkit.module.css`: `.splitRow > .divider` takes no layout width (its
+ * hairline is painted over the seam); `.tab` is 80px of content plus
+ * 10px + 10px of padding (content-box), 100px; 12px above and below one 13px
+ * secondary line at 1.6 line-height — the inset a body draws for itself, as
+ * `.empty` does — is 45px, held to 48px.
  */
-export const SPLIT_MINIMUMS: SplitMinimums = { divider: 4, chip: 59, body: 48 }
+export const SPLIT_MINIMUMS: SplitMinimums = { divider: 0, chip: 100, body: 48 }
 
 /** Whether a pane's two halves after an equal split would each still work. */
 export interface HalvesFit {
@@ -102,9 +114,10 @@ export interface HalvesFit {
 
 /**
  * The room rule. After an equal split each half must hold what cannot shrink:
- * horizontally the strip's fixed part — its width minus the chip box and the
- * fill, which is the padding, the gaps, and every control that pane draws —
- * plus one chip at its minimum; vertically the strip plus a minimum body. The
+ * horizontally the strip's fixed part — its width minus the chip box, the
+ * fill, and `splitControlWidth`, which is the padding, the gaps, and every
+ * control a half would still draw — plus one chip at its minimum; vertically
+ * the strip plus a minimum body. The
  * borders are what the pane's box exceeds the strip's by. An unmeasured pane
  * (no layout, as under jsdom) fits: the rule only blocks on a positive reading.
  * @param measure - the pane's rectangles.
@@ -115,7 +128,7 @@ export function halvesFit(measure: PaneMeasure, minimums: SplitMinimums = SPLIT_
   const { pane, strip } = measure
   if (!(pane.width > 0) || !(pane.height > 0) || !(strip.width > 0)) return { row: true, column: true }
   const borders = Math.max(0, pane.width - strip.width)
-  const fixed = Math.max(0, strip.width - measure.chipsWidth - measure.fillWidth)
+  const fixed = Math.max(0, strip.width - measure.chipsWidth - measure.fillWidth - (measure.splitControlWidth ?? 0))
   const halfWidth = (pane.width - minimums.divider) / 2 - borders
   const halfHeight = (pane.height - minimums.divider) / 2 - borders
   return {

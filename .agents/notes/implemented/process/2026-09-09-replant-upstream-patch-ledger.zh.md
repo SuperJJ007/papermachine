@@ -96,6 +96,12 @@ D10 删除 Science 自有 `workspaceFiles`/`workspaceFile`，删除前 commit �
 
 发布包通过现有 `packageFileExtras` 登记次级入口、共享 chunk、内核 assets 和 preset，并要求四个包的 `files` 与其精确匹配。只缩减 `files` 会让已安装包丢失公开入口及运行资源；登记补充载荷保留这些能力而不放宽全局规则。四个包分别验证缺少任意条目或加入未归属条目都会拒绝。
 
+## rc.1 整合
+
+rc.1 组合在会话反馈 Remote 之外保留 Science Remote 挂载。MCP 发现会在替换经过筛选的工具集之前拒绝重复续传游标；include/exclude/rename/describe 仍由部署配置负责。Science preset 保留自有产物事件、版本化读取和编辑；上游文件交付不替代这些身份。
+
+[原生侧栏决定](../architecture/2026-09-10-science-native-sidebar.zh.md)负责客户端新增能力：独立的 Science Library 页面、按会话导航、由所属模块投影 JSON 并校验恢复的布局宽度持久化，以及恢复资源 occurrence 时的同步准入。带版本的浏览器偏好键丢弃早期布局表示。侧栏标签 JSON 保留既有顶层校验；完整嵌套 DockKit 校验仍是明确限制。公开 controller 已提供跨会话标签导航，因此移除冗余 ISidebarRight 声明。普通工作区文档查看器使用上游 documentpreview 包。
+
 ## 考虑过的替代方案
 
 **保留工作区文件 Remote。** 上游提供文件浏览与读取，复制整套实现扩大维护成本；按 D10 删除，保留必要时最小补足的条件。

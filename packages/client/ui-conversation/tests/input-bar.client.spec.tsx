@@ -33,7 +33,7 @@ import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
-const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
 afterEach(cleanup)
 
@@ -164,6 +164,7 @@ function bench(over?: BenchOptions) {
     return null
   }) as never
   const props: InputBarProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
     SessionProvider: ({ children }) => children,
     useSession: bindSnapshotSelector(session),
@@ -268,6 +269,49 @@ function editableOf(input: HTMLElement): boolean {
 function writeDraft(shell: SessionInputShell, text: string): void {
   act(() => { shell.setDraft(text) })
 }
+
+describe('composer placeholder visibility', () => {
+  it.each([' ', '   ', '\t', '\n'])('hides for whitespace %j and returns after deletion', async (draft) => {
+    const { view, shell, textarea, button, sink, props } = bench()
+    const placeholder = () => view.container.querySelector('[data-composer-placeholder]')
+    expect(placeholder()).not.toBeNull()
+    writeDraft(shell, draft)
+    expect(placeholder()).toBeNull()
+    expect(button.disabled).toBe(true)
+    fireEvent.keyDown(textarea, { key: 'Enter', keyCode: 13 })
+    await act(async () => {})
+    expect(sink).not.toHaveBeenCalled()
+    fireEvent.blur(textarea)
+    view.rerender(<InputBar {...props} />)
+    fireEvent.focus(textarea)
+    expect(placeholder()).toBeNull()
+    writeDraft(shell, '')
+    expect(placeholder()).not.toBeNull()
+  })
+
+  it('hides for pasted spaces and restores after clearing', async () => {
+    const { view, shell, textarea } = bench()
+    fireEvent.paste(textarea, {
+      clipboardData: { items: [], getData: () => '   ' },
+    })
+    await vi.waitFor(() => { expect(shell.snapshot.draft).toBe('   ') })
+    expect(view.container.querySelector('[data-composer-placeholder]')).toBeNull()
+    writeDraft(shell, '')
+    expect(view.container.querySelector('[data-composer-placeholder]')).not.toBeNull()
+  })
+
+  it('keeps whitespace hidden through composition and rerender', () => {
+    const { view, shell, textarea, props } = bench()
+    fireEvent.compositionStart(textarea)
+    writeDraft(shell, ' ')
+    expect(view.container.querySelector('[data-composer-placeholder]')).toBeNull()
+    view.rerender(<InputBar {...props} />)
+    fireEvent.compositionEnd(textarea, { data: ' ' })
+    expect(view.container.querySelector('[data-composer-placeholder]')).toBeNull()
+    writeDraft(shell, '')
+    expect(view.container.querySelector('[data-composer-placeholder]')).not.toBeNull()
+  })
+})
 
 describe('image draft rail', () => {
   it('collects clipboard files while preserving text from a mixed paste', async () => {

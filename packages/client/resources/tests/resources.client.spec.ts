@@ -4,7 +4,7 @@
  * Providers are scripted feeds so every transition is driven by the spec,
  * never by timing.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -14,6 +14,7 @@ import type { ResourceOpenContext, ResourceProvider } from '../src/client/contra
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap {
     feed: string
+    counter: number
   }
 }
 
@@ -27,6 +28,7 @@ interface Feed {
   end(): void
   /** Whether the consumer returned the iterator (its `finally` ran). */
   readonly returned: boolean
+  readonly closed: Promise<undefined>
 }
 
 type Step = { readonly kind: 'frame'; readonly frame: RemoteResult<string> } | { readonly kind: 'end' }
@@ -35,6 +37,7 @@ function createFeed(ctx: ResourceOpenContext): { feed: Feed; stream: AsyncIterab
   const steps: Step[] = []
   let wake: (() => void) | undefined
   let returned = false
+  const closed = Promise.withResolvers<undefined>()
   const notify = (): void => { wake?.(); wake = undefined }
   async function* stream(): AsyncGenerator<RemoteResult<string>> {
     try {
@@ -47,10 +50,12 @@ function createFeed(ctx: ResourceOpenContext): { feed: Feed; stream: AsyncIterab
       }
     } finally {
       returned = true
+      closed.resolve(undefined)
     }
   }
   const feed: Feed = {
     ctx,
+    closed: closed.promise,
     push: (value) => { steps.push({ kind: 'frame', frame: { ok: true, value } }); notify() },
     fail: (error) => { steps.push({ kind: 'frame', frame: { ok: false, error } }); notify() },
     end: () => { steps.push({ kind: 'end' }); notify() },
@@ -62,6 +67,10 @@ function createFeed(ctx: ResourceOpenContext): { feed: Feed; stream: AsyncIterab
 /** A `feed` provider whose every `open` is recorded and spec-driven. */
 function scriptedProvider() {
   const opens: Feed[] = []
+  onTestFinished(async () => {
+    for (const feed of opens) feed.end()
+    await Promise.all(opens.map(feed => feed.closed))
+  })
   const provider = {
     protocol: 'feed' as const,
     open: vi.fn((_address: string, ctx: ResourceOpenContext) => {
@@ -69,7 +78,6 @@ function scriptedProvider() {
       opens.push(feed)
       return stream
     }),
-    reload: vi.fn(),
   } satisfies ResourceProvider<'feed'>
   return { provider, opens, last: () => opens[opens.length - 1]! }
 }
@@ -333,27 +341,97 @@ describe('ResourceRegistry streams', () => {
   })
 })
 
-describe('ResourceRegistry reload', () => {
-  it('forwards reload to the protocol\'s provider, and stays a no-op without one', () => {
+describe('ResourceRegistry addresses', () => {
+  it('opens different complete addresses independently and supplies only the lifetime signal', async () => {
     const b = bench()
-    b.snapshot().reload()
     b.registry.register(b.provider)
-    b.snapshot().reload()
-    expect(b.provider.reload).toHaveBeenCalledWith(A)
-
-    const bare = bench()
-    bare.registry.register({ protocol: 'feed', open: bare.provider.open })
-    expect(() => { bare.snapshot().reload() }).not.toThrow()
+    const other = A + '?variant=second'
+    const first = b.registry.source(A)
+    const second = b.registry.source(other)
+    const releaseFirst = first.subscribe(() => {})
+    const firstFeed = b.last()
+    const releaseSecond = second.subscribe(() => {})
+    const secondFeed = b.last()
+    expect(first).not.toBe(second)
+    expect(b.provider.open.mock.calls).toEqual([[A, firstFeed.ctx], [other, secondFeed.ctx]])
+    expect(firstFeed.ctx).toStrictEqual({ signal: expect.any(AbortSignal) as AbortSignal })
+    expect(secondFeed.ctx).toStrictEqual({ signal: expect.any(AbortSignal) as AbortSignal })
+    firstFeed.push('first data')
+    secondFeed.push('second data')
+    await vi.waitFor(() => { expect(first.getSnapshot().value).toBe('first data') })
+    await vi.waitFor(() => { expect(second.getSnapshot().value).toBe('second data') })
+    releaseFirst()
+    expect(firstFeed.ctx.signal.aborted).toBe(true)
+    expect(secondFeed.ctx.signal.aborted).toBe(false)
+    expect(second.getSnapshot().value).toBe('second data')
+    releaseSecond()
+    expect(secondFeed.ctx.signal.aborted).toBe(true)
   })
+})
 
-  it('keeps one reload function per address across state changes', async () => {
+describe('ResourceRegistry stream generations', () => {
+  it.each(['value', 'failure'] as const)('drops late %s frames after a released resource reopens', async (kind) => {
     const b = bench()
     b.registry.register(b.provider)
     const source = b.registry.source(A)
-    const { reload } = source.getSnapshot()
-    source.subscribe(() => {})
-    b.last().push('v1')
-    await vi.waitFor(() => { expect(source.getSnapshot().value).toBe('v1') })
-    expect(source.getSnapshot().reload).toBe(reload)
+    const releaseFirst = source.subscribe(() => {})
+    const oldFeed = b.last()
+    oldFeed.push('old data')
+    await vi.waitFor(() => { expect(source.getSnapshot().value).toBe('old data') })
+    releaseFirst()
+    const releaseCurrent = source.subscribe(() => {})
+    const currentFeed = b.last()
+    expect(currentFeed).not.toBe(oldFeed)
+    currentFeed.push('current data')
+    await vi.waitFor(() => { expect(source.getSnapshot().value).toBe('current data') })
+    const current = source.getSnapshot()
+    if (kind === 'value') oldFeed.push('late old data')
+    else oldFeed.fail(new RemoteError('gateway/internal', 'late old failure', {}))
+    await oldFeed.closed
+    expect(oldFeed.returned).toBe(true)
+    expect(source.getSnapshot()).toBe(current)
+    releaseCurrent()
+  })
+
+  it.each(['value', 'failure'] as const)('drops old-provider %s frames after replacement', async (kind) => {
+    const b = bench()
+    const releaseProvider = b.registry.register(b.provider)
+    const source = b.registry.source(A)
+    const unsubscribe = source.subscribe(() => {})
+    const oldFeed = b.last()
+    oldFeed.push('old data')
+    await vi.waitFor(() => { expect(source.getSnapshot().value).toBe('old data') })
+    releaseProvider()
+    expect(oldFeed.ctx.signal.aborted).toBe(true)
+    expect(source.getSnapshot()).toEqual({ status: 'none', value: undefined, failure: undefined })
+    const replacement = scriptedProvider()
+    b.registry.register(replacement.provider)
+    expect(source.getSnapshot()).toEqual({ status: 'loading', value: undefined, failure: undefined })
+    replacement.last().push('replacement data')
+    await vi.waitFor(() => { expect(source.getSnapshot().value).toBe('replacement data') })
+    const current = source.getSnapshot()
+    if (kind === 'value') oldFeed.push('late old data')
+    else oldFeed.fail(new RemoteError('gateway/internal', 'late old failure', {}))
+    await oldFeed.closed
+    expect(oldFeed.returned).toBe(true)
+    expect(source.getSnapshot()).toBe(current)
+    unsubscribe()
+  })
+
+  it('streams another protocol as plain numbers', async () => {
+    const b = bench()
+    const closed = Promise.withResolvers<undefined>()
+    const dispose = b.registry.register({
+      protocol: 'counter',
+      async *open() {
+        try { yield { ok: true as const, value: 1 } } finally { closed.resolve(undefined) }
+      },
+    })
+    onTestFinished(dispose)
+    const source = b.registry.source('dsh-resource://counter/one')
+    const unsubscribe = source.subscribe(() => {})
+    await closed.promise
+    expect(source.getSnapshot()).toEqual({ status: 'live', value: 1, failure: undefined })
+    unsubscribe()
   })
 })

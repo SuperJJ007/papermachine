@@ -314,6 +314,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns per-assistant-message feedback in the canonical Session log, target validation, per-item compare-and-set, and the Host unary Remote contract. Feedback stays outside model history; log export follows the consumer policy.',
   },
   {
+    key: 'sessionFeedback',
+    pkg: 'command-feedback',
+    title: 'Session-level feedback recorder',
+    mode: 'core',
+    note: 'Records one Session-level remark with its category as a log-only feedback/record event on a live Session through the Host unary Remote contract; the /feedback command shares the same producer.',
+  },
+  {
     key: 'workspaceRegistry',
     pkg: 'workspace',
     title: 'Workspace entity registry',

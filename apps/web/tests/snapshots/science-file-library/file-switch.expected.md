@@ -1,21 +1,29 @@
 - tablist:
   - tab "Artifact library Close":
     - text: ⌂
-    - button "Close"
+    - button "Close":
+      - img
   - tab "Files Close":
     - text: Files
-    - button "Close"
+    - button "Close":
+      - img
   - tab "seed.csv Close":
     - text: seed.csv
-    - button "Close"
+    - button "Close":
+      - img
   - tab "other.csv Close" [selected]:
     - text: other.csv
-    - button "Close"
-  - button "Split to the right"
-  - button "Show the sidebar fullscreen"
-  - button "Close the sidebar"
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
 - text: {{cwd}}/other.csv
-- button "Wrap lines" [pressed]:
+- button "Open with": Plain text
+- button "Line wrap" [pressed]:
   - img
 - button "Read the file again":
   - img

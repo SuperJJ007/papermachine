@@ -223,6 +223,27 @@ def test_mcp_smoke_accepts_the_external_server_result() -> None:
     )
 
 
+def test_advanced_snapshot_normalizes_catalog_child_creation_time() -> None:
+    value = {
+        "type": "subagent/catalog",
+        "data": {
+            "childCreatedAt": 1788246207176,
+        },
+    }
+
+    assert SMOKE["normalize_snapshot_value"](value, []) == {
+        "type": "subagent/catalog",
+        "data": {
+            "childCreatedAt": 0,
+        },
+    }
+
+    assert SMOKE["normalize_snapshot_value"](
+        {"type": "fixture/event", "data": {"childCreatedAt": 1788246207176}},
+        [],
+    ) == {"type": "fixture/event", "data": {"childCreatedAt": 1788246207176}}
+
+
 def test_snapshot_comparison_preserves_opaque_generation_provenance() -> None:
     normalize = SMOKE["normalize_session_format_comparison"]
     expected = {

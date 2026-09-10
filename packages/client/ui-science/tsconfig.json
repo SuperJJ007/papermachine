@@ -85,6 +85,9 @@
     },
     {
       "path": "../ui-session"
+    },
+    {
+      "path": "../ui-workspace"
     }
   ]
 }

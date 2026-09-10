@@ -39,7 +39,6 @@ describe('dsh-sdk-minimal bundle', () => {
       ['pty', '@deepseek-ai/dsh-terminal'],
       ['terminal-bash', '@deepseek-ai/dsh-terminal-bash'],
       ['terminal-pwsh', '@deepseek-ai/dsh-terminal-bash'],
-      ['fs-local', '@deepseek-ai/dsh-fs-local'],
       ['timer', '@deepseek-ai/cordis-plugin-timer'],
       ['llm', '@deepseek-ai/dsh-llm'],
       ['session', '@deepseek-ai/dsh-session'],
@@ -57,7 +56,6 @@ describe('dsh-sdk-minimal bundle', () => {
       ['agent-loop', '@deepseek-ai/dsh-agent-loop'],
       ['persistent-bash', '@deepseek-ai/dsh-tool-bash-persistent'],
       ['persistent-pwsh', '@deepseek-ai/dsh-tool-pwsh-persistent'],
-      ['str-replace-editor', '@deepseek-ai/dsh-tool-str-replace-editor'],
       ['sessions', '@deepseek-ai/dsh-session-persistence-jsonl'],
     ])
     expect(rows.find(row => row.id === 'sdk-app-startup')?.config).toEqual({ profile: 'sdk-minimal' })

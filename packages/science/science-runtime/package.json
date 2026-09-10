@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-science-runtime",
   "description": "Folded local Conda Science Runtime operations with private scratch and durable Science Session facts",
-  "version": "0.1.5-alpha.1",
+  "version": "0.1.5-rc.1",
   "publishConfig": {
     "access": "public"
   },

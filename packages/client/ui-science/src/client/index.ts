@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
@@ -42,7 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 }
 
 /** Services required for the complete Science browser composition. */
-export const inject = ['slots', 'locale', 'remote', 'remote.science', 'remote.scienceEdits', 'connection', 'sessions', 'conversation', 'uiConversation', 'settingsScope', 'sidebarRight', 'sidebarRightTabs', 'resources']
+export const inject = ['slots', 'locale', 'remote', 'remote.science', 'remote.scienceEdits', 'connection', 'sessions', 'conversation', 'uiConversation', 'settingsScope', 'uiWorkspace', 'sidebarRight', 'sidebarRightTabs', 'resources']
 
 /** @param ctx - Browser plugin context. */
 export function apply(ctx: Context): void {
@@ -72,6 +73,11 @@ export function apply(ctx: Context): void {
     id: 'science-artifact', kind: 'science-artifact', patterns: ['dsh-resource://science-artifact/*'],
     title: () => t('artifact.title'),
   }), 'science: artifact tab type')
+  ctx.effect(() => ctx.sidebarRightTabs.register({
+    id: 'science-library', kind: 'science-library',
+    title: () => t('library.home'),
+    guide: [{ order: 0, title: () => t('library.home') }],
+  }), 'science: library page type')
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: 'science-artifact', locale: NS, store,
     inject: (id): ScienceDetailsInjected => ({
@@ -95,23 +101,23 @@ export function apply(ctx: Context): void {
     inject: id => ({ loadLibrary: () => ctx.remote.science.scienceLibrary(id) }),
   }, ScienceArtifactTitle))
   ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab.title', key: '@deepseek-ai/dsh-client-ui-sidebar-right/guide', locale: NS,
+    name: 'sidebar.right.pane.tab.title', key: 'science-library', locale: NS,
   }, ScienceLibraryTitle))
   ctx.slots.inject('sidebar.right.tab.menu.item', () => ctx.slots.register({
     name: 'sidebar.right.tab.menu.item', id: 'science-library', locale: NS,
-    inject: id => ({ openLibrary: () => { ctx.sidebarRight.openTabIn(id, 'guide') } }),
+    inject: id => ({ openLibrary: () => { ctx.sidebarRight.openTabIn(id, 'science-library') } }),
   }, ScienceArtifactMenu))
-  ctx.slots.inject('sidebar.right.tab.guide', () => ctx.slots.register({
-    name: 'sidebar.right.tab.guide', priority: -10, select: () => true, locale: NS, store,
+  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab', key: 'science-library', locale: NS, store,
     inject: id => ({ loadLibrary: () => ctx.remote.science.scienceLibrary(id), loadImage: createScienceImageUrlLoader(id) }),
   }, ScienceLibrary))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action', id: 'science-library', locale: NS,
-    inject: () => ({ openLibrary: (id: SessionId) => { ctx.sidebarRight.openTabIn(id, 'guide') } }),
+    inject: () => ({ openLibrary: (id: SessionId) => { ctx.uiWorkspace.openSession(id); ctx.sidebarRight.openTabIn(id, 'science-library') } }),
   }, ScienceLibraryFooter))
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'science-library', locale: NS,
-    inject: id => ({ openLibrary: () => { ctx.sidebarRight.openTabIn(id, 'guide') } }),
+    inject: id => ({ openLibrary: () => { ctx.sidebarRight.openTabIn(id, 'science-library') } }),
   }, ScienceLibraryAction))
   ctx.slots.inject('tool.call.toolview', function* () {
     yield ctx.slots.register({ name: 'tool.call.toolview', key: 'annotate_artifact', locale: NS }, ScienceAnnotationRow)

@@ -39,7 +39,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -87,7 +87,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -135,7 +135,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -220,7 +220,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -305,7 +305,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -353,7 +353,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -401,7 +401,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -449,7 +449,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]
@@ -497,7 +497,7 @@
       "active": false,
       "tabs": [
         {
-          "title": "Start",
+          "title": "Files",
           "selected": true
         }
       ]

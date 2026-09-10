@@ -18,7 +18,7 @@ Status: implemented
 
 ### 能力
 
-`dsh-llm` 定义 `SystemPromptUpdate = 'in-history'`，并把它作为可选的并列字段 `systemPromptUpdate` 放在 `LlmResolvedModelInfo` 与 `PreparedLlmCall` 上；`normalizeModelInfo` 用代码为 `INVALID_MODEL_INFO` 的 `LlmError` 拒绝任何其他值。DeepSeek 适配器的目录模型（`DeepSeekCatalogModel.systemPromptUpdate`，加载时由 zod 校验）与回放提供者的 `ReplayModelConfig.systemPromptUpdate` 逐模型声明它；缺省表示该模型需要重写消息 0。没有默认目录条目声明它；部署方通过 `cordis.yml` 的 `models` 列表启用，所有 `dsh-llm-pi-ai` 路由保持替换行为。
+`dsh-llm` 定义 `SystemPromptUpdate = 'in-history'`，并把它作为可选的并列字段 `systemPromptUpdate` 放在 `LlmResolvedModelInfo` 与 `PreparedLlmCall` 上；`normalizeModelInfo` 用代码为 `INVALID_MODEL_INFO` 的 `LlmError` 拒绝任何其他值。DeepSeek 适配器的目录模型（`DeepSeekCatalogModel.systemPromptUpdate`，加载时由 zod 校验）与回放提供者的 `ReplayModelConfig.systemPromptUpdate` 逐模型声明它；缺省表示该模型需要重写消息 0。`dsh-llm-deepseek` 仅内置 `deepseek-flash` 条目，在该条目上声明它，同时声明文本和图片输入。该精确目录条目记录模型能力；名称和协议类别不能推导其他模型是否支持。部署方可以通过 `cordis.yml` 的 `models` 列表替换目录，所有 `dsh-llm-pi-ai` 路由保持替换行为。
 
 循环把该模式记录进会话：`RequestContext.systemPromptUpdate` 与 provider、model、容量并列成为 `request/context` 的字段，其中任一项与最新快照不同时就记录一次。准入读取 `agent/request` 之后实际准备调用的 `PreparedLlmCall.systemPromptUpdate`；先前快照不是准入输入。因此首次请求、恢复的会话、路由变更以及同一路由的能力变更，都使用将服务该调用的绑定适配器的能力。
 

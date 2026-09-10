@@ -1,7 +1,8 @@
 # CI for the node-addon-system packages under native/system. A separate
 # workflow from ci.yml keeps the native OS/architecture matrix independent of
-# the harness Node matrix. Release assembly and publication use the companion
-# Node Addon System Release workflow.
+# the harness Node matrix. Each platform job builds once and tests those bytes
+# under every supported Node release. Release assembly and publication use the
+# companion Node Addon System Release workflow.
 name: Node Addon System
 
 on:
@@ -46,14 +47,11 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       ci: ${{ steps.matrix.outputs.ci }}
-      compatibility: ${{ steps.matrix.outputs.compatibility }}
     steps:
       - uses: actions/checkout@v4
 
       - id: matrix
-        run: |
-          echo "ci=$(node ./scripts/github-matrix.mjs ci)" >> "$GITHUB_OUTPUT"
-          echo "compatibility=$(node ./scripts/github-matrix.mjs compatibility)" >> "$GITHUB_OUTPUT"
+        run: echo "ci=$(node ./scripts/github-matrix.mjs ci)" >> "$GITHUB_OUTPUT"
 
   native:
     name: ${{ matrix.platform }}
@@ -112,68 +110,59 @@ jobs:
         env:
           NALR_REQUIRE_LANDLOCK: ${{ runner.os == 'Linux' && '1' || '0' }}
 
-      - name: Verify platform payload rules
+      - name: Verify platform payload rules (Node 24)
         run: pnpm test:packaging
 
-      - name: Flock behavior (built addon)
+      - name: Flock behavior (Node 24, built addon)
         run: |
           pnpm build:test-oracle
           pnpm test:flock
 
-      - name: Upload this platform's built addon and entry
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-compat-${{ matrix.platform }}
-          path: |
-            native/system/packages/*/bin/**
-            native/system/packages/entry/lib/**
-          if-no-files-found: error
-
-      - name: Upload independent syscall test oracle
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-oracle-${{ matrix.platform }}
-          path: native/system/test/bin/**
-          if-no-files-found: error
-
-  compatibility:
-    name: ${{ matrix.platform }} / Node ${{ matrix.node }} (same binary)
-    needs: [matrix, native]
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.matrix.outputs.compatibility) }}
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-
-      - name: Download the original platform build
-        uses: actions/download-artifact@v4
-        with:
-          name: system-compat-${{ matrix.platform }}
-          path: native/system/packages
-
-      - name: Download independent syscall test oracle
-        uses: actions/download-artifact@v4
-        with:
-          name: system-oracle-${{ matrix.platform }}
-          path: native/system/test/bin
-
-      - name: Restore oracle executable permissions
-        run: find ./test/bin -type f -name flock-oracle -exec chmod +x {} +
-
-      - name: Test without rebuilding or installing dependencies
-        run: |
-          node ./test/link-platform.mjs
-          node --test ./test/flock.test.js ./test/package-matrix.test.js
-
-      - name: Test the same musl addon without a compiler
+      - name: Test the same musl addon on Node 24 without a compiler
         if: runner.os == 'Linux'
         run: >-
           docker run --rm -v "$PWD:$PWD" -w "$PWD"
-          node:${{ matrix.node }}-alpine
+          node:24-alpine
+          node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Test the same binaries on Node 20
+        run: node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - name: Test the same musl addon on Node 20 without a compiler
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD"
+          node:20-alpine
+          node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the same binaries on Node 22
+        run: node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - name: Test the same musl addon on Node 22 without a compiler
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD"
+          node:22-alpine
+          node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+
+      - name: Test the same binaries on Node 26
+        run: node --test ./test/flock.test.js ./test/package-matrix.test.js
+
+      - name: Test the same musl addon on Node 26 without a compiler
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD"
+          node:26-alpine
           node --test ./test/flock.test.js ./test/package-matrix.test.js

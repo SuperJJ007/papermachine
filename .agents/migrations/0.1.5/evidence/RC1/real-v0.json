@@ -1,0 +1,77 @@
+[
+  {
+    "category": "Biology",
+    "version": 0,
+    "bytes": 71401,
+    "sha256": "86fdcdb56be58bc258779ef8b6b83691a0e60d1957e2a192d9dbf36da1a7b8c6",
+    "originalUnchanged": true,
+    "attempts": [
+      {
+        "access": "read",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      },
+      {
+        "access": "write",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      }
+    ]
+  },
+  {
+    "category": "SocialScience",
+    "version": 0,
+    "bytes": 38950,
+    "sha256": "912b9e6ba77cd153b9308cf7ca4bb0690d4546c2ae10bcc3178851094b522320",
+    "originalUnchanged": true,
+    "attempts": [
+      {
+        "access": "read",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      },
+      {
+        "access": "write",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      }
+    ]
+  },
+  {
+    "category": "BusinessAnalytics",
+    "version": 0,
+    "bytes": 131846,
+    "sha256": "fd1bef12d15cced53d418b4c1b1d9c48eae961c502983655039508b4474de4ae",
+    "originalUnchanged": true,
+    "attempts": [
+      {
+        "access": "read",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      },
+      {
+        "access": "write",
+        "refused": true,
+        "errorName": "SessionFormatUnsupportedError",
+        "message": "format v0 contains unknown historical event type \"science/mode-bound\" at seq 6; migration refuses unknown historical events even when ignorable; source v0 artifact remains unchanged (raw log: <isolated-copy>/session.jsonl.zstd)",
+        "unchanged": true,
+        "noSuccessor": true
+      }
+    ]
+  }
+]

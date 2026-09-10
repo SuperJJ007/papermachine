@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-science-app",
   "description": "PaperMachine product composition over the dsh Web bundle",
-  "version": "0.1.5-alpha.1",
+  "version": "0.1.5-rc.1",
   "publishConfig": {
     "access": "public"
   },

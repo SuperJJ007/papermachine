@@ -1,10 +1,10 @@
-/** Host-resolved file identities across pending stats, retries, reloads, and disposal. */
+/** Host-resolved file identities across pending stats, retries, and disposal. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { absoluteFileAddress, sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { ChangeFeed } from '../src/client/change-feed.ts'
-import { createFileResourceProvider, type SessionLookup } from '../src/client/provider.ts'
+import { createFileResourceProvider } from '../src/client/provider.ts'
 import { FakeRemote, settle } from './fake-remote.client.ts'
 
 const SESSION = 'host-only' as SessionId
@@ -12,10 +12,10 @@ const RELATIVE = 'linked/a b.txt'
 const ADDRESS = sessionFileAddress(SESSION, RELATIVE)
 const CANONICAL = '/host/canonical/a b.txt'
 
-function harness(sessions: SessionLookup = { current: () => SESSION }) {
+function harness() {
   const remote = new FakeRemote()
   const changes = new ChangeFeed(remote)
-  const provider = createFileResourceProvider(remote, changes, sessions)
+  const provider = createFileResourceProvider(remote, changes)
   const open = (address = ADDRESS) => {
     const controller = new AbortController()
     const iterator = provider.open(address, { signal: controller.signal })[Symbol.asyncIterator]()
@@ -27,21 +27,21 @@ function harness(sessions: SessionLookup = { current: () => SESSION }) {
       await iterator.return?.()
       await changes.settle()
     })
-    return { iterator, controller, reload: () => { provider.reload!(address) } }
+    return { iterator, controller }
   }
   return { remote, changes, open }
 }
 
 describe('Host-resolved file paths', () => {
   it('accepts Host ready before submitting the unmodified relative path without a Client Session summary', async () => {
-    const { remote, open } = harness({ current: () => { throw new Error('session addresses do not read current') } })
+    const { remote, open } = harness()
     const { iterator } = open()
     const first = iterator.next()
     const request = await remote.waitForStat(0)
     expect(remote.calls).toEqual(['changes', 'accept', 'stat'])
     expect(request).toMatchObject({ sessionId: SESSION, path: RELATIVE })
     request.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v0', bytes: 3 } })
-    await expect(first).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v0', bytes: 3, changed: false } } })
+    await expect(first).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v0', bytes: 3 } } })
   })
 
   it('does not stat an opened changes stream until the Host acknowledges its subscription', async () => {
@@ -58,7 +58,7 @@ describe('Host-resolved file paths', () => {
     const request = await remote.waitForStat(0)
     expect(remote.calls).toEqual(['changes', 'accept', 'stat'])
     request.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v0' } })
-    await expect(first).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v0', changed: false } } })
+    await expect(first).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v0' } } })
   })
 
   it.each(['abort', 'end', 'failure'] as const)('settles %s before Host ready without sending a stat or leaving a stream', async (ending) => {
@@ -94,12 +94,12 @@ describe('Host-resolved file paths', () => {
     await source.deliver({ kind: 'change', change: { absolutePath: CANONICAL, version: 'v1' } })
     expect(remote.stats).toHaveLength(1)
     expect(remote.calls).toEqual(['changes', 'accept', 'stat', 'accept'])
-    await expect(next).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 3, changed: true } } })
+    await expect(next).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 3 } } })
   })
 
   it.each([
-    ['session', ADDRESS, RELATIVE],
-    ['absolute', absoluteFileAddress('/shortcut/a.txt'), '/shortcut/a.txt'],
+    ['relative', ADDRESS, RELATIVE],
+    ['absolute', sessionFileAddress(SESSION, '/shortcut/a.txt'), '/shortcut/a.txt'],
   ])('filters queued and live %s changes using the Host canonical path, not the input path', async (_, address, path) => {
     const { remote, open } = harness()
     const { iterator } = open(address)
@@ -111,18 +111,18 @@ describe('Host-resolved file paths', () => {
     await source.deliver({ kind: 'change', change: { absolutePath: '/other/file.txt', version: 'other-before-stat' } })
     await source.deliver({ kind: 'change', change: { absolutePath: CANONICAL, version: 'v1' } })
     request.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v0', bytes: 3 } })
-    await expect(first).resolves.toMatchObject({ value: { ok: true, value: { version: 'v0', changed: false } } })
-    await expect(iterator.next()).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 3, changed: true } } })
+    await expect(first).resolves.toMatchObject({ value: { ok: true, value: { version: 'v0' } } })
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 3 } } })
 
     await source.deliver({ kind: 'change', change: { absolutePath: '/other/file.txt', version: 'other-after-stat' } })
     await source.deliver({ kind: 'change', change: { absolutePath: CANONICAL, version: 'v2' } })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v2', changed: true } } })
+    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v2' } } })
     expect(remote.stats).toHaveLength(1)
   })
 
-  it.each(['reload', 'write'] as const)('recovers an initial failed stat through %s and filters the retry backlog after binding', async (trigger) => {
+  it.each(['write'] as const)('recovers an initial failed stat through %s and filters the retry backlog after binding', async () => {
     const { remote, open } = harness()
-    const { iterator, reload } = open()
+    const { iterator } = open()
     const first = iterator.next()
     const request = await remote.waitForStat(0)
     const error = new RemoteError('workspace-file/not-found', 'missing', { path: RELATIVE })
@@ -130,66 +130,35 @@ describe('Host-resolved file paths', () => {
     await expect(first).resolves.toEqual({ done: false, value: { ok: false, error } })
     const source = remote.opened[0]!.source
     const retried = iterator.next()
-    if (trigger === 'reload') reload()
-    else await source.deliver({ kind: 'change', change: { absolutePath: '/unknown-key-trigger.txt', version: 'trigger' } })
+    await source.deliver({ kind: 'change', change: { absolutePath: '/unknown-key-trigger.txt', version: 'trigger' } })
     const retry = await remote.waitForStat(1)
     expect(retry).toMatchObject({ sessionId: SESSION, path: RELATIVE })
     await source.deliver({ kind: 'change', change: { absolutePath: '/other/file.txt', version: 'other' } })
     await source.deliver({ kind: 'change', change: { absolutePath: CANONICAL, version: 'v3' } })
     retry.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v2', bytes: 5 } })
     await expect(retried).resolves.toEqual({
-      done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v2', bytes: 5, changed: trigger === 'write' } },
+      done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v2', bytes: 5 } },
     })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v3', changed: true } } })
+    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v3' } } })
     expect(remote.stats).toHaveLength(2)
   })
 
-  it('reloads session and absolute addresses bound to the same Host key without re-statting other files', async () => {
+  it('binds a changed canonical path after disappearance before filtering writes received during that stat', async () => {
     const { remote, open } = harness()
-    const session = open()
-    const absolute = open(absoluteFileAddress('/shortcut/a.txt'))
-    const other = open(sessionFileAddress(SESSION, 'other.txt'))
-    const firsts = Promise.all([session.iterator.next(), absolute.iterator.next(), other.iterator.next()])
-    await remote.waitForStat(2)
-    for (const request of remote.stats) {
-      request.resolve({ ok: true, value: {
-        absolutePath: request.path === 'other.txt' ? '/host/other.txt' : CANONICAL,
-        version: 'v0', bytes: 3,
-      } })
-    }
-    await firsts
-    const reloaded = Promise.all([session.iterator.next(), absolute.iterator.next()])
-    const otherChange = other.iterator.next()
-    session.reload()
-    await remote.waitForStat(4)
-    expect(remote.stats.slice(3).map(request => request.path)).toEqual([RELATIVE, '/shortcut/a.txt'])
-    for (const request of remote.stats.slice(3)) {
-      request.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 4 } })
-    }
-    const value = { done: false, value: { ok: true, value: { absolutePath: CANONICAL, version: 'v1', bytes: 4, changed: false } } }
-    await expect(reloaded).resolves.toEqual([value, value])
-    await remote.opened[0]!.source.deliver({ kind: 'change', change: { absolutePath: '/host/other.txt', version: 'other-v1' } })
-    await expect(otherChange).resolves.toMatchObject({ value: { ok: true, value: { version: 'other-v1', changed: true } } })
-    expect(remote.stats).toHaveLength(5)
-    expect(remote.opened).toHaveLength(1)
-  })
-
-  it('binds a changed canonical path on reload before filtering writes received during that stat', async () => {
-    const { remote, open } = harness()
-    const { iterator, reload } = open()
+    const { iterator } = open()
     const first = iterator.next()
     const request = await remote.waitForStat(0)
     request.resolve({ ok: true, value: { absolutePath: '/host/old-target.txt', version: 'v0' } })
     await first
-    reload()
     const reloaded = iterator.next()
+    await remote.opened[0]!.source.deliver({ kind: 'change', change: { absolutePath: '/host/old-target.txt', absent: true } })
     const retry = await remote.waitForStat(1)
     const source = remote.opened[0]!.source
     await source.deliver({ kind: 'change', change: { absolutePath: '/host/old-target.txt', version: 'old-target-write' } })
     await source.deliver({ kind: 'change', change: { absolutePath: CANONICAL, version: 'v2' } })
     retry.resolve({ ok: true, value: { absolutePath: CANONICAL, version: 'v1' } })
-    await expect(reloaded).resolves.toMatchObject({ value: { ok: true, value: { version: 'v1', changed: false } } })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v2', changed: true } } })
+    await expect(reloaded).resolves.toMatchObject({ value: { ok: true, value: { version: 'v1' } } })
+    await expect(iterator.next()).resolves.toMatchObject({ value: { ok: true, value: { version: 'v2' } } })
     expect(remote.stats).toHaveLength(2)
   })
 

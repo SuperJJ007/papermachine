@@ -32,6 +32,7 @@ None; the stores neither assemble nor send model requests.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Persistence is browser-local** — persisted stores use JSON in `localStorage`; non-browser runtimes disable persistence, and the package provides no cross-device synchronization.
+- **Web-shell build input** — the static ESM retains third-party imports for Vite; independent consumers supply its development dependencies ([dependency rules](../AGENTS.md#dependency-declaration)).
 
 
 <a id="dev-note"></a>
@@ -46,4 +47,4 @@ None.
 
 **Runtime invariant:** No companion is published. The package exports a library engine and creates no process-global state; each store instance is covered by its owning tests.
 
-Persistence merges saved object fields over `init()` so newly introduced fields keep defaults. Declared `transient` keys are omitted from serialization and restored from `init()`, even when older payloads contain them.
+Persistence merges saved object fields over `init()` so newly introduced fields keep defaults. Declared `transient` keys are omitted from serialization and restored from `init()`, even when older payloads contain them. Owners that persist a projection provide `persistence.save(state)` and `persistence.restore(saved, initial)` instead of this default merge and filtering; restore validates the parsed JSON and returns the complete initial state with accepted preferences. Callback failures follow the non-fatal storage-error behavior.

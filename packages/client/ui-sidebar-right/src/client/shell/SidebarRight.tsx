@@ -30,11 +30,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { IconPanelLeftOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-// The frame declares the `rightbar` seat this component fills.
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '../contract/slots.ts'
 import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -44,6 +44,7 @@ import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions } from '../service.ts'
 import type { SidebarRightTabDefinition } from '../tab-registry.ts'
 import type { createSidebarRightStore, SurfaceState } from '../stores.ts'
+import { canCloseTab } from '../stores.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabNavigation } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
@@ -108,7 +109,7 @@ export interface SidebarRightInjected {
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
 export type RightbarSeatProps =
-  & PropsRuntime<'rightbar'>
+  & PropsRuntime<'rightbar.session'>
   & Children
   & Store
   & PropsLocale<'sidebarRight'>
@@ -221,29 +222,28 @@ function titlesFor(panel: PanelProps): TabRenderer {
   return tab => <TabSlot key={tab.id} {...panel} tab={tab} seat="sidebar.right.pane.tab.title" fallback={tab.title} />
 }
 
-/** Expand-to-viewport glyph. */
+/** Expand-to-viewport glyph: four frame corners (figma extract). */
 function FullscreenGlyph(): ReactNode {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M5 1.5H1.5V5M9 1.5h3.5V5M1.5 9v3.5H5M12.5 9v3.5H9" stroke="currentColor" strokeLinecap="round" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <g fill="currentColor" stroke="currentColor" strokeWidth="0.105646" strokeLinecap="square">
+        <path d="M6.04798 2.13627V0.815964H5.99549L5.36158 0.817345V0.815964L3.39978 0.815274C3.01892 0.815274 2.67749 0.814821 2.39919 0.844967C2.10813 0.87655 1.80506 0.949512 1.52981 1.14949C1.3822 1.25681 1.25251 1.38652 1.14518 1.53412C0.945217 1.80935 0.872245 2.11246 0.840659 2.4035C0.810509 2.68178 0.810965 3.02324 0.810966 3.40409L0.811656 5.36589V5.9998L0.810966 6.05297L0.864137 6.05228H2.13196L2.18513 6.05297L2.18444 5.9998V5.36589L2.18513 3.40409C2.18513 2.99322 2.18631 2.73978 2.20653 2.55266C2.22499 2.38234 2.25273 2.34575 2.25556 2.34204C2.27837 2.31066 2.30635 2.28267 2.33774 2.25987C2.34207 2.25657 2.37978 2.22911 2.54835 2.21084C2.73548 2.19063 2.98893 2.18944 3.39978 2.18944L5.36158 2.18875L5.9948 2.18944H6.04867L6.04798 2.13627Z" />
+        <path d="M9.94031 13.86L9.94031 15.1803L9.99279 15.1803L10.6267 15.179L10.6267 15.1803L12.5885 15.181C12.9694 15.181 13.3108 15.1815 13.5891 15.1513C13.8801 15.1198 14.1832 15.0468 14.4585 14.8468C14.6061 14.7395 14.7358 14.6098 14.8431 14.4622C15.0431 14.187 15.116 13.8838 15.1476 13.5928C15.1778 13.3145 15.1773 12.9731 15.1773 12.5922L15.1766 10.6304L15.1766 9.9965L15.1773 9.94333L15.1241 9.94402L13.8563 9.94402L13.8032 9.94333L13.8038 9.9965L13.8038 10.6304L13.8032 12.5922C13.8032 13.0031 13.802 13.2565 13.7817 13.4437C13.7633 13.614 13.7355 13.6506 13.7327 13.6543C13.7099 13.6856 13.6819 13.7136 13.6505 13.7364C13.6462 13.7397 13.6085 13.7672 13.4399 13.7855C13.2528 13.8057 12.9993 13.8069 12.5885 13.8069L10.6267 13.8076L9.99348 13.8069L9.93962 13.8069L9.94031 13.86Z" />
+        <path d="M13.8568 6.05243H15.1771V5.99995L15.1757 5.36604H15.1771L15.1778 3.40423C15.1778 3.02337 15.1783 2.68194 15.1481 2.40365C15.1165 2.11259 15.0436 1.80952 14.8436 1.53427C14.7363 1.38666 14.6066 1.25697 14.459 1.14964C14.1837 0.949672 13.8806 0.8767 13.5896 0.845114C13.3113 0.814965 12.9698 0.815421 12.589 0.815421L10.6272 0.816112H9.99329L9.94011 0.815421L9.9408 0.868592V2.13641L9.94011 2.18958L9.99329 2.18889H10.6272L12.589 2.18958C12.9999 2.18958 13.2533 2.19077 13.4404 2.21099C13.6107 2.22944 13.6473 2.25719 13.651 2.26002C13.6824 2.28282 13.7104 2.31081 13.7332 2.34219C13.7365 2.34653 13.764 2.38424 13.7822 2.5528C13.8025 2.73993 13.8037 2.99339 13.8037 3.40423L13.8043 5.36604L13.8037 5.99926V6.05312L13.8568 6.05243Z" />
+        <path d="M2.12951 9.94389L0.809205 9.94389L0.809205 9.99637L0.810586 10.6303L0.809205 10.6303L0.808514 12.5921C0.808514 12.9729 0.808061 13.3144 0.838207 13.5927C0.86979 13.8837 0.942753 14.1868 1.14273 14.4621C1.25005 14.6097 1.37976 14.7394 1.52736 14.8467C1.80259 15.0467 2.1057 15.1196 2.39674 15.1512C2.67502 15.1814 3.01648 15.1809 3.39733 15.1809L5.35913 15.1802L5.99304 15.1802L6.04621 15.1809L6.04552 15.1277L6.04552 13.8599L6.04621 13.8067L5.99304 13.8074L5.35913 13.8074L3.39733 13.8067C2.98646 13.8067 2.73302 13.8056 2.5459 13.7853C2.37559 13.7669 2.33899 13.7391 2.33528 13.7363C2.3039 13.7135 2.27591 13.6855 2.25311 13.6541C2.24981 13.6498 2.22235 13.6121 2.20408 13.4435C2.18387 13.2564 2.18268 13.0029 2.18268 12.5921L2.18199 10.6303L2.18268 9.99706L2.18268 9.9432L2.12951 9.94389Z" />
+      </g>
     </svg>
   )
 }
 
-/** Restore-from-fullscreen glyph. */
+/** Restore-from-fullscreen glyph: two corners drawn inward (figma extract). */
 function ExitFullscreenGlyph(): ReactNode {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M1.5 5H5V1.5M9 1.5V5h3.5M1.5 9H5v3.5M9 12.5V9h3.5" stroke="currentColor" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-/** The collapse glyph. */
-function CloseGlyph(): ReactNode {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <g fill="currentColor" stroke="currentColor" strokeWidth="0.105646" strokeLinecap="square">
+        <path d="M10.698 0.379607H9.43015L9.37698 0.378916L9.37767 0.432087V1.066L9.37698 4.0277C9.37698 4.40856 9.37653 4.74998 9.40667 5.02828C9.43826 5.31934 9.51053 5.62311 9.71051 5.89835C9.81779 6.04587 9.94762 6.1757 10.0951 6.28298C10.3704 6.48296 10.6741 6.55523 10.9652 6.58682C11.2435 6.61696 11.5849 6.61651 11.9658 6.61651L14.9275 6.61582H15.5614L15.6146 6.61651L15.6139 6.56334V5.29552L15.6146 5.24235L15.5614 5.24304H14.9275L11.9658 5.24235C11.5545 5.24235 11.3009 5.24191 11.1137 5.22163C10.9443 5.20329 10.9078 5.17501 10.9038 5.17191C10.8724 5.14911 10.8444 5.12112 10.8216 5.08974C10.8185 5.08566 10.7902 5.04908 10.7719 4.87982C10.7516 4.69263 10.7511 4.439 10.7511 4.0277L10.7505 1.066V0.432087L10.7511 0.378916L10.698 0.379607Z" />
+        <path d="M5.29031 15.6167L6.55813 15.6167L6.6113 15.6174L6.61061 15.5642L6.61061 14.9303L6.6113 11.9686C6.6113 11.5878 6.61176 11.2463 6.58161 10.968C6.55003 10.677 6.47775 10.3732 6.27777 10.098C6.17049 9.95045 6.04067 9.82062 5.89315 9.71334C5.6179 9.51336 5.31413 9.44109 5.02307 9.40951C4.74478 9.37936 4.40335 9.37981 4.02249 9.37981L1.06079 9.3805L0.426879 9.3805L0.373708 9.37981L0.374398 9.43298L0.374398 10.7008L0.373708 10.754L0.426879 10.7533L1.06079 10.7533L4.02249 10.754C4.43379 10.754 4.68742 10.7544 4.87461 10.7747C5.04393 10.793 5.08047 10.8213 5.08453 10.8244C5.11591 10.8472 5.1439 10.8752 5.1667 10.9066C5.16982 10.9107 5.19808 10.9472 5.21642 11.1165C5.2367 11.3037 5.23714 11.5573 5.23714 11.9686L5.23783 14.9303L5.23783 15.5642L5.23714 15.6174L5.29031 15.6167Z" />
+      </g>
     </svg>
   )
 }
@@ -251,31 +251,34 @@ function CloseGlyph(): ReactNode {
 /** The panel's two controls, placed by the kit at the top-right pane's strip end. */
 function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick<PanelProps, 'sessionId' | 'actions' | 't' | 'fullscreen' | 'autoFullscreen'>): ReactNode {
   const next: DockMode = fullscreen ? 'push' : 'fullscreen'
+  const modeLabel = fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')
   return (
     <>
-      <button
-        type="button"
-        className={css.iconButton}
-        aria-label={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
-        title={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
-        data-sidebar-right-mode={next}
-        onClick={() => {
-          if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
-          actions.setMode(sessionId, next)
-        }}
-      >
-        {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
-      </button>
-      <button
-        type="button"
-        className={css.iconButton}
-        aria-label={t('chrome.collapse')}
-        title={t('chrome.collapse')}
-        data-sidebar-right-toggle
-        onClick={() => { actions.toggleExpanded(sessionId) }}
-      >
-        <CloseGlyph />
-      </button>
+      <Tooltip label={modeLabel} side="bottom" delayMs={500}>
+        <button
+          type="button"
+          className={css.iconButton}
+          aria-label={modeLabel}
+          data-sidebar-right-mode={next}
+          onClick={() => {
+            if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
+            actions.setMode(sessionId, next)
+          }}
+        >
+          {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
+        </button>
+      </Tooltip>
+      <Tooltip label={t('chrome.collapse')} side="bottom" delayMs={500}>
+        <button
+          type="button"
+          className={css.iconButton}
+          aria-label={t('chrome.collapseAria')}
+          data-sidebar-right-toggle
+          onClick={() => { actions.toggleExpanded(sessionId) }}
+        >
+          <IconPanelLeftOutline16 className={css.collapseGlyph} />
+        </button>
+      </Tooltip>
     </>
   )
 }
@@ -303,10 +306,11 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
         <DockSurface
           state={surface.layout}
           canSplit={canSplit(surface.layout) && dockPaneIds(surface.layout).length < 2}
-          hideSplitAtCapacity
+          hideSplitWhenBlocked
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          canCloseTab={tabId => canCloseTab(surface, tabId)}
           intents={intentsFor(sessionId, actions, openTab)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
@@ -329,6 +333,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
+        canCloseTab={tabId => canCloseTab(surface, tabId)}
         intents={intentsFor(sessionId, actions, openTab)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}

@@ -143,7 +143,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-Search and fetch contribute the web-search and web-fetch guidance below. Search chooses its fetch-enabled or search-only text from config at registration time. A scoped tool restriction does not remove these independently registered sections.
+At assembly time, each section checks `ctx.tools.get(name, scope)` and renders only while its tool is visible. Search chooses the existing fetch-enabled or search-only text using fetch config and visibility in that scope. Fetch includes its search-result example only while search is visible. The original text is unchanged when both tools are available; this also applies to PTC capabilities behind `run_code`.
 
 ##### Web search guidance with fetch enabled
 
@@ -165,11 +165,11 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 #### Token effect
 
-Fixed guidance cost per request for each config-enabled tool, even when a restriction hides its schema. Toggling fetch or changing `searchMaxQueries` changes the search guidance; toggling fetch also registers or removes the fetch section.
+Guidance cost follows the visible tools. Config or scoped restrictions can remove a paragraph or select the existing search-only text; changing `searchMaxQueries` changes the advertised bound.
 
 #### KV Cache effect
 
-Prefix-stable while enabled tools, scope, and guidance text are unchanged. Config enablement — including toggling fetch's search-guidance branch — changing `searchMaxQueries`, or plugin lifecycle may invalidate reuse from the first changed prompt section; scoped schema restrictions do not remove it.
+Prefix-stable while visible tools, scope, and guidance text are unchanged. Config, scoped restrictions, `searchMaxQueries`, or plugin lifecycle changes may invalidate reuse from the first changed prompt section.
 
 ### Tool schemas
 
@@ -179,7 +179,7 @@ The model sees the generated [`web_search` and `web_fetch` schemas](../../../doc
 
 #### Token effect
 
-Fixed schema cost per request for a resolved `searchMaxQueries`; config disablement removes both schema and guidance, while a scoped restriction removes only the schema.
+Fixed schema cost per request for a resolved `searchMaxQueries`; config disablement and scoped restrictions remove both the tool schema and its guidance.
 
 #### KV Cache effect
 

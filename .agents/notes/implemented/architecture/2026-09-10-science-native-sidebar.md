@@ -10,7 +10,7 @@ Science needs project artifacts, exact-version editing and provenance without ma
 
 ## Decision
 
-The Science plugin registers a `science-artifact` resource identity and native tab kind, body and title. Its stable address contains the artifact id; navigation parameters and session selection state carry the version. Authorized Science Remotes supply current metadata and bytes. The project library occupies the guide page, while workspace files use upstream Files and file viewers. No business metadata is persisted in the selection store.
+The Science plugin registers a `science-artifact` resource identity and native tab kind, body and title. Its stable address contains the artifact id; navigation parameters and session selection state carry the version. Authorized Science Remotes supply current metadata and bytes. The project library owns a `science-library` page, body and title and contributes a native guide entry; workspace files use upstream Files and document viewers. A separate page preserves the built-in guide and makes Library available when Files also contributes a guide entry. No business metadata is persisted in the selection store.
 
 The native Sidebar persists per-session layouts and adopts restored resource occurrences synchronously. The layout package persists rightbar width. Store persistence merges saved fields with initialized defaults and excludes declared transient fields. Each artifact pane owns provenance and lightbox state independently; Process disclosures survive sibling-view switches within a session.
 

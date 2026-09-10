@@ -33,12 +33,12 @@ Nothing needs configuration to mount: the plugin provides `ctx.resources` and co
 <a id="read-a-resource"></a>
 ### Read a resource
 
-Every slot component receives `useResource` in its props. `useResource<P>(address)` names the protocol as the type argument and returns `{ status, value, failure, reload }`: `none` when no provider is registered for the address's protocol (or the address is not a `dsh-resource://` URL), `loading` while the provider has not yielded, `live` with the latest `ok` frame's value, and `failed` when the latest frame reported a failure, with that failure beside the last value. `reload()` asks the provider for a fresh value and is a no-op without one. Subscribing through the hook is what holds the resource open; a component that mounts while another holder keeps the resource alive reads the latest value at once.
+Every slot component receives `useResource` in its props. `useResource<P>(address)` names the protocol as the type argument and returns `{ status, value, failure }`: `none` when no provider is registered for the address's protocol (or the address is not a `dsh-resource://` URL), `loading` while the provider has not yielded, `live` with the latest `ok` frame's value, and `failed` when the latest frame reported a failure, with that failure beside the last value. Subscribing through the hook is what holds the resource open; a component that mounts while another holder keeps the resource alive reads the latest value at once.
 
 <a id="provide-a-protocol"></a>
 ### Provide a protocol
 
-The protocol's owning client package declares its value type in `ResourceProtocolMap` and registers one provider as an owned effect. `open` yields `RemoteResult` frames: the current content first and one frame per later change, with a failure as an `ok: false` frame rather than a throw; it must stop when `signal` aborts. `reload` is optional:
+The protocol's owning client package declares its value type in `ResourceProtocolMap` and registers one provider as an owned effect. `open` yields `RemoteResult` frames: the current content first and one frame per later change, with a failure as an `ok: false` frame rather than a throw; it must stop when `signal` aborts:
 
 ```ts ignore-check
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -54,7 +54,6 @@ export function apply(ctx) {
       yield await readNote(address, signal)
       for await (const change of followNote(address, signal)) yield change
     },
-    reload(address) { requestReread(address) },
   }), 'my-notes: note resource provider')
 }
 ```
@@ -72,7 +71,7 @@ A protocol has exactly one provider; a second registration throws. Registering a
 <a id="lifecycle"></a>
 ### Lifecycle
 
-One record per address holds a snapshot store, a holder count (hook subscribers plus pins), and the running stream's `AbortController`. The first holder opens the provider's stream; every later holder shares it; the last holder's release aborts the stream and resets the snapshot to idle (`loading` with a provider, `none` without). Records are kept for the page lifetime so `source()` stays reference-stable across React's render-then-subscribe window and a StrictMode remount. `reload` is one function per record and never changes.
+One record per address holds a snapshot store, a holder count (hook subscribers plus pins), and the running stream's `AbortController`. The first holder opens the provider's stream; every later holder shares it; the last holder's release aborts the stream and resets the snapshot to idle (`loading` with a provider, `none` without). Records are kept for the page lifetime so `source()` stays reference-stable across React's render-then-subscribe window and a StrictMode remount.
 
 <a id="failures"></a>
 ### Failures

@@ -10,10 +10,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
-import { FILES_ID, FILES_KIND } from '../src/client/definition.ts'
+import { FILES_ID, FILES_KIND } from '../src/client/definition.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 import { FilesBody } from '../src/client/FilesBody.tsx'
+import { FilesTitle } from '../src/client/FilesTitle.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
 interface Recorded {
@@ -62,18 +63,20 @@ describe('ui-sidebar-files apply', () => {
     expect(hostApply).not.toThrow()
   })
 
-  it('registers the type, its dictionaries, and the body seat under the type\'s id with a store and a face', async () => {
+  it('registers the type, its dictionaries, and the body and title seats under the type\'s id', async () => {
     const { tabs, registered, dictionaries } = await boot()
     const definition = tabs.get(FILES_KIND)
     expect(definition?.id).toBe(FILES_ID)
     expect(definition?.priority).toBe('builtin')
     expect(definition?.title('sidebar://files')).toBe('type.label')
-    expect(definition?.guide?.map(entry => [entry.order, entry.title(), entry.description()])).toEqual([[10, 'guide.title', 'guide.description']])
+    expect(definition?.guide?.map(entry => [entry.order, entry.title(), entry.description?.()]))
+      .toEqual([[10, 'guide.title', 'guide.description']])
     expect(dictionaries.get('sidebarFiles')).toEqual({ zh, en })
     // The seat key is the implementation's id, not the kind: an extension may
     // take the kind over, and the seat must still find this body.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['sidebar.right.pane.tab', FILES_ID, 'sidebarFiles', FilesBody],
+      ['sidebar.right.pane.tab.title', FILES_ID, undefined, FilesTitle],
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')

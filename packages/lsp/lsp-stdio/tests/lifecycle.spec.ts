@@ -304,6 +304,7 @@ describe('lsp-stdio end to end over a fake server', () => {
       LSP_FAKE_DEF: 'null',
       LSP_FAKE_OPEN_MARKER: marker,
     }, {}, (registered) => { provider = registered })
+    const firstReply = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const request = Object.getOwnPropertyDescriptor(LspConnection.prototype, 'request')?.value as LspConnection['request']
     let holdFirst = true
@@ -311,14 +312,17 @@ describe('lsp-stdio end to end over a fake server', () => {
       const hold = method === 'textDocument/definition' && holdFirst
       if (hold) holdFirst = false
       const result = await request.call(this, method, params)
-      if (hold) await release.promise
+      if (hold) {
+        firstReply.resolve(undefined)
+        await release.promise
+      }
       return result
     })
     const pending: Promise<unknown>[] = []
     try {
       const first = ctx.lsp.query(query('goToDefinition'))
       pending.push(Promise.allSettled([first]))
-      await waitFor(async () => (await markerLines(marker)).length === 1)
+      await Promise.race([firstReply.promise, first])
       // The changed tail proves the second query entered the provider queue
       // while the first response is held, before the source rewrite starts.
       const queues = (provider as unknown as { queues: ReadonlyMap<unknown, Promise<void>> }).queues

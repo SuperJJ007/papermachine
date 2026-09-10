@@ -29,7 +29,7 @@ kind: "package-library"
 
 ### 搭建功能测试
 
-`SlotTestRuntime.create()` 组装运行时，`declare(children)` 注册一个自动 frame，其逐 key 的 `<div data-slot>` 包裹层成为快照根，`mount(plugin)` 在真实 fiber 上运行功能，`renderSlot(key, owner)` 返回带限定查询与原位更新的 slot 局部视图：
+`SlotTestRuntime.create()` 组装运行时，`declare(children)` 注册一个自动 frame，其逐 key 的 `<div data-slot>` 包裹层成为快照根，`mount(plugin)` 在真实 fiber 上运行功能，`renderSlot(key, owner, opts?)` 返回带限定查询与原位更新的 slot 局部视图：
 
 ```text
 const runtime = await SlotTestRuntime.create()
@@ -41,6 +41,8 @@ await runtime.dispose()
 ```
 
 `mount` 会预检必需服务，缺失时自明报错——先用 `provide(name, value)` 提供额外服务。运行时会提供不可用的 `fileUpload` 替身，使装配可以挂载；测试上传行为时，需要在挂载前替换 `runtime.fileUpload.upload`。`storeOf(key, scopeKey)` 返回渲染器交给 slot 组件的实时 store 实例，用于身份与动作驱动写入断言。
+
+可选渲染参数通过 `entryKey` 选择 keyed 条目，或通过 `only` 选择 list 条目；`view.update(owner)` 保留该选择。`runtime.panelInfo` 提供默认的 `usePanelInfo` 数据源，初始不选中全局面板。挂载生产 Layout 所有者之前，先调用 `releasePanelInfoSource()` 释放该数据源。`dispose()` 同时释放默认的工作区与面板信息根数据源；提前释放是幂等的，不会移除替代它们的所有者。
 
 ### 局部 DOM 快照
 

@@ -115,9 +115,9 @@ export interface WorkspaceDirectoryListing {
 }
 
 /**
- * One observation of a workspace file made by an Agent's own filesystem
- * operation. Frames report observations, not deltas: a consumer already holding
- * `version` learns nothing new from the frame and can ignore it.
+ * One observation of a workspace file made by an instrumented filesystem
+ * operation. Frames report observations, not deltas: a consumer already
+ * holding `version` learns nothing new from the frame and can ignore it.
  */
 export type WorkspaceFileChange =
   | {
@@ -146,7 +146,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** No entry exists at that path inside the workspace. */
     'workspace-file/not-found': { readonly path: string }
-    /** The path resolves outside the session's workspace root. */
+    /** The directory listing path resolves outside the session's workspace root. */
     'workspace-file/outside-workspace': { readonly path: string }
     /** The requested page exceeds the configured byte cap; nothing is returned. */
     'workspace-file/too-large': { readonly path: string; readonly limit: number }

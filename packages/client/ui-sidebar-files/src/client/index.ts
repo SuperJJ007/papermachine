@@ -2,21 +2,23 @@
  * Browser half: register `files` as a right-Sidebar tab type.
  *
  * The public two-stage path, unmodified: the type into `ctx.sidebarRightTabs`,
- * the body into the keyed `sidebar.right.pane.tab` seat under the type's `id`.
+ * the body into the keyed `sidebar.right.pane.tab` seat and the chip title into
+ * the keyed `sidebar.right.pane.tab.title` seat, both under the type's `id`.
  *
  * The file split is this package's layering: what the type IS
- * (`definition.ts`), what it keeps (`store.ts`), how it lists (`face.ts`), what
- * it draws (`FilesBody.tsx`), what it says (`locales.ts`), and this module,
- * which only wires them together.
+ * (`definition.tsx`), what it keeps (`store.ts`), how it lists (`face.ts`), what
+ * it draws (`FilesBody.tsx`, `FilesTitle.tsx`), what it says (`locales.ts`),
+ * and this module, which only wires them together.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import { FILES_ID, filesDefinition } from './definition.ts'
+import { FILES_ID, filesDefinition } from './definition.tsx'
 import { createList, filesFace } from './face.ts'
 import { FilesBody } from './FilesBody.tsx'
+import { FilesTitle } from './FilesTitle.tsx'
 import { en, zh } from './locales.ts'
 import { createFilesStore } from './store.ts'
 
@@ -35,7 +37,7 @@ const NS = 'sidebarFiles'
 export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.workspaceFiles']
 
 /**
- * Client plugin body: register the type, its dictionaries, then its body.
+ * Client plugin body: register the type, its dictionaries, its body, and its chip title.
  * @param ctx - client root context carrying the registry, the slots, and the Remote face.
  */
 export function apply(ctx: ClientContext): void {
@@ -49,4 +51,8 @@ export function apply(ctx: ClientContext): void {
     { name: 'sidebar.right.pane.tab', key: FILES_ID, locale: NS, store, inject },
     FilesBody,
   )), 'ui-sidebar-files: files tab body')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab.title', key: FILES_ID },
+    FilesTitle,
+  )), 'ui-sidebar-files: files tab title')
 }

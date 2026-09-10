@@ -26,5 +26,12 @@ export function dockLabels(t: TranslateNS<'sidebarRight'>): DockLabels {
     addTab: t('dock.addTab'),
     dockFloat: t('dock.dockFloat'),
     closeFloat: t('dock.closeFloat'),
+    dropZone: {
+      center: t('dock.drop.center'),
+      left: t('dock.drop.left'),
+      right: t('dock.drop.right'),
+      top: t('dock.drop.top'),
+      bottom: t('dock.drop.bottom'),
+    },
   }
 }

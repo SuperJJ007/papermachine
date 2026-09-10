@@ -14,6 +14,7 @@ import { createFontSizeRowStore } from '../src/client/settings-store.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({ activePanelId: null })
 
 afterEach(cleanup)
 
@@ -49,7 +50,7 @@ function mount(fontSize = 14) {
   const props: FontSizeRowComponentProps = {
     useSessions: emptySessions(),
     useSessionPendingInteraction,
-    useResource,
+    usePanelInfo, useResource,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,

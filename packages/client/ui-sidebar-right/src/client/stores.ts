@@ -10,30 +10,32 @@
  * edit a layout in place, which is what keeps the kit testable without a store
  * and keeps snapshot identity honest.
  *
- * The settle step is this product's rule, not the kit's: a docked pane never
- * stays empty, and the last pane reseeds the guide tab, so there is always at
- * least one tab to look at.
+ * The settle step is this product's rule, not the kit's: an intent never leaves
+ * an expanded column with an empty pane — emptied side panes merge away, and an
+ * empty root pane seeds the default page. A collapsed column may stand empty;
+ * the seed waits for the expansion that would otherwise show nothing.
  *
  * A focus that changes nothing — a tab already active in its already-active
  * pane, a pane already active — plans nothing and records nothing, whoever
  * asks: the kit's chip click and `ctx.sidebarRight.focus` alike.
  *
- * So is the guide's uniqueness: a pane holds at most one guide tab. Opening the
- * guide into a pane that has one focuses it, and a guide dragged, dropped, or
- * docked into such a pane merges into it — the arriving guide closes and the
- * pane's own is focused. The kit plans none of this; it is decided here before
- * its planners run.
+ * So is page uniqueness: a pane holds at most one tab of each page kind (a tab
+ * whose content is the kind's own page address — the guide, the explorer).
+ * Opening a page into a pane that shows it focuses that tab, in that pane and
+ * nowhere else, and a page dragged, dropped, or docked into such a pane merges
+ * into the pane's own — the arriving tab closes and the pane's own is focused.
+ * The kit plans none of this; it is decided here before its planners run.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
-  DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId,
+  DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
 import {
-  activeDockPaneId, createInitialState, dockPaneIds, EMPTY_HISTORY, findPaneContentTab, findTabPane,
+  activeDockPaneId, createInitialState, dockPaneIds, EMPTY_HISTORY, findPaneContentTab, findTabPane, getPane,
   planDropTab, planDuplicateTab, planFloatTab, planOpenContent, planPlaceTab, planResizeSplit, planSetExpanded,
   planSetMode, planSettle, planSplitPane, planUnfloatPane, record, replay, stepBack, stepForward,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { GUIDE_KIND, makeGuideTab, pageAddress } from './contract/seed.ts'
+import { GUIDE_KIND, pageAddress, type SidebarRightSeed } from './contract/seed.ts'
 
 /** One session's docking surface: the layout, its sequence, and the id counter. */
 export interface SurfaceState {
@@ -55,7 +57,24 @@ export interface SidebarRightState {
 }
 
 /** A planner call, as the store needs it: state and a mint in, operations out. */
-type SurfacePlan = (state: LayoutState, mint: Mint) => readonly LayoutOp[]
+type SurfacePlan = (state: LayoutState, mint: Mint, makeTab: (id: TabId) => TabRecord) => readonly LayoutOp[]
+
+/**
+ * Decide whether an explicit close may remove a tab.
+ * @param surface - current surface.
+ * @param tabId - tab requested for closing.
+ * @returns false for a missing tab or the guide standing as the only docked tab.
+ */
+export function canCloseTab(surface: SurfaceState, tabId: TabId): boolean {
+  const tab = surface.layout.tabs[tabId]
+  return tab !== undefined && !(tab.kind === GUIDE_KIND && soleDockedTab(surface.layout, tabId))
+}
+
+/** Build the currently selected default tab. */
+function seedRecord(id: TabId, seed: () => SidebarRightSeed): TabRecord {
+  const initial = seed()
+  return { id, kind: initial.kind, title: initial.title, contentId: pageAddress(initial.kind) }
+}
 
 /**
  * What the navigation controller asks the store to open, the address already
@@ -69,7 +88,7 @@ export interface OpenContentIntent {
   readonly paneId?: PaneId
   /** Take this tab's pane and slot, and close it in the same entry. */
   readonly replaceTab?: TabId
-  /** `false` opens another tab even when the identity is already shown; defaults to `true`. */
+  /** Resource tabs reveal an existing identity by default; `false` permits duplicates. Pages always deduplicate within the target pane. */
   readonly revealIfOpened?: boolean
 }
 
@@ -86,27 +105,46 @@ function counting(from: number): { mint: Mint; used: () => number } {
 }
 
 /**
- * The surface a session starts with: collapsed, one pane, one guide tab.
- * @param seedTitle - the guide type's display name at mint time.
+ * The surface a session starts with: collapsed, one pane, no tabs. The default
+ * page is not seeded here — the settle rule seeds it when the column first
+ * expands still empty, so a collapsed column never holds a page nobody asked
+ * for, and an open into a fresh surface shows only what it opened.
  * @returns the initial surface.
  */
-export function createSurface(seedTitle: () => string): SurfaceState {
+export function createSurface(): SurfaceState {
   const counter = counting(0)
   return {
-    layout: createInitialState({ next: counter.mint }, id => makeGuideTab(id, seedTitle())),
+    layout: createInitialState({ next: counter.mint }),
     history: EMPTY_HISTORY,
     minted: counter.used(),
   }
 }
 
-/** The guide tab a pane holds, if any. */
-function paneGuide(state: LayoutState, paneId: PaneId): TabId | undefined {
-  return findPaneContentTab(state, paneId, pageAddress(GUIDE_KIND), GUIDE_KIND)
+/** The tab showing `kind`'s page in a pane, if any. */
+function panePage(state: LayoutState, paneId: PaneId, kind: string): TabId | undefined {
+  return findPaneContentTab(state, paneId, pageAddress(kind), kind)
 }
 
-/** Whether a tab is the guide, which a pane holds at most once and which is therefore never copied. */
-function isGuide(state: LayoutState, tabId: TabId): boolean {
-  return state.tabs[tabId]?.kind === GUIDE_KIND
+/**
+ * The kind whose page a tab shows, or `undefined` for a resource tab. A pane
+ * holds at most one page of each kind, so a page tab is never copied.
+ */
+function pageKind(state: LayoutState, tabId: TabId): string | undefined {
+  const tab = state.tabs[tabId]
+  return tab !== undefined && tab.contentId === pageAddress(tab.kind) ? tab.kind : undefined
+}
+
+/**
+ * Whether a tab stands alone on the docked surface: its pane is the sole docked
+ * pane and holds nothing else. Floating panels do not count — they render
+ * whether or not the column is expanded.
+ * @param state - current layout.
+ * @param tabId - the tab asked about.
+ * @returns `true` for the docked surface's only tab.
+ */
+export function soleDockedTab(state: LayoutState, tabId: TabId): boolean {
+  const pane = findTabPane(state, tabId)
+  return pane.host === 'dock' && pane.tabs.length === 1 && dockPaneIds(state).length === 1
 }
 
 /** Focus a tab: nothing to plan while it is its pane's active tab and its pane is the active one. */
@@ -121,8 +159,8 @@ function planFocusPane(state: LayoutState, paneId: PaneId): readonly LayoutOp[] 
 }
 
 /**
- * Plan a tab's arrival in a docked pane: a guide arriving where one already is
- * merges into it, anything else plans as the kit does.
+ * Plan a tab's arrival in a docked pane: a page arriving where its kind's page
+ * already shows merges into it, anything else plans as the kit does.
  * @param state - current layout.
  * @param tabId - the arriving tab.
  * @param toPaneId - the pane it arrives in.
@@ -130,8 +168,9 @@ function planFocusPane(state: LayoutState, paneId: PaneId): readonly LayoutOp[] 
  * @returns the operations.
  */
 function arriving(state: LayoutState, tabId: TabId, toPaneId: PaneId, otherwise: () => readonly LayoutOp[]): readonly LayoutOp[] {
-  if (!isGuide(state, tabId)) return otherwise()
-  const existing = paneGuide(state, toPaneId)
+  const kind = pageKind(state, tabId)
+  if (kind === undefined) return otherwise()
+  const existing = panePage(state, toPaneId, kind)
   if (existing === undefined || existing === tabId) return otherwise()
   return [{ type: 'closeTab', tabId }, { type: 'focusTab', tabId: existing }]
 }
@@ -141,17 +180,20 @@ function arriving(state: LayoutState, tabId: TabId, toPaneId: PaneId, otherwise:
  * whole intent as one history entry.
  * @param surface - the session's current surface.
  * @param plan - the kit planner to consult.
- * @param seedTitle - the guide type's display name, for a reseeded root pane.
+ * @param seed - the registered default page for an empty docked pane.
  * @returns the next surface, or the same one when the intent changes nothing.
  */
-function advance(surface: SurfaceState, plan: SurfacePlan, seedTitle: () => string): SurfaceState {
+function advance(surface: SurfaceState, plan: SurfacePlan, seed: () => SidebarRightSeed): SurfaceState {
   const counter = counting(surface.minted)
-  const planned = plan(surface.layout, counter.mint)
+  const makeTab = (id: TabId): TabRecord => seedRecord(id, seed)
+  const planned = plan(surface.layout, counter.mint, makeTab)
   if (planned.length === 0) return surface
   // The settle planner reads the state the intent produces, so it is applied
-  // to a scratch copy first; the record then applies both parts once.
+  // to a scratch copy first; the record then applies both parts once. The
+  // seed factory is withheld while the intent leaves the column collapsed:
+  // an empty collapsed column stays empty until the expansion that shows it.
   const after = replay(surface.layout, planned)
-  const settled = planSettle(after, counter.mint, id => makeGuideTab(id, seedTitle()))
+  const settled = planSettle(after, counter.mint, after.expanded ? makeTab : undefined)
   const stepped = record(surface.history, surface.layout, [...planned, ...settled])
   return { layout: stepped.state, history: stepped.history, minted: counter.used() }
 }
@@ -165,11 +207,10 @@ function advance(surface: SurfaceState, plan: SurfacePlan, seedTitle: () => stri
 function seat(
   state: SidebarRightState,
   sessionId: string,
-  seedTitle: () => string,
   next: (surface: SurfaceState) => SurfaceState,
 ): Record<string, SurfaceState> {
   const existing = state.bySession[sessionId]
-  const updated = next(existing ?? createSurface(seedTitle))
+  const updated = next(existing ?? createSurface())
   return updated === existing ? state.bySession : { ...state.bySession, [sessionId]: updated }
 }
 
@@ -214,40 +255,41 @@ function stepped(surface: SurfaceState, step: HistoryStepper): SurfaceState {
 /**
  * Create the Sidebar store handle.
  *
- * The seed title arrives as a thunk rather than a string: a pane is seeded
- * whenever one is created, which can be long after the store was built and in a
- * language the user has since changed to.
- * @param seedTitle - the guide type's display name, read at each mint.
+ * The default page arrives as a thunk: a pane is seeded when a split or an
+ * expansion of an empty column needs one, which can be long after the store was
+ * built and in a language the user has since changed to.
+ * @param seed - the registered default page, read at each mint.
  * @returns the handle (spec, type, identity, and factory in one).
  */
 export function createSidebarRightStore(
-  seedTitle: () => string,
+  seed: () => SidebarRightSeed,
 ): EngineStoreHandle<SidebarRightState, SidebarRightActions> {
   return defineStore({
     init: (): SidebarRightState => ({ bySession: {} }),
-    persist: 'dsh.sidebar.right.v1',
+    persist: 'dsh.sidebar.right.v2',
     actions: {
       // Materialize a session's surface without changing it, so the first read
-      // after a session switch sees the collapsed default rather than nothing.
-      open: (d, sessionId: string) => { d.bySession = seat(d, sessionId, seedTitle, surface => surface) },
+      // after a session switch sees the collapsed empty column rather than nothing.
+      open: (d, sessionId: string) => { d.bySession = seat(d, sessionId, surface => surface) },
       setExpanded: (d, sessionId: string, expanded: boolean) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, state => planSetExpanded(state, expanded), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, state => planSetExpanded(state, expanded), seed))
       },
       toggleExpanded: (d, sessionId: string) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, state => planSetExpanded(state, !state.expanded), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, state => planSetExpanded(state, !state.expanded), seed))
       },
       // Switching presentation is recorded like any other change, so stepping
       // back through the sequence puts the surface back the way it was drawn.
       setMode: (d, sessionId: string, mode: DockMode) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, state => planSetMode(state, mode), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, state => planSetMode(state, mode), seed))
       },
       // `settled` reports the pane the split created, synchronously, because
       // actions return nothing; it is not called when nothing was split.
       splitPane: (d, sessionId: string, paneId?: PaneId, settled?: (paneId: PaneId) => void) => {
-        d.bySession = seat(d, sessionId, seedTitle, (s) => {
-          const next = advance(s, (state, mint) => dockPaneIds(state).length >= 2
+        d.bySession = seat(d, sessionId, (s) => {
+          const next = advance(s, (state, mint, makeTab) => dockPaneIds(state).length >= 2
+            || getPane(state, paneId ?? activeDockPaneId(state)).tabs.length === 0
             ? []
-            : planSplitPane(state, mint, paneId, id => makeGuideTab(id, seedTitle())), seedTitle)
+            : planSplitPane(state, mint, paneId, makeTab), seed)
           if (settled !== undefined && next !== s) {
             const before = new Set(dockPaneIds(s.layout))
             for (const id of dockPaneIds(next.layout)) {
@@ -262,7 +304,7 @@ export function createSidebarRightStore(
       // closing the tab it replaces. `settled` reports the tab the planner
       // landed on, synchronously, because actions return nothing.
       openContent: (d, sessionId: string, intent, settled) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, (state, mint) => {
+        d.bySession = seat(d, sessionId, s => advance(s, (state, mint) => {
           const { kind, contentId, title, replaceTab: replace } = intent
           const ops: LayoutOp[] = [...planSetExpanded(state, true)]
           // A replaced tab lends its pane and slot; one that floats cannot (a
@@ -271,9 +313,12 @@ export function createSidebarRightStore(
           const lent = replace !== undefined && replaced !== undefined && replaced.host === 'dock' ? replaced : undefined
           const paneId = lent?.id ?? intent.paneId
           const index = lent === undefined || replace === undefined ? undefined : lent.tabs.indexOf(replace)
-          // The guide is unique per pane: the pane it would land in may already
-          // hold one, which is then the tab this open settles on.
-          const held = kind === GUIDE_KIND ? paneGuide(state, paneId ?? activeDockPaneId(state)) : undefined
+          // A page is unique per pane, not per surface: the pane it would land
+          // in may already show it, which is then the tab this open settles on.
+          // The same page in another pane never draws the open away — the kit's
+          // cross-pane reveal is for resources only.
+          const page = contentId === pageAddress(kind)
+          const held = page ? panePage(state, paneId ?? activeDockPaneId(state), kind) : undefined
           const planned = held !== undefined
             ? { ops: [{ type: 'focusTab' as const, tabId: held }], tabId: held }
             : planOpenContent(state, mint, {
@@ -282,72 +327,86 @@ export function createSidebarRightStore(
               title,
               ...paneId === undefined ? {} : { paneId },
               ...index === undefined ? {} : { index },
-              ...intent.revealIfOpened === undefined ? {} : { revealIfOpened: intent.revealIfOpened },
+              ...page
+                ? { revealIfOpened: false }
+                : intent.revealIfOpened === undefined ? {} : { revealIfOpened: intent.revealIfOpened },
             })
           ops.push(...planned.ops)
           if (replace !== undefined && replace !== planned.tabId) ops.push({ type: 'closeTab', tabId: replace })
           settled(planned.tabId)
           return ops
-        }, seedTitle))
+        }, seed))
       },
-      // The guide is never copied: the copy would sit beside it in the same pane.
+      // A page is never copied: the copy would sit beside it in the same pane.
       duplicateTab: (d, sessionId: string, tabId: TabId) => {
-        d.bySession = seat(d, sessionId, seedTitle, s =>
-          advance(s, (state, mint) => isGuide(state, tabId) ? [] : planDuplicateTab(state, mint, tabId).ops, seedTitle))
+        d.bySession = seat(d, sessionId, s =>
+          advance(s, (state, mint) => pageKind(state, tabId) !== undefined ? [] : planDuplicateTab(state, mint, tabId).ops, seed))
       },
       // A tab already gone — closed twice by a racing callback and the user — is
       // left alone rather than handed to the kit, which refuses an unknown tab.
+      // The docked surface's last tab follows the close rule, whoever asks: the
+      // guide stays (the kit hides its close routes through `canCloseTab`, and
+      // this plan refuses the programmatic path), and anything else closes
+      // together with the column, which stays empty until an expansion seeds
+      // the then-current default page.
       closeTab: (d, sessionId: string, tabId: TabId) => {
-        d.bySession = seat(d, sessionId, seedTitle, s =>
-          advance(s, state => state.tabs[tabId] === undefined ? [] : [{ type: 'closeTab', tabId }], seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, (state) => {
+          if (!canCloseTab(s, tabId)) return []
+          if (!soleDockedTab(state, tabId)) return [{ type: 'closeTab', tabId }]
+          // The collapse also leaves fullscreen: the reopened column shows only
+          // the reseeded default page, which never earns the whole window.
+          return [{ type: 'closeTab', tabId }, ...planSetMode(state, 'push'), ...planSetExpanded(state, false)]
+        }, seed))
       },
       focusTab: (d, sessionId: string, tabId: TabId) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, state => planFocusTab(state, tabId), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, state => planFocusTab(state, tabId), seed))
       },
       focusPane: (d, sessionId: string, paneId: PaneId) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, state => planFocusPane(state, paneId), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, state => planFocusPane(state, paneId), seed))
       },
       placeTab: (d, sessionId: string, tabId: TabId, toPaneId: PaneId, index: number) => {
-        d.bySession = seat(d, sessionId, seedTitle, s =>
-          advance(s, state => arriving(state, tabId, toPaneId, () => planPlaceTab(state, tabId, toPaneId, index)), seedTitle))
+        d.bySession = seat(d, sessionId, s =>
+          advance(s, state => arriving(state, tabId, toPaneId, () => planPlaceTab(state, tabId, toPaneId, index)), seed))
       },
       // Only a centre release lands in the target pane; an edge release makes a
-      // new pane, where nothing can already be.
+      // new pane, where nothing can already be — and when the release drags a
+      // pane's only tab to that pane's own edge, the default page backfills it.
       dropTab: (d, sessionId: string, tabId: TabId, paneId: PaneId, zone: DockZone) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, (state, mint) => {
+        d.bySession = seat(d, sessionId, s => advance(s, (state, mint, makeTab) => {
           if (zone === 'top' || zone === 'bottom') return []
           if (zone !== 'center' && dockPaneIds(state).length >= 2) return []
-          const plan = (): readonly LayoutOp[] => planDropTab(state, mint, tabId, paneId, zone)
+          const plan = (): readonly LayoutOp[] => planDropTab(state, mint, tabId, paneId, zone, makeTab)
           return zone === 'center' ? arriving(state, tabId, paneId, plan) : plan()
-        }, seedTitle))
+        }, seed))
       },
       floatTab: (d, sessionId: string, tabId: TabId, rect?: FloatRect) => {
-        d.bySession = seat(d, sessionId, seedTitle, s =>
-          advance(s, (state, mint) => planFloatTab(state, mint, tabId, rect).ops, seedTitle))
+        d.bySession = seat(d, sessionId, s =>
+          advance(s, (state, mint) => planFloatTab(state, mint, tabId, rect).ops, seed))
       },
       // A floating pane holds one tab; docking it back lands in the active
-      // docked pane, and only a guide is subject to the merge rule there.
+      // docked pane, and only a page is subject to the merge rule there.
       unfloatPane: (d, sessionId: string, paneId: PaneId) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, (state) => {
-          const guide = paneGuide(state, paneId)
+        d.bySession = seat(d, sessionId, s => advance(s, (state) => {
+          const floated = getPane(state, paneId).tabs[0]
           const plan = (): readonly LayoutOp[] => planUnfloatPane(state, paneId)
-          return guide === undefined ? plan() : arriving(state, guide, activeDockPaneId(state), plan)
-        }, seedTitle))
+          /* v8 ignore next -- a floating pane holds exactly one tab. */
+          return floated === undefined ? plan() : arriving(state, floated, activeDockPaneId(state), plan)
+        }, seed))
       },
       moveFloat: (d, sessionId: string, paneId: PaneId, x: number, y: number) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, () => [{ type: 'moveFloat', paneId, x, y }], seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, () => [{ type: 'moveFloat', paneId, x, y }], seed))
       },
       resizeFloat: (d, sessionId: string, paneId: PaneId, rect: FloatRect) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, () => [{ type: 'resizeFloat', paneId, rect }], seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, () => [{ type: 'resizeFloat', paneId, rect }], seed))
       },
       resizeSplit: (d, sessionId: string, splitId: SplitId, sizes: readonly number[]) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => advance(s, () => planResizeSplit(splitId, sizes, 0.2), seedTitle))
+        d.bySession = seat(d, sessionId, s => advance(s, () => planResizeSplit(splitId, sizes, 0.2), seed))
       },
       undo: (d, sessionId: string) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => stepped(s, stepBack))
+        d.bySession = seat(d, sessionId, s => stepped(s, stepBack))
       },
       redo: (d, sessionId: string) => {
-        d.bySession = seat(d, sessionId, seedTitle, s => stepped(s, stepForward))
+        d.bySession = seat(d, sessionId, s => stepped(s, stepForward))
       },
     },
   })

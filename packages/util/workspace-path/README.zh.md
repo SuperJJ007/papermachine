@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-供 Workspace 相关客户端和控制器包共享、可在浏览器使用的路径辅助函数。该包负责拼接 Workspace 相对路径、缩写用于展示的 POSIX 主目录、从 POSIX 或 Windows 路径提取 Workspace 标题，并拥有在 Sidebar 与资源模型之间命名工作区文件的 `dsh-resource://file/…` 地址语法；它不提供 Cordis service，也不持有运行时状态。
+供 Workspace 相关客户端和控制器包共享、可在浏览器使用的路径辅助函数。该包负责拼接 Workspace 相对路径、缩写用于展示的 POSIX 主目录、从 POSIX 或 Windows 路径提取 Workspace 标题、把路径拆成目录部分与末段供展示，并拥有在 Sidebar 与资源模型之间命名工作区文件的 `dsh-resource://file/…` 地址语法。`relativizeToCwd` 在显示时省略工作区前缀，并保留该目录以外的路径。它不提供 Cordis service，也不持有运行时状态。
 
 ## 目录
 
@@ -22,9 +22,9 @@ kind: "package-library"
 <a id="file-addresses"></a>
 ## 文件地址
 
-资源地址 = `dsh-resource://<type>/…`，type（URI 的 host）即资源协议键（`file`，或插件在 `ResourceProtocolMap` 中声明的键）；其他 scheme 属导航协议，另行定义。文件地址有两种作用域。`dsh-resource://file/session/<sessionId>/<path>` 以相对该 Session 工作区根的路径命名文件（`dsh-resource://file/session/abc123/src/notes.txt`），由 Host 对它为该 Session 持有的根解析。`dsh-resource://file/absolute/<path>` 以去掉前导 `/` 的绝对路径命名文件（POSIX 上为 `dsh-resource://file/absolute/home/ys/notes.txt`，Windows 盘符为 `dsh-resource://file/absolute/C:/x/y.txt`，UNC 路径为 `dsh-resource://file/absolute//server/share/y.txt`，其空的首段保留 UNC 身份）；它不带 Session，由读者自己的 Session 解析，Host 的工作区限制照样适用。语法住在 [`src/file-address.ts`](src/file-address.ts)；路径辅助函数留在 [`src/index.ts`](src/index.ts) 并再导出它。
+资源地址 = `dsh-resource://<type>/…`，type（URI 的 host）即资源协议键（`file`，或插件在 `ResourceProtocolMap` 中声明的键）；其他 scheme 属导航协议，另行定义。`dsh-resource://file/session/<sessionId>/<path>` 指定授权 Host 读取的 Session，以及工作区相对或绝对路径。前导斜杠保留在路径中：`/etc/hosts` 对应 `dsh-resource://file/session/s//etc/hosts`，Windows 盘符对应 `dsh-resource://file/session/s/C:/x/y.txt`，UNC 对应 `dsh-resource://file/session/s///server/share/y.txt`。Host 解析路径并执行访问检查。`absolute/<path>` 形式仍可解析，但不携带授权 Session，因此 file 提供方不能读取，Preview 也不认领；两者均不借用当前或 Tab Session。语法住在 [`src/file-address.ts`](src/file-address.ts)；路径辅助函数留在 [`src/index.ts`](src/index.ts) 并再导出它。
 
-`sessionFileAddress(sessionId, relativePath)` 与 `absoluteFileAddress(absolutePath)` 构造地址：`\` 归一为 `/`，去掉前导 `./` 或 `/`，id 与每个路径段做组件编码但 `:` 保持字面，因此名字里的 `#`、`?`、空格都能保留，盘符也照原样可读。`fileAddressFor(sessionId, cwd, path)` 按调用方手里的路径选作用域：相对路径或落在 `cwd` 内的绝对路径成为 `session` 相对地址，其他绝对路径成为 `absolute` 地址。`parseFileAddress(address)` 用 `new URL()` 读回：scheme 必须是 `dsh-resource`、host 必须恰为 `file`；`session` 地址得到 `{ scope, sessionId, path }`（path 为工作区相对路径），`absolute` 地址得到 `{ scope, path }` 并还原前导 `/`（UNC 路径还原为 `//`），以盘符开头者除外。对其他 type 或 scheme、未知作用域、缺 id 或路径、非 URL、或转义格式错误的输入返回 `undefined`，是否算失败由调用方决定。
+`sessionFileAddress(sessionId, path)` 将 `\` 归一为 `/`，去掉前导 `./`，但保留前导 `/` 字符。id 和每个路径段都做组件编码，`:` 保持字面。`fileAddressFor(sessionId, cwd, path)` 始终构造 Session 地址：`cwd` 内的路径转为相对路径；其他绝对路径（包括 `cwd` 未知时）仍作为该 Session 地址内的绝对路径。`absoluteFileAddress(absolutePath)` 只构造不带 Session 的形式。`parseFileAddress(address)` 检查精确的文件地址前缀、忽略查询与片段后缀、逐段解码，并为 Session 地址返回 `{ scope, sessionId, path }`，为不带 Session 的形式返回 `{ scope, path }`。其他 type 或 scheme、未知作用域、缺 id 或路径，或错误转义都返回 `undefined`。
 
 -----
 

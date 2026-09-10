@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-api-remotes",
   "description": "Remote BFF assembly for application-selected Host capabilities",
-  "version": "0.1.5-alpha.1",
+  "version": "0.1.5-rc.1",
   "publishConfig": {
     "access": "public"
   },
@@ -85,6 +85,7 @@
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:^",
     "zod": "^4.4.3",
-    "@deepseek-ai/dsh-tool-science": "workspace:^"
+    "@deepseek-ai/dsh-tool-science": "workspace:^",
+    "@deepseek-ai/dsh-command-feedback": "workspace:^"
   }
 }

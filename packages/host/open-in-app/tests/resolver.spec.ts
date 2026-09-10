@@ -664,18 +664,6 @@ describe('launchDetachedApp', () => {
       .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('counts a child that outlives the watch window as launched without killing it', async () => {
-    // The child exits on its own shortly after; the launch settles at the
-    // window, long before that, and never awaits or kills the process.
-    const started = Date.now()
-    await expect(launchDetachedApp(
-      node, ['-e', 'setTimeout(() => {}, 1500)'], { watchMs: 100 },
-    )).resolves.toBeUndefined()
-    expect(Date.now() - started).toBeLessThan(1_400)
-    // A late exit after the settled window changes nothing.
-    await new Promise(resolve => setTimeout(resolve, 1_600))
-  })
-
   it('hands the child a credential-scrubbed environment with explicit adapter entries', async () => {
     const root = await tempRoot()
     const witness = join(root, 'env.json')

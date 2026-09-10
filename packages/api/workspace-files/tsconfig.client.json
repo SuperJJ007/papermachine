@@ -16,7 +16,6 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../gateway/tsconfig.client.json" },
-    { "path": "../session-controller/tsconfig.client.json" },
     { "path": "../../core/session" },
     { "path": "../../client/resources" },
     { "path": "../../client/ui-slots" },

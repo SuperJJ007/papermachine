@@ -1,4 +1,4 @@
-import { DocumentFileIcon, fileSizeText, IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { fileExtension, FileTypeIcon, fileSizeText, IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './FileCard.module.css'
 
 /** Localized strings consumed by one pending-file card. */
@@ -18,13 +18,7 @@ export interface FileCardLabels {
 /** Upload display state resolved by the owner. */
 export type FileCardState = 'uploading' | 'ready' | 'error'
 
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf('.')
-  if (dot <= 0 || dot === name.length - 1) return ''
-  return name.slice(dot + 1).toUpperCase().slice(0, 8)
-}
-
-/** One pending generic-file card: name, size or upload status, remove, retry. */
+/** One pending file card: type glyph, name, size or upload status, remove, retry. */
 export function FileCard({
   name, bytes, state, progress, labels, onRemove, onRetry,
 }: {
@@ -36,7 +30,7 @@ export function FileCard({
   onRemove: () => void
   onRetry: () => void
 }) {
-  const extension = extensionOf(name)
+  const extension = fileExtension(name).toUpperCase().slice(0, 8)
   const meta = state === 'uploading'
     ? labels.uploading
     : state === 'error'
@@ -51,7 +45,7 @@ export function FileCard({
       <span className={css.icon} aria-hidden>
         {state === 'uploading'
           ? <span className={css.spinner} />
-          : <DocumentFileIcon />}
+          : <FileTypeIcon path={name} />}
       </span>
       {retryable
         ? (

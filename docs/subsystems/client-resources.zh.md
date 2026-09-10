@@ -8,19 +8,19 @@
 
 ## 地址
 
-资源地址是 `dsh-resource://<type>/…` 形式的 URL。host 命名协议，必须是 `ResourceProtocolMap` 的键；路径归协议自己，由其拥有者逐段做百分号编码。需要作用域的协议把作用域放进路径：`file` 协议的地址形如 `dsh-resource://file/session/<sessionId>/<相对该会话工作区根的路径>` 或 `dsh-resource://file/absolute/<去掉前导 / 的绝对路径>`，用 [`dsh-util-workspace-path`](../../packages/util/workspace-path/README.zh.md) 的 `fileAddressFor(sessionId, cwd, path)` 构造、`parseFileAddress(address)` 读回。模型本身只读 scheme 与 host：`protocolOf(address)` 对 `dsh-resource://` URL 返回小写 host，对其它任何字串返回 `undefined`。其它 scheme 下的地址——Sidebar 的 `sidebar://guide`——不指向资源，读作 `none`。
+资源地址是 `dsh-resource://<type>/…` 形式的 URL。host 命名协议，必须是 `ResourceProtocolMap` 的键；路径归协议自己，由其拥有者逐段做百分号编码。需要作用域的协议把作用域放进路径：`file` 协议的地址形如 `dsh-resource://file/session/<sessionId>/<path>`，其中 path 可以相对工作区根，也可以是保留前导斜杠的绝对路径，用 [`dsh-util-workspace-path`](../../packages/util/workspace-path/README.zh.md) 的 `fileAddressFor(sessionId, cwd, path)` 构造、`parseFileAddress(address)` 读回。模型本身只读 scheme 与 host：`protocolOf(address)` 对 `dsh-resource://` URL 返回小写 host，对其它任何字串返回 `undefined`。其它 scheme 下的地址——Sidebar 的 `sidebar://guide`——不指向资源，读作 `none`。
 
 | 地址 | 协议键 | 读作 |
 |---|---|---|
 | `dsh-resource://file/session/s1/notes/a.md` | `file` | 会话 `s1` 工作区根下 `notes/a.md` 的元数据（`file` 提供方已注册时） |
-| `dsh-resource://file/absolute/home/me/notes.md` | `file` | 该绝对路径的元数据，经当前会话读取、受其工作区限制 |
+| `dsh-resource://file/absolute/home/me/notes.md` | `file` | 可解析，但没有授权 Session，以 `workspace-file/unknown-workspace` 失败；不借用当前或 Tab Session |
 | `DSH-RESOURCE://File/session/s1/a` | `file` | 另一份记录：地址按字符串比较，`openResource` 只接受 `fileAddressFor` 生成的规范小写拼写 |
 | `sidebar://guide` | — | `none`：导航地址 |
 | `/home/me/notes.md` | — | `none`：不是 URL |
 
 ## 注册提供方
 
-协议拥有者在 `ResourceProtocolMap` 上声明其值类型，并在自己的 `ctx.effect` 里注册一个提供方，使协议与插件同寿（[提供协议](../../packages/client/resources/README.zh.md#provide-a-protocol)）。`open(address, { signal })` 返回一条 `RemoteResult` 帧流——首帧是当前状态，之后每次变化一帧——并且必须在 `signal` 中止时停下。失败是携带 `RemoteFailure` 的 `ok: false` 帧；流里抛出是编程错误，不会被捕获。`reload(address)` 可选，请已打开的流给一个新帧。
+协议拥有者在 `ResourceProtocolMap` 上声明其值类型，并在自己的 `ctx.effect` 里注册一个提供方，使协议与插件同寿（[提供协议](../../packages/client/resources/README.zh.md#provide-a-protocol)）。`open(address, { signal })` 返回一条 `RemoteResult` 帧流——首帧是当前状态，之后每次变化一帧——并且必须在 `signal` 中止时停下。失败是携带 `RemoteFailure` 的 `ok: false` 帧；流里抛出是编程错误，不会被捕获。
 
 ```ts ignore-check
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,7 +43,6 @@ export function apply(ctx: Context): void {
       yield await ctx.remote.notes.read(id, signal)
       for await (const change of ctx.remote.notes.follow(id, signal)) yield change
     },
-    reload(address) { ctx.remote.notes.requestReread(new URL(address).pathname.slice(1)) },
   }), 'my-notes: note resource provider')
 }
 ```
@@ -61,21 +60,19 @@ export function apply(ctx: Context): void {
 | `live` | 最新一帧成功 | 最新的 `ok` 值 | `undefined` |
 | `failed` | 最新一帧报告了失败 | 保留的上一个 `ok` 值 | 该帧的 `RemoteFailure` |
 
-`reload()` 请提供方给一个新帧，协议没有提供方或提供方没有 `reload` 时是空操作；该函数按地址引用稳定，正文可以长期持有。
-
 ```tsx ignore-check
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/client'
 
 type Props = PropsRuntime<'sidebar.right.pane.tab'>
 
-export function FileHeader({ tab, useResource, t }: Props) {
+export function FileHeader({ useTabInfo, useResource, t }: Props) {
+  const { tab } = useTabInfo()
   const meta = useResource<'file'>(tab.contentId)
   if (meta.status === 'failed') return <p role="alert">{t('failed', { code: meta.failure.code })}</p>
   return (
     <header>
       {tab.title}
-      {meta.value?.changed && <button type="button" onClick={meta.reload}>{t('reload')}</button>}
     </header>
   )
 }
@@ -87,7 +84,7 @@ export function FileHeader({ tab, useResource, t }: Props) {
 
 资源有持有者就存活：一个订阅中的 `useResource`，或一次钉住。`ctx.resources.pin(address, signal)` 在不订阅的情况下让资源保持打开直到 `signal` 中止，已中止的信号什么也不钉；右侧 Sidebar 在每条打开的 tab 记录存续期内钉住其地址，因此切 tab 卸载正文不关流。第一个持有者打开提供方的流；最后一个释放时中止它、丢弃值，并把快照回到 `loading`（有提供方）或 `none`（没有）。提供方在这次释放之后产出的帧被丢弃，迭代器被归还。`ctx.resources.source(address)` 是 hook 背后的裸 observable，按地址引用稳定，供 React 之外的调用方使用；只读它的快照不算持有（[生命周期](../../packages/client/resources/README.zh.md#lifecycle)）。
 
-流只推元数据不推内容。`file` 提供方的值是 `{ absolutePath, version, bytes?, changed }`：`absolutePath`、`version` 与 `bytes` 来自 Host 的 `stat`，`changed` 在 Host 报告 agent 写入时置起、由 `reload` 清除。消费方自己经 Workspace Files Remote 命名空间按页读文件文本（[`dsh-api-workspace-files`](../../packages/api/workspace-files/README.zh.md)）。
+流只推元数据不推内容。`file` 提供方的值是 `WorkspaceFileStat { absolutePath, version, bytes? }`：首帧来自 Host 的 `stat`，后续观察更新版本。消费方自己经 Workspace Files Remote 命名空间读取内容；Preview 按 tab 独立刷新（[`dsh-api-workspace-files`](../../packages/api/workspace-files/README.zh.md)）。
 
 ## 限制
 

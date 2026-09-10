@@ -33,12 +33,12 @@ kind: "package-reference"
 <a id="read-a-resource"></a>
 ### 读取资源
 
-每个 slot 组件都在 props 上收到 `useResource`。`useResource<P>(address)` 以类型参数命名协议，返回 `{ status, value, failure, reload }`：地址协议没有提供方（或地址不是 `dsh-resource://` URL）时为 `none`，提供方尚未产出值时为 `loading`，`live` 携带最新一个 `ok` 帧的值，`failed` 表示最新一帧报告了失败，失败放在最后一个值旁。`reload()` 请提供方给一个新值，没有提供方时是空操作。通过 hook 订阅就是钉住资源的方式；另一个持有者让资源保持存活时，新挂载的组件立刻读到最新值。
+每个 slot 组件都在 props 上收到 `useResource`。`useResource<P>(address)` 以类型参数命名协议，返回 `{ status, value, failure }`：地址协议没有提供方（或地址不是 `dsh-resource://` URL）时为 `none`，提供方尚未产出值时为 `loading`，`live` 携带最新一个 `ok` 帧的值，`failed` 表示最新一帧报告了失败，失败放在最后一个值旁。通过 hook 订阅就是钉住资源的方式；另一个持有者让资源保持存活时，新挂载的组件立刻读到最新值。
 
 <a id="provide-a-protocol"></a>
 ### 提供协议
 
-协议所属的客户端包在 `ResourceProtocolMap` 声明其值类型，并以自有 effect 注册一个提供方。`open` 产出 `RemoteResult` 帧：先是当前内容，之后每次变化一帧，失败以 `ok: false` 帧而非抛错表达；必须在 `signal` 中止时停止。`reload` 可选：
+协议所属的客户端包在 `ResourceProtocolMap` 声明其值类型，并以自有 effect 注册一个提供方。`open` 产出 `RemoteResult` 帧：先是当前内容，之后每次变化一帧，失败以 `ok: false` 帧而非抛错表达；必须在 `signal` 中止时停止：
 
 ```ts ignore-check
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -54,7 +54,6 @@ export function apply(ctx) {
       yield await readNote(address, signal)
       for await (const change of followNote(address, signal)) yield change
     },
-    reload(address) { requestReread(address) },
   }), 'my-notes: note resource provider')
 }
 ```
@@ -72,7 +71,7 @@ export function apply(ctx) {
 <a id="lifecycle"></a>
 ### 生命周期
 
-每个地址一条记录，持有一个快照 store、一个持有者计数（hook 订阅者加 pin）与运行中流的 `AbortController`。第一个持有者打开提供方的流；之后的持有者共享它；最后一个持有者释放时中止流并把快照重置为空闲（有提供方为 `loading`，没有为 `none`）。记录在页面存续期内保留，使 `source()` 在 React 渲染到订阅的窗口与 StrictMode 重挂载之间保持引用稳定。`reload` 每条记录一个函数，永不变化。
+每个地址一条记录，持有一个快照 store、一个持有者计数（hook 订阅者加 pin）与运行中流的 `AbortController`。第一个持有者打开提供方的流；之后的持有者共享它；最后一个持有者释放时中止流并把快照重置为空闲（有提供方为 `loading`，没有为 `none`）。记录在页面存续期内保留，使 `source()` 在 React 渲染到订阅的窗口与 StrictMode 重挂载之间保持引用稳定。
 
 <a id="failures"></a>
 ### 失败

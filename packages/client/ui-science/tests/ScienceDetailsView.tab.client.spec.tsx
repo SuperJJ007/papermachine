@@ -464,7 +464,7 @@ describe('ScienceDetailsView: provenance navigation', () => {
     const tabActions = { openTab: vi.fn(), openResource: vi.fn(), close: vi.fn() }
     render(<ScienceDetailsView {...props(science, { store, summaries, tabActions })} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Artifact library' }))
-    expect(tabActions.openTab).toHaveBeenCalledWith('guide')
+    expect(tabActions.openTab).toHaveBeenCalledWith('science-library')
     act(() => { openTab(store, 'chart-1', 1) })
     fireEvent.click(await screen.findByRole('button', { name: 'Close tab' }))
     expect(store.instance.getSnapshot().openArtifacts).toEqual([])

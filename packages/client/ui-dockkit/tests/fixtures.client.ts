@@ -44,6 +44,7 @@ export const TEST_LABELS: DockLabels = {
   addTab: 'new tab',
   dockFloat: 'dock',
   closeFloat: 'close panel',
+  dropZone: { center: 'move here', left: 'split left', right: 'split right', top: 'split top', bottom: 'split bottom' },
 }
 
 /** Brand a literal a spec spells out: an id the kit would have minted. */

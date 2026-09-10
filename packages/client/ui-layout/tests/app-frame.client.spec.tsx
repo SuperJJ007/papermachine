@@ -1,26 +1,23 @@
 // @vitest-environment jsdom
 /** Frame interactions with a real store and explicitly driven browser measurements. */
-import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GlobalStandardProps, RenderOpts } from '@deepseek-ai/dsh-client-ui-slots'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { useSyncExternalStore } from 'react'
 import { AppFrame } from '../src/client/AppFrame.tsx'
 import type { AppFrameProps } from '../src/client/AppFrame.tsx'
-import type { RightbarOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
+import type { MainPanelId, RightbarOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
 import { createLayoutStore } from '../src/client/stores.ts'
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
-const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 let selectedSession: SessionId | undefined
 let selectedSessionTitle: string | undefined
 let workspacesReady = true
 type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionPendingInteraction']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: AppFrameProps['useSessionPendingInteraction'] = selector => selector(noAttention)
-const SessionProviderStub: AppFrameProps['SessionProvider'] = ({ children, empty }) =>
-  selectedSession === undefined ? <>{empty?.() ?? null}</> : <>{children}</>
 
 let observers: ResizeObserverStub[]
 class ResizeObserverStub {
@@ -63,19 +60,15 @@ function resize(width: number): void {
   })
 }
 
-function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => T }) {
-  return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
-}
-
 function mountFrame(windowWidth = frameWidth) {
   vi.stubGlobal('innerWidth', windowWidth)
   const instance = createLayoutStore().create()
-  const slotCalls: { key: string; props: object }[] = []
-  const renderSlot = ((key: string, owner: object) => {
-    slotCalls.push({ key, props: owner })
-    return <div data-testid={`${key}-content`} />
-  }) as AppFrameProps['renderSlot']
-  const useSessions = ((sel: (s: SessionListState) => unknown) => sel({
+  const slotCalls: { key: string; props: object; options: RenderOpts | undefined }[] = []
+  const renderSlot: AppFrameProps['renderSlot'] = (key, owner, options) => {
+    slotCalls.push({ key, props: owner, options })
+    return <div data-testid={`${key}-content`} data-entry-key={options?.entryKey} />
+  }
+  const useSessions: AppFrameProps['useSessions'] = sel => sel({
     ids: selectedSession === undefined ? [] : [selectedSession],
     byId: selectedSession === undefined ? {} : {
       [selectedSession]: {
@@ -85,22 +78,29 @@ function mountFrame(windowWidth = frameWidth) {
     },
     current: selectedSession,
     phase: 'ready',
-  } as SessionListState)) as AppFrameProps['useSessions']
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  })
   const workspaceState: WorkspaceSnapshot = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     ...(workspacesReady ? {} : { state: 'loading' as const, phase: 'pending' as const }),
   }
-  const useStore = hookOf(instance)
+  const useStore = bindSnapshotSelector(instance)
+  const usePanelInfo = bindSnapshotSelector({
+    getSnapshot: () => instance.getSnapshot().panelInfo,
+    subscribe: listener => instance.subscribe(listener),
+  })
   const element = () => (
     <AppFrame
       useStore={useStore}
       actions={instance.actions}
       renderSlot={renderSlot}
       useSessions={useSessions}
+      usePanelInfo={usePanelInfo}
       useSessionPendingInteraction={useSessionPendingInteraction}
       useResource={useResource}
-      useWorkspaces={((sel: (s: WorkspaceSnapshot) => unknown) => sel(workspaceState)) as AppFrameProps['useWorkspaces']}
-      SessionProvider={SessionProviderStub}
+      useWorkspaces={sel => sel(workspaceState)}
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
     />
   )
@@ -203,22 +203,22 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 0])
     expect(sidebarOwner()).toEqual({ collapsed: false, width: 280 })
     expect(rightOwner()).toEqual({ width: 864, viewportWidth: 1920, canShow: true })
-    expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
+    expect(slotCalls.find(c => c.key === 'main')).toEqual({ key: 'main', props: {}, options: { entryKey: 'conversation' } })
   })
 
-  it('retains conversation and sidebar content without a current Session', () => {
+  it('renders the main, sidebar, and root-scoped rightbar outlets without a current Session', () => {
     selectedSession = undefined
-    const { frame, getByTestId, queryByTestId } = mountFrame()
-    expect(getByTestId('conversation-content')).toBeTruthy()
+    const { frame, getByTestId } = mountFrame()
+    expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe('conversation')
     expect(getByTestId('sidebar-content')).toBeTruthy()
-    expect(queryByTestId('rightbar-content')).toBeNull()
+    expect(getByTestId('rightbar-content')).toBeTruthy()
     expect(tracks(frame)).toEqual([280, 0])
   })
 
   it('renders both occupants before workspace baselines settle', () => {
     workspacesReady = false
     const { getByTestId } = mountFrame()
-    expect(getByTestId('conversation-content')).toBeTruthy()
+    expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe('conversation')
     expect(getByTestId('rightbar-content')).toBeTruthy()
   })
 
@@ -230,16 +230,34 @@ describe('AppFrame', () => {
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
   })
+
+  it('switches only the keyed main outlet when the active panel changes', () => {
+    selectedSessionTitle = 'Session title'
+    const { instance, frame, slotCalls, getByTestId } = mountFrame()
+    const sessionId = selectedSession
+    const layoutInfo = instance.getSnapshot().layoutInfo
+    for (const panelId of ['panel-a' as MainPanelId, 'panel-b' as MainPanelId, null]) {
+      slotCalls.length = 0
+      act(() => { instance.actions.selectPanel(panelId) })
+      expect(slotCalls).toEqual([{ key: 'main', props: {}, options: { entryKey: panelId ?? 'conversation' } }])
+      expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe(panelId ?? 'conversation')
+      expect(instance.getSnapshot().panelInfo).toEqual({ activePanelId: panelId })
+      expect(instance.getSnapshot().layoutInfo).toBe(layoutInfo)
+      expect(tracks(frame)).toEqual([280, 0])
+      expect(selectedSession).toBe(sessionId)
+      expect(document.title).toBe(panelId === null ? 'Session title — DSH Local Build' : 'DSH Local Build')
+    }
+  })
 })
 
 describe('AppFrame normal width concessions', () => {
   it('measures the frame, not the window, before choosing the first-open preference', () => {
     frameWidth = 1000
     const { instance, rightOwner } = mountFrame(1920)
-    expect(instance.getSnapshot().viewportWidth).toBe(1000)
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1000)
     expect(rightOwner()).toEqual({ width: 450, viewportWidth: 1000, canShow: true })
     act(() => { instance.actions.openRightbar(true, false) })
-    expect(instance.getSnapshot().rightbar).toBe(450)
+    expect(instance.getSnapshot().layoutInfo.rightbar).toBe(450)
     resize(1920)
     expect(rightOwner().width).toBe(450)
   })
@@ -256,7 +274,7 @@ describe('AppFrame normal width concessions', () => {
     expect(tracks(frame)).toEqual([420, 0])
     expect(rightOwner()).toEqual({ width: 0, viewportWidth: 1119, canShow: false })
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
-    expect(instance.getSnapshot()).toMatchObject({ rightbarShown: true, rightbar: 864 })
+    expect(instance.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
     resize(455)
     expect(tracks(frame)).toEqual([56, 0])
@@ -272,7 +290,7 @@ describe('AppFrame normal width concessions', () => {
     expect(rightOwner()).toEqual({ width: 344, viewportWidth: 800, canShow: true })
     act(() => { instance.actions.openRightbar(true, false) })
     expect(tracks(frame)).toEqual([56, 344])
-    expect(instance.getSnapshot()).toMatchObject({ narrowExpanded: false, rightbar: 360 })
+    expect(instance.getSnapshot().layoutInfo).toMatchObject({ narrowExpanded: false, rightbar: 360 })
     expect(rightOwner().canShow).toBe(true)
   })
 
@@ -313,7 +331,7 @@ describe('AppFrame normal width concessions', () => {
     resize(980)
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)[0]).toBe(280)
-    expect(instance.getSnapshot().sidebar).toBe(0)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
   })
 })
 
@@ -405,7 +423,7 @@ describe('AppFrame right panel presentation', () => {
     act(() => { instance.actions.openRightbar(false, true) })
     expect(tracks(frame)).toEqual([56, 0])
     expect(rightOwner()).toEqual({ width: 0, viewportWidth: 700, canShow: false })
-    expect(instance.getSnapshot().rightbarShown).toBe(true)
+    expect(instance.getSnapshot().layoutInfo.rightbarShown).toBe(true)
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
   })
 
@@ -416,7 +434,7 @@ describe('AppFrame right panel presentation', () => {
     expect(tracks(frame)).toEqual([280, 0])
     expect(rightOwner().width).toBe(420)
     drag(handleFor(frame, 'rightbar'), 680, 690)
-    expect(instance.getSnapshot().rightbar).toBe(410)
+    expect(instance.getSnapshot().layoutInfo.rightbar).toBe(410)
     expect(rightOwner().width).toBe(410)
     expect(tracks(frame)[1]).toBe(0)
   })
@@ -437,7 +455,7 @@ describe('AppFrame pointer resizing', () => {
     act(flushFrames)
     expect(tracks(frame)[0]).toBe(360)
     pointer(handle, 'pointerup', 360)
-    expect(instance.getSnapshot().sidebar).toBe(360)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(360)
     expect(frame.dataset.dragging).toBeUndefined()
     expect(handle.hasPointerCapture(1)).toBe(false)
   })
@@ -451,7 +469,7 @@ describe('AppFrame pointer resizing', () => {
     expect(tracks(frame)[1]).toBe(420)
     expect(handle.style.left).toBe('680px')
     drag(handle, 680, 690)
-    expect(instance.getSnapshot().rightbar).toBe(410)
+    expect(instance.getSnapshot().layoutInfo.rightbar).toBe(410)
     expect(rightOwner().width).toBe(410)
     expect(tracks(frame)[1]).toBe(410)
     expect(handle.style.left).toBe('690px')
@@ -475,10 +493,10 @@ describe('AppFrame pointer resizing', () => {
     pointer(handle, 'pointerdown', 280)
     pointer(handle, 'pointermove', 320)
     pointer(handle, 'pointerup', 360)
-    expect(instance.getSnapshot().sidebar).toBe(360)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(360)
     expect(animationFrames.size).toBe(0)
     act(flushFrames)
-    expect(instance.getSnapshot().sidebar).toBe(360)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(360)
   })
 
   it('ignores uncaptured motion, secondary buttons, and a second pointer', () => {
@@ -494,9 +512,9 @@ describe('AppFrame pointer resizing', () => {
     pointer(handle, 'pointermove', 500, 9)
     pointer(handle, 'pointerup', 500, 9)
     expect(animationFrames.size).toBe(0)
-    expect(instance.getSnapshot().sidebar).toBe(280)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
     pointer(handle, 'pointerup', 300)
-    expect(instance.getSnapshot().sidebar).toBe(300)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(300)
   })
 
   it.each(['pointercancel', 'lostpointercapture'])('ends %s without committing queued motion', (event) => {
@@ -507,7 +525,7 @@ describe('AppFrame pointer resizing', () => {
     if (event === 'lostpointercapture') handle.releasePointerCapture(1)
     pointer(handle, event, 340)
     act(flushFrames)
-    expect(instance.getSnapshot().sidebar).toBe(280)
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
     expect(animationFrames.size).toBe(0)
     expect(frame.dataset.dragging).toBeUndefined()
     expect(handle.hasPointerCapture(1)).toBe(false)
@@ -527,7 +545,7 @@ describe('AppFrame pointer resizing', () => {
     const settled = instance.getSnapshot()
     act(flushFrames)
     expect(instance.getSnapshot()).toBe(settled)
-    expect(instance.getSnapshot().rightbar).toBe(864)
+    expect(instance.getSnapshot().layoutInfo.rightbar).toBe(864)
     expect(animationFrames.size).toBe(0)
     expect(handle.hasPointerCapture(1)).toBe(false)
     if (change !== 'unmount') expect(frame.dataset.dragging).toBeUndefined()
@@ -545,17 +563,17 @@ describe('AppFrame frame measurement lifecycle', () => {
       observer.fire()
     })
     expect(animationFrames.size).toBe(1)
-    expect(instance.getSnapshot().viewportWidth).toBe(1920)
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1920)
     act(flushFrames)
-    expect(instance.getSnapshot().viewportWidth).toBe(1200)
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1200)
     expect(rightOwner().viewportWidth).toBe(1200)
-    expect(instance.getSnapshot().rightbar).toBeNull()
+    expect(instance.getSnapshot().layoutInfo.rightbar).toBeNull()
   })
 
   it('retains the last positive measurement while the frame is hidden', () => {
     const { instance, rightOwner } = mountFrame()
     resize(0)
-    expect(instance.getSnapshot().viewportWidth).toBe(1920)
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1920)
     expect(rightOwner().viewportWidth).toBe(1920)
   })
 
@@ -569,7 +587,7 @@ describe('AppFrame frame measurement lifecycle', () => {
     expect(observer.disconnected).toBe(true)
     expect(animationFrames.size).toBe(0)
     act(() => { observer.fire(); flushFrames() })
-    expect(instance.getSnapshot().viewportWidth).toBe(1920)
+    expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1920)
     expect(animationFrames.size).toBe(0)
   })
 })

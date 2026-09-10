@@ -31,6 +31,8 @@ export interface DockLabels {
   readonly dockFloat: string
   /** Close a floating panel. */
   readonly closeFloat: string
+  /** The drop hint's caption for each body zone a dragged tab can land on. */
+  readonly dropZone: Readonly<Record<DockZone, string>>
 }
 
 /**
@@ -45,10 +47,12 @@ export type TabRenderer = (tab: TabRecord) => ReactNode
  *
  * The kit's own item is the close gesture; anything that means something about
  * the tab's content comes from here. An item that acts MUST call `dismiss`,
- * because the menu closes on its own items only.
+ * because the menu closes on its own items only. Every rendered item MUST
+ * carry `role="menuitem"`: the kit probes for that role to dismiss a menu
+ * that would paint empty, so items without it count as an empty menu.
  * @param tab - the tab whose menu is open.
  * @param dismiss - close the menu without acting.
- * @returns the extra items, or nothing.
+ * @returns extra actions with ARIA menuitem, menuitemcheckbox, or menuitemradio roles, or nothing.
  */
 export type TabMenuExtras = (tab: TabRecord, dismiss: () => void) => ReactNode
 

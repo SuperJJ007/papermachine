@@ -10,10 +10,6 @@
     [
       "You are a helpful software engineer assistant.\n\nPython SDK prompt version 1.",
       "You are a helpful software engineer assistant.\n\nPython SDK prompt version 2."
-    ],
-    [
-      "You are a helpful software engineer assistant.\n\nPython SDK prompt version 1.",
-      "You are a helpful software engineer assistant.\n\nPython SDK prompt version 2."
     ]
   ],
   "systemMessageOperations": [

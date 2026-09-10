@@ -3,10 +3,9 @@
     - button "Use the bash tool to" [disabled]
   - img
   - text: Minimal mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
     - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -24,7 +23,7 @@
 - button "Bash printf 'MINIMAL_BASH_CARD_OK\\n'" [expanded]:
   - img
   - text: Bash printf 'MINIMAL_BASH_CARD_OK\n'
-- text: "IN { \"command\": \"printf 'MINIMAL_BASH_CARD_OK\\\\n'\" } OUT MINIMAL_BASH_CARD_OK"
+- text: "IN { \"command\": \"printf 'MINIMAL_BASH_CARD_OK\\\\n'\" } OUT MINIMAL_BASH_CARD_OK [Command finished with exit code 0]"
 - button "Inspect"
 - paragraph: MINIMAL_PRESET_REQUEST_OK
 - button "Copy":

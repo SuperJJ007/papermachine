@@ -10,6 +10,9 @@
   "references": [
     {
       "path": "../../util/brand"
+    },
+    {
+      "path": "../ui-primitives"
     }
   ]
 }

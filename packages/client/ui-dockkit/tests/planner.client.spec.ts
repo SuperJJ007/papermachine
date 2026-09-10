@@ -133,7 +133,7 @@ describe('planPlaceTab', () => {
 })
 
 describe('planDropTab on the tab\'s own pane', () => {
-  it('plans nothing for a pane\'s only tab released on any of its own edges', () => {
+  it('plans nothing for a pane\'s only tab released on any of its own edges without a factory', () => {
     const { state, minter } = seededState()
     const mint = minter.next
     const tabId = getPane(state, state.rootId).tabs[0]
@@ -143,12 +143,33 @@ describe('planDropTab on the tab\'s own pane', () => {
     }
   })
 
-  it('splits the pane when it keeps another tab', () => {
+  it('splits on a sole tab\'s own edge when a factory backfills the pane it vacates', () => {
+    const { state, minter } = seededState()
+    const mint = minter.next
+    const paneId = getPane(state, state.rootId).id
+    const tabId = getPane(state, paneId).tabs[0]
+    if (tabId === undefined) throw new Error('fixture: seeded tab missing')
+    const ops = planDropTab(state, mint, tabId, paneId, 'right', seedTab)
+    expect(ops.map(op => op.type)).toEqual(['split', 'openTab', 'moveTab'])
+    const split = applyAll(state, ops)
+    const [home, destination] = dockPaneIds(split)
+    if (home === undefined || destination === undefined) throw new Error('expected two panes')
+    expect(getPane(split, home).tabs).toHaveLength(1)
+    expect(getPane(split, home).tabs[0]).not.toBe(tabId)
+    expect(getPane(split, destination).tabs).toEqual([tabId])
+    // The backfill seats first, so the moved tab ends focused.
+    expect(split.activePaneId).toBe(destination)
+  })
+
+  it('splits without a backfill when the pane keeps another tab, factory or not', () => {
     const { state, minter } = seededState()
     const mint = minter.next
     const opened = planOpenContent(state, mint, { contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
     const two = applyAll(state, opened.ops)
-    const ops = planDropTab(two, mint, opened.tabId, getPane(two, two.rootId).id, 'right')
+    const target = getPane(two, two.rootId).id
+    expect(planDropTab(two, mint, opened.tabId, target, 'right')
+      .map(op => op.type)).toEqual(['split', 'moveTab'])
+    const ops = planDropTab(two, mint, opened.tabId, target, 'right', seedTab)
     expect(ops.map(op => op.type)).toEqual(['split', 'moveTab'])
     const split = applyAll(two, ops)
     expect(dockPaneIds(split)).toHaveLength(2)

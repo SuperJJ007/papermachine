@@ -118,26 +118,26 @@ describe('halvesFit — the room rule', () => {
   })
 
   it('needs each half to hold the strip\'s fixed controls plus one minimum chip', () => {
-    // 420px: halves of 206px inside the borders, against 104 + 59.
-    expect(halvesFit(measure(420, 600, 104)).row).toBe(true)
-    // 208px: halves of 100px, short of 163.
+    // 520px: halves of 258px inside the borders, against 104 + 100.
+    expect(halvesFit(measure(520, 600, 104)).row).toBe(true)
+    // 208px: halves of 102px, short of 204.
     expect(halvesFit(measure(208, 600, 104)).row).toBe(false)
-    // The boundary is inclusive: 2 * (163 + 2 borders) + 4 divider = 334.
-    expect(halvesFit(measure(334, 600, 104)).row).toBe(true)
-    expect(halvesFit(measure(333, 600, 104)).row).toBe(false)
-    // A strip with fewer controls needs less.
-    expect(halvesFit(measure(208, 600, 44)).row).toBe(false)
-    expect(halvesFit(measure(214, 600, 44)).row).toBe(true)
+    // The boundary is inclusive: 2 * (204 + 2 borders) = 412; the divider takes no room.
+    expect(halvesFit(measure(412, 600, 104)).row).toBe(true)
+    expect(halvesFit(measure(411, 600, 104)).row).toBe(false)
+    // A strip with fewer controls needs less: 2 * (144 + 2) = 292.
+    expect(halvesFit(measure(291, 600, 44)).row).toBe(false)
+    expect(halvesFit(measure(292, 600, 44)).row).toBe(true)
   })
 
   it('needs each half to hold the strip plus a minimum body for a column split', () => {
-    // Halves of (h - 4) / 2 - 2 against 36 + 48 = 84.
-    expect(halvesFit(measure(420, 176, 104)).column).toBe(true)
-    expect(halvesFit(measure(420, 175, 104)).column).toBe(false)
+    // Halves of h / 2 - 2 against 36 + 48 = 84.
+    expect(halvesFit(measure(420, 172, 104)).column).toBe(true)
+    expect(halvesFit(measure(420, 171, 104)).column).toBe(false)
   })
 
   it('takes the minimums it is given, and the stylesheet\'s by default', () => {
-    expect(SPLIT_MINIMUMS).toEqual({ divider: 4, chip: 59, body: 48 })
+    expect(SPLIT_MINIMUMS).toEqual({ divider: 0, chip: 100, body: 48 })
     expect(halvesFit(measure(208, 600, 104), { divider: 0, chip: 0, body: 0 }).row).toBe(false)
     expect(halvesFit(measure(220, 600, 104), { divider: 0, chip: 0, body: 0 }).row).toBe(true)
   })

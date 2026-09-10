@@ -3,6 +3,7 @@
  * The registration supplies a fresh store and binds its actions to ctx.layout.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { MainPanelId } from './service.ts'
 import {
   clampWidth, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN,
   SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
@@ -13,6 +14,14 @@ import {
  * the right panel's expanded state belongs to its occupant.
  */
 type LayoutState = {
+  panelInfo: {
+    /** Null selects the Conversation; global panels keep the current Session intact. */
+    activePanelId: MainPanelId | null
+  }
+  layoutInfo: LayoutInfo
+}
+
+type LayoutInfo = {
   sidebar: number
   /** Last positive frame measurement; window width bootstraps the first render. */
   viewportWidth: number
@@ -47,6 +56,8 @@ type LayoutState = {
  * return type); drift fails assignability at the defineStore call.
  */
 type LayoutActions = {
+  selectPanel: (draft: LayoutState, panelId: MainPanelId | null) => void
+  retainMainPanels: (draft: LayoutState, panelIds: readonly string[]) => void
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
   setViewportWidth: (draft: LayoutState, width: number) => void
@@ -67,58 +78,78 @@ type LayoutActions = {
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
     init: (): LayoutState => ({
-      sidebar: SIDEBAR_DEFAULT,
-      viewportWidth: window.innerWidth,
-      narrowExpanded: false,
-      rightbar: null,
-      rightbarShown: false,
-      rightbarTrack: false,
-      rightbarFullscreen: false,
-      rightbarInstant: false,
+      panelInfo: { activePanelId: null },
+      layoutInfo: {
+        sidebar: SIDEBAR_DEFAULT,
+        viewportWidth: window.innerWidth,
+        narrowExpanded: false,
+        rightbar: null,
+        rightbarShown: false,
+        rightbarTrack: false,
+        rightbarFullscreen: false,
+        rightbarInstant: false,
+      },
     }),
-    persist: 'dsh.layout.panels.v1',
-    transient: ['sidebar', 'viewportWidth', 'narrowExpanded', 'rightbarShown', 'rightbarTrack', 'rightbarFullscreen', 'rightbarInstant'],
+    persist: 'dsh.layout.panels.v2',
+    persistence: {
+      save: state => ({ rightbar: state.layoutInfo.rightbar }),
+      restore: (saved, initial) => {
+        if (typeof saved !== 'object' || saved === null || !('rightbar' in saved)
+          || !(saved.rightbar === null || (typeof saved.rightbar === 'number' && Number.isFinite(saved.rightbar) && saved.rightbar >= RIGHTBAR_MIN))) {
+          throw new Error('Layout preferences require a null or finite rightbar width of at least 300px')
+        }
+        return { ...initial, layoutInfo: { ...initial.layoutInfo, rightbar: saved.rightbar } }
+      },
+    },
     actions: {
+      selectPanel: (d, panelId: MainPanelId | null) => {
+        d.panelInfo.activePanelId = panelId
+      },
+      retainMainPanels: (d, panelIds: readonly string[]) => {
+        if (d.panelInfo.activePanelId !== null && !panelIds.includes(d.panelInfo.activePanelId)) {
+          d.panelInfo.activePanelId = null
+        }
+      },
       setSidebar: (d, px: number) => {
-        d.rightbarInstant = false
-        d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX)
+        d.layoutInfo.rightbarInstant = false
+        d.layoutInfo.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX)
       },
       // Narrow toggles flip only the override: the width preference survives
       // untouched, so re-widening restores the pre-squeeze layout.
       toggleSidebar: (d) => {
-        d.rightbarInstant = false
-        if (d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.narrowExpanded = !d.narrowExpanded
-        else d.sidebar = d.sidebar === 0 ? SIDEBAR_DEFAULT : 0
+        d.layoutInfo.rightbarInstant = false
+        if (d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.layoutInfo.narrowExpanded = !d.layoutInfo.narrowExpanded
+        else d.layoutInfo.sidebar = d.layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : 0
       },
       // Crossing the breakpoint in either direction drops the override: the
       // narrow default is auto-collapsed, the wide state is the preference.
       setViewportWidth: (d, width: number) => {
-        if (d.viewportWidth === width) return
-        d.rightbarInstant = false
-        if ((d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) !== (width < SIDEBAR_AUTO_COLLAPSE)) {
-          d.narrowExpanded = false
+        if (d.layoutInfo.viewportWidth === width) return
+        d.layoutInfo.rightbarInstant = false
+        if ((d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE) !== (width < SIDEBAR_AUTO_COLLAPSE)) {
+          d.layoutInfo.narrowExpanded = false
         }
-        d.viewportWidth = width
+        d.layoutInfo.viewportWidth = width
       },
       setRightbar: (d, px: number) => {
-        d.rightbarInstant = false
-        d.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.viewportWidth * RIGHTBAR_MAX_RATIO))
+        d.layoutInfo.rightbarInstant = false
+        d.layoutInfo.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.layoutInfo.viewportWidth * RIGHTBAR_MAX_RATIO))
       },
       openRightbar: (d, track: boolean, fullscreen: boolean) => {
-        if (!d.rightbarShown || d.rightbarTrack !== track || d.rightbarFullscreen !== fullscreen) {
-          d.rightbarInstant = d.rightbarFullscreen && !fullscreen
+        if (!d.layoutInfo.rightbarShown || d.layoutInfo.rightbarTrack !== track || d.layoutInfo.rightbarFullscreen !== fullscreen) {
+          d.layoutInfo.rightbarInstant = d.layoutInfo.rightbarFullscreen && !fullscreen
         }
-        if (!d.rightbarShown && d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.narrowExpanded = false
-        d.rightbar ??= Math.max(RIGHTBAR_MIN, Math.round(d.viewportWidth * RIGHTBAR_DEFAULT_RATIO))
-        d.rightbarShown = true
-        d.rightbarTrack = track
-        d.rightbarFullscreen = fullscreen
+        if (!d.layoutInfo.rightbarShown && d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.layoutInfo.narrowExpanded = false
+        d.layoutInfo.rightbar ??= Math.max(RIGHTBAR_MIN, Math.round(d.layoutInfo.viewportWidth * RIGHTBAR_DEFAULT_RATIO))
+        d.layoutInfo.rightbarShown = true
+        d.layoutInfo.rightbarTrack = track
+        d.layoutInfo.rightbarFullscreen = fullscreen
       },
       closeRightbar: (d) => {
-        if (d.rightbarShown) d.rightbarInstant = d.rightbarFullscreen
-        d.rightbarShown = false
-        d.rightbarTrack = false
-        d.rightbarFullscreen = false
+        if (d.layoutInfo.rightbarShown) d.layoutInfo.rightbarInstant = d.layoutInfo.rightbarFullscreen
+        d.layoutInfo.rightbarShown = false
+        d.layoutInfo.rightbarTrack = false
+        d.layoutInfo.rightbarFullscreen = false
       },
     },
   })

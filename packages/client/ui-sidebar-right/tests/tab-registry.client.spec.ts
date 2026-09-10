@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 import type { SidebarRightTabDefinition } from '../src/client/tab-registry.ts'
+import { defaultSeed } from '../src/client/contract/seed.ts'
 
 /** A type recognizing `patterns`, titled by its kind. */
 function typeFor(
@@ -27,6 +28,11 @@ function ranked(registry: SidebarRightTabRegistry, address: string): string[] {
 }
 
 describe('SidebarRightTabRegistry — recognition', () => {
+  it('rejects default-page resolution when the selected kind is not registered', () => {
+    expect(() => defaultSeed(new SidebarRightTabRegistry(new Context())))
+      .toThrow('default tab kind "guide" is not registered')
+  })
+
   it('matches a pattern containing ":" against the whole address', () => {
     const registry = new SidebarRightTabRegistry(new Context())
     registry.register(typeFor('guide', ['sidebar://guide']))
@@ -204,7 +210,7 @@ describe('SidebarRightTabRegistry — ids and page types', () => {
       kind: 'files',
       priority: 'builtin',
       title: () => 'Files',
-      guide: [{ order: 10, title: () => 'Files', description: () => 'Browse' }],
+      guide: [{ order: 10, title: () => 'Files' }],
     })
     expect(ranked(registry, 'dsh-resource://file/session/s/a.txt')).toEqual([])
     expect(registry.get('files')?.title('x')).toBe('Files')
@@ -252,7 +258,7 @@ describe('SidebarRightTabRegistry — lifetime', () => {
 
   it('collects every type\'s guide entries in order, reference-stable between changes', () => {
     const registry = new SidebarRightTabRegistry(new Context())
-    const entry = (order: number) => ({ order, title: () => `#${order}`, description: () => '' })
+    const entry = (order: number) => ({ order, title: () => `#${order}` })
     registry.register(typeFor('files', [], { guide: [entry(10)] }))
     const first = registry.guide()
     expect(registry.guide()).toBe(first)

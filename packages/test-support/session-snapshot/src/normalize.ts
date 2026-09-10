@@ -325,8 +325,9 @@ export function normalizeStdout(
 /**
  * Normalize a session JSONL log into a stable expected output: the header line's
  * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed; event,
- * historical packed-row, embedded Assistant-stream, and goal lifecycle clocks
- * are zeroed; and all volatile strings are scrubbed. Projected inputs remain
+ * historical packed-row, embedded Assistant-stream, goal lifecycle, and
+ * catalog child-creation clocks are zeroed; and all volatile strings are
+ * scrubbed. Projected inputs remain
  * projected. Packed `data.dt` gaps are normalized even when the projected row
  * omits its `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
@@ -381,6 +382,10 @@ export function normalizeSessionLog(
       if ('createdAt' in data) data.createdAt = 0
       if ('updatedAt' in data) data.updatedAt = 0
     }
+    if (record.type === 'subagent/catalog' && record.data !== null && typeof record.data === 'object') {
+      const data = record.data as Record<string, unknown>
+      if ('childCreatedAt' in data) data.childCreatedAt = 0
+    }
     if (Object.hasOwn(record, 'sourceEventSeqs')) {
       record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
     }
@@ -399,9 +404,8 @@ function projectSessionSnapshot(rawLog: string): string {
 
   const body = lines.map((line) => {
     const record = JSON.parse(line) as Record<string, unknown>
-    const projected = { ...record }
-    omitFixtureEnvelope(projected)
-    return JSON.stringify(projected)
+    omitFixtureEnvelope(record)
+    return JSON.stringify(record)
   })
   return [header, ...body, ''].join('\n')
 }
@@ -410,7 +414,8 @@ function projectSessionSnapshot(rawLog: string): string {
  * Normalize and project persisted session JSONL for a committed fixture.
  * This composes ordinary log normalization with request-header scrubbing and
  * persistence-envelope projection, then writes the v3 logical event stream as
- * one record per event, independent of persistence flush boundaries.
+ * one record per event, independent of persistence flush boundaries. Event order
+ * and source-event references are preserved.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @param ctx - the run's volatile values to scrub.

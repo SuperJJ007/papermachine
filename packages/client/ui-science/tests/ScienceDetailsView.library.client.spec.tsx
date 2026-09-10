@@ -20,7 +20,7 @@ import { baseProjection, libraryArtifact, props, SESSION, statusText } from './s
 
 
 const navigate = { openTab: vi.fn(), openResource: vi.fn(), close: vi.fn() }
-/** Bind the guide seat independently from the artifact body. */
+/** Bind the library page independently from the artifact body. */
 function TestLibrary(input: ScienceDetailsViewProps) {
   return <ScienceLibrary {...input} useTabInfo={(() => ({ tab: { actions: navigate } })) as unknown as ScienceLibraryProps['useTabInfo']} />
 }

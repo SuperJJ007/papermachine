@@ -105,6 +105,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 let root: string
 const dirs: string[] = []
+const liveContexts: Context[] = []
 
 type MutableSessionHeader = { -readonly [K in keyof SessionHeader]: SessionHeader[K] }
 
@@ -277,6 +278,9 @@ async function appendBatch(persistence: SessionPersistence, id: SessionId, event
 }
 
 afterEach(async () => {
+  const contexts = liveContexts.splice(0)
+  const directories = dirs.splice(0)
+  vi.useRealTimers()
   statRace.path = undefined
   statRace.reads = 0
   statRace.mode = 'settle'
@@ -299,7 +303,10 @@ afterEach(async () => {
   readdirFailure.path = undefined
   readdirFailure.error = undefined
   vi.restoreAllMocks()
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
+  const results = await Promise.allSettled(contexts.map(ctx => ctx.fiber.dispose()))
+  for (const d of directories) await rm(d, { recursive: true, force: true })
+  const failures: unknown[] = results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])
+  if (failures.length > 0) throw new AggregateError(failures, 'live-write fixture cleanup failed')
 })
 
 runPersistenceContract('jsonl-none', async () => {
@@ -333,6 +340,7 @@ runLiveWritePathContract('jsonl', LIVE_WRITE_BATCH_MAX_DELAY_MS, async () => {
   dirs.push(dir)
   const mount = async (): Promise<Context> => {
     const ctx = new Context()
+    liveContexts.push(ctx)
     await ctx.plugin(SessionStore)
     await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
     return ctx

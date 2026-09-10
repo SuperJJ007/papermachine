@@ -12,13 +12,15 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { WorkspaceFiles, type Config } from '../src/index.ts'
+import { WorkspaceFiles, type Config, type WorkspaceFileScope } from '../src/index.ts'
 
-/** The Agent shape the service reads: only its session reaches the policy. */
-export const agent = { id: 'a-test', session: { id: 's-test' } } as unknown as Agent
+/** Build the header-derived scope that direct service calls receive after Typert lookup. */
+function fileScope(workspaceRoot: string): WorkspaceFileScope {
+  return { sessionId: SessionId('s-test'), workspaceRoot }
+}
 
 export const signal = (): AbortSignal => new AbortController().signal
 
@@ -27,6 +29,7 @@ export interface Harness {
   readonly workspace: string
   readonly outside: string
   readonly ctx: Context
+  readonly scope: WorkspaceFileScope
   /**
    * The service under test, at the given caps. One per test: the service key is
    * global to the Context, so a second call with caps is a defect in the test.
@@ -49,14 +52,16 @@ export async function openWorkspace(prefix: string): Promise<Harness> {
   await mkdir(outside, { recursive: true })
   const ctx = new Context()
   const fiber = await ctx.plugin(LocalFileSystem, { cwd: workspace })
-  // The policy is the service's only source for the workspace root, so the
-  // fake supplies exactly that and nothing else.
-  ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'workspace-write', workspaceRoot: workspace }) } as never)
+  ctx.provide('sandboxPolicy', {
+    workspaceRoot: workspace,
+    resolve: () => ({ mode: 'workspace-write', workspaceRoot: workspace }),
+  } as never)
   let service: WorkspaceFiles | undefined
   return {
     workspace,
     outside,
     ctx,
+    scope: fileScope(workspace),
     endpoint: (caps) => {
       if (service !== undefined) {
         if (caps !== undefined) throw new Error('the harness serves one WorkspaceFiles per test; hoist the endpoint')
@@ -64,6 +69,7 @@ export async function openWorkspace(prefix: string): Promise<Harness> {
       }
       service = new WorkspaceFiles(ctx, {
         maxBytes: caps?.maxBytes ?? 1024 * 1024,
+        maxFileBytes: caps?.maxFileBytes ?? 1024 * 1024,
         maxLines: caps?.maxLines ?? 5000,
         maxEntries: caps?.maxEntries ?? 2000,
       })

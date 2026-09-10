@@ -2,7 +2,7 @@
 /**
  * The guide tab's body: the chain seam, and the shipped guide behind it.
  *
- * The contract a type relies on is the entry box: one per guide entry every
+ * The contract a type relies on is the entry capsule: one per guide entry every
  * registered type contributed, in the registry's order, and picking one opens
  * that type as a page in the guide's own tab. The chain is asserted through
  * what the body hands it — the tab and the shipped guide as the fallback.
@@ -16,6 +16,7 @@ import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import type { GuideBodyProps } from '../src/client/tabs/guide/GuideBody.tsx'
 import type { SidebarRightGuideBox } from '../src/client/tab-registry.ts'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import css from '../src/client/tabs/guide/GuideBody.module.css'
 
 afterEach(cleanup)
 
@@ -26,14 +27,14 @@ function Glyph({ size }: IconProps): ReactNode {
   return <span data-guide-glyph={size} />
 }
 
-/** One entry box as the registry lists it. */
-function box(kind: string, order: number, icon?: SidebarRightGuideBox['icon']): SidebarRightGuideBox {
+/** One entry capsule as the registry lists it. */
+function box(kind: string, order: number, icon?: SidebarRightGuideBox['icon'], description?: string): SidebarRightGuideBox {
   return {
     kind,
     order,
     title: () => `${kind} title`,
-    description: () => `${kind} description`,
     ...icon === undefined ? {} : { icon },
+    ...description === undefined ? {} : { description: () => description },
   }
 }
 
@@ -49,8 +50,6 @@ function mountGuide(entries: readonly SidebarRightGuideBox[]) {
     useTabInfo: () => ({ tab: { ...TAB, actions: { openResource: vi.fn(), openTab, close: vi.fn() } } }),
     useGuideEntries: bindSnapshotSelector(guideEntries),
     renderSlotChain: renderSlot,
-    // Copy is the dictionary's contract; the key stands in for the translation.
-    t: (key: string) => key,
   } as unknown as GuideBodyProps
   const view = render(<GuideBody {...props} />)
   const boxes = (): string[] =>
@@ -64,15 +63,20 @@ describe('GuideBody', () => {
     expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.guide', {}, {
       hookContext: useTabInfo, fallback: expect.anything() as ReactNode,
     })
+    // The guide draws no words of its own; every word is a capsule's.
     const guide = view.container.querySelector('[data-sidebar-right-guide]')
-    expect(guide?.textContent).toContain('guide.lead')
-    expect(guide?.textContent).toContain('guide.body')
-    // One box per entry, in the registry's order, each with its own words; only the first brought a glyph.
+    expect(guide?.textContent).toBe('files titleterminal title')
+    // One capsule per entry, in the registry's order, each with its own title; only the first brought a glyph.
     expect(boxes()).toEqual(['files', 'terminal'])
     const [files, terminal] = [...view.container.querySelectorAll('[data-sidebar-right-guide-entry]')]
-    expect(files?.textContent).toBe('files titlefiles description')
-    expect(files?.querySelector('[data-guide-glyph]')?.getAttribute('data-guide-glyph')).toBe('16')
+    expect(files?.textContent).toBe('files title')
+    expect(files?.querySelector('[data-guide-glyph]')?.getAttribute('data-guide-glyph')).toBe('22')
     expect(terminal?.querySelector('[data-guide-glyph]')).toBeNull()
+    // The entry without a glyph falls back to the shipped cube, at the same size, on the quieter ink.
+    const placeholder = terminal?.querySelector('svg')
+    expect(placeholder?.getAttribute('width')).toBe('22')
+    expect(placeholder?.getAttribute('class')).toBe(css.placeholderInk)
+    expect(files?.querySelector('svg')).toBeNull()
     cleanup()
   })
 
@@ -85,12 +89,30 @@ describe('GuideBody', () => {
     cleanup()
   })
 
-  it('draws the words alone while no type contributed an entry, and follows the registry when one does', () => {
+  it('draws an empty guide while no type contributed an entry, and follows the registry when one does', () => {
     const { view, guideEntries, boxes } = mountGuide([])
     expect(view.container.querySelector('[data-sidebar-right-guide]')).not.toBeNull()
     expect(boxes()).toEqual([])
     act(() => { guideEntries.set([box('files', 10)]) })
     expect(boxes()).toEqual(['files'])
+    cleanup()
+  })
+
+  it('shows an entry\'s description while at most four entries are listed, and drops every description past that', () => {
+    const four = [box('a', 10, Glyph, 'a desc'), box('b', 20), box('c', 30, undefined, 'c desc'), box('d', 40)]
+    const { view, guideEntries } = mountGuide(four)
+    const capsule = (kind: string) => view.container.querySelector(`[data-sidebar-right-guide-entry="${kind}"]`)
+    // At four: a capsule with a description carries it under the title at the larger glyph; one without stays title-only.
+    expect(capsule('a')?.textContent).toBe('a titlea desc')
+    expect(capsule('a')?.querySelector('[data-guide-glyph]')?.getAttribute('data-guide-glyph')).toBe('26')
+    expect(capsule('b')?.textContent).toBe('b title')
+    // The placeholder follows the described size exactly as a registered glyph does.
+    expect(capsule('c')?.querySelector('svg')?.getAttribute('width')).toBe('26')
+    // A fifth entry tips the whole guide back to titles alone, at the title-only glyph size.
+    act(() => { guideEntries.set([...four, box('e', 50)]) })
+    expect(capsule('a')?.textContent).toBe('a title')
+    expect(capsule('a')?.querySelector('[data-guide-glyph]')?.getAttribute('data-guide-glyph')).toBe('22')
+    expect(capsule('c')?.textContent).toBe('c title')
     cleanup()
   })
 

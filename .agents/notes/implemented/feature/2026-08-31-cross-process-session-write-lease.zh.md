@@ -10,7 +10,7 @@ JSONL 后端的写句柄认领只在单个后端实例内部排除第二个写�
 
 ## Decision
 
-`SessionWriteLease`（packages/session/session-persistence-jsonl/src/lease.ts）在日志旁的 `session.lock` 上持有内核锁，贯穿写句柄的整个生命期：POSIX 经由预编译 `@deepseek-ai/node-addon-system/flock` 绑定 以非阻塞 `flock(2)` 加锁，Windows 持有由规范锁路径派生的命名内核信号量（计数 1，`CreateSemaphoreW`，实现在 src/win32.ts 既有 koffi 绑定旁）——零文件系统足迹的内核对象，随最后一个句柄关闭而销毁。竞争映射为 `SessionAlreadyOwnedError`；持有者的描述符或句柄关闭时内核释放锁，包括任何形式的进程死亡，因此崩溃的持有者从不阻塞后继者，也不存在任何过期簿记。活着但卡死的持有者保有锁直到其进程退出：剥夺停顿写入方的所有权被否决，因为其复活后的追加会撕坏日志；POSIX 上删除锁文件仍是该场景的显式放弃手段。由于 POSIX 锁指向 inode 而非路径，获取后会校验所锁 inode 仍是锁路径上的文件，否则重试。锁在写打开既有工件时立即获取，新建会话则仅在首次物化写入之前获取——未物化的会话不留任何文件系统足迹，已取得锁的句柄即使物化失败也保有锁直到关闭；释放从不删除锁文件，保住后续加锁者用于校验的稳定 inode。浏览器 worker 部署将 flock 入口存根为立即成功：它是单进程部署，进程内写认领已排除所有写入方。
+`SessionWriteLease`（packages/session/session-persistence-jsonl/src/lease.ts）在日志旁的 `session.lock` 上持有内核锁，贯穿写句柄的整个生命期：POSIX 经由预编译 `@deepseek-ai/node-addon-system/flock` 绑定 以非阻塞 `flock(2)` 加锁，Windows 持有由规范锁路径派生的命名内核信号量（计数 1，`CreateSemaphoreW`，实现在 src/win32.ts 既有 koffi 绑定旁）——零文件系统足迹的内核对象，随最后一个句柄关闭而销毁。竞争映射为 `SessionAlreadyOwnedError`；持有者的描述符或句柄关闭时内核释放锁，包括任何形式的进程死亡，因此崩溃的持有者从不阻塞后继者，也不存在任何过期簿记。活着但卡死的持有者保有锁直到其进程退出：剥夺停顿写入方的所有权被否决，因为其复活后的追加会撕坏日志；POSIX 上删除锁文件仍是该场景的显式放弃手段。由于 POSIX 锁指向 inode 而非路径，获取后会校验所锁 inode 仍是锁路径上的文件，否则重试。锁在写打开既有工件时立即获取，新建会话则仅在首次物化写入之前获取——未物化的会话不留任何文件系统足迹，已取得锁的句柄即使物化失败也保有锁直到关闭；释放从不删除锁文件，保住后续加锁者用于校验的稳定 inode。浏览器 worker 部署将 flock 入口存根为立即成功，因为进程内写认领已排除所有写入方。它的 `node:fs` 替代实现仍从 `FileHandle.stat({ bigint: true })` 报告 BigInt device 与 inode 身份，并在该路径仍指向所打开文件时与路径 `stat` 一致，因为租约在存根式加锁后仍保留 inode 替换检查。
 
 ## Alternatives considered
 

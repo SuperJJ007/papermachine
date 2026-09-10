@@ -2,8 +2,10 @@
  * The per-tab context menu, opened by a secondary press on the chip. It carries
  * the close gesture and whatever the embedder appends; the copy and float
  * gestures have no menu item — copying is an embedder API, floating is a drag
- * released clear of the surface. Presentational — it renders what its props
- * supply and dismisses itself on outside presses.
+ * released clear of the surface. A menu that would hold no item at all renders
+ * no popup, so a secondary press on a chip with nothing to offer shows nothing.
+ * Presentational — it renders what its props supply and dismisses itself on
+ * outside presses.
  *
  * It renders in a portal, positioned against the control that opened it. The tab
  * strip clips its overflow on purpose (so it never becomes a scroll container
@@ -12,7 +14,7 @@
  * portal's synthetic events through the strip, which is why the press guards
  * below remain necessary.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Children, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { DockLabels } from '../contract/adapter.ts'
@@ -26,7 +28,8 @@ export interface TabMenuProps {
   readonly labels: DockLabels
   /** The control that opened the menu; the menu hangs below its left edge. */
   readonly anchor: HTMLElement
-  readonly onClose: () => void
+  /** Close the tab; `undefined` removes the kit's item, leaving the extras only. */
+  readonly onClose: (() => void) | undefined
   /** Dismiss without acting. */
   readonly onDismiss: () => void
   /** Embedder items, rendered after the kit's own; absent means none. */
@@ -50,12 +53,12 @@ function placeMenu(anchor: HTMLElement, menu: HTMLElement): CSSProperties {
 export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuProps): ReactNode {
   const self = useRef<HTMLDivElement | null>(null)
   const [position, setPosition] = useState<CSSProperties | undefined>(undefined)
+  const hasItems = onClose !== undefined || Children.toArray(extras).some(item => item !== '')
 
   useLayoutEffect(() => {
-    /* v8 ignore next -- the ref is attached by effect time: the menu renders unconditionally. */
     if (self.current === null) return
     setPosition(placeMenu(anchor, self.current))
-  }, [anchor])
+  }, [anchor, hasItems])
 
   useEffect(() => {
     const menu = self.current
@@ -71,8 +74,9 @@ export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuP
     // so the menu must be gone before that handler runs.
     window.addEventListener('pointerdown', onPointerDown, true)
     return () => { window.removeEventListener('pointerdown', onPointerDown, true) }
-  }, [onDismiss])
+  }, [onDismiss, hasItems])
 
+  if (!hasItems) return null
   return createPortal(
     <div
       className={css.menu}
@@ -89,9 +93,11 @@ export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuP
       onPointerDown={(event) => { event.stopPropagation() }}
       onClick={(event) => { event.stopPropagation() }}
     >
-      <button type="button" role="menuitem" className={css.menuItem} data-dockkit-menu-close onClick={onClose}>
-        {labels.closeTab}
-      </button>
+      {onClose !== undefined && (
+        <button type="button" role="menuitem" className={css.menuItem} data-dockkit-menu-close onClick={onClose}>
+          {labels.closeTab}
+        </button>
+      )}
       {/* Embedder items last: the kit's own item is the same in every menu, so
           a reader looks for it in the same place every time. */}
       {extras}

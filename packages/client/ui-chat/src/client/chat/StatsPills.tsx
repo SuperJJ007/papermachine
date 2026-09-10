@@ -282,8 +282,10 @@ function UsagePill({ usage, t, dialog }: {
           </div>
           <div className={dialogCss.titleRule} aria-hidden />
           {/* jscpd:ignore-start -- the session-total bucket rows deliberately mirror
-              TurnUsagePanel's per-turn dl: same skin, different data contract (all
-              buckets always present here; per-turn fields are optional). */}
+              TurnUsagePanel's per-turn dl: same skin, different data contract (the
+              buckets are always present here; per-turn fields are optional). A
+              session that never wrote cache drops the row, as the per-turn panel
+              drops its absent fields. */}
           <dl className={dialogCss.details} data-session-stats-usage>
             {cacheHit !== null && (
               <>
@@ -295,8 +297,12 @@ function UsagePill({ usage, t, dialog }: {
             <dd>{exactCount(usage.uncachedInputTokens, t)}</dd>
             <dt>{t('message.turnUsage.cacheRead')}</dt>
             <dd>{exactCount(usage.cacheReadTokens, t)}</dd>
-            <dt>{t('message.turnUsage.cacheWrite')}</dt>
-            <dd>{exactCount(usage.cacheWriteTokens, t)}</dd>
+            {usage.cacheWriteTokens !== 0 && (
+              <>
+                <dt>{t('message.turnUsage.cacheWrite')}</dt>
+                <dd>{exactCount(usage.cacheWriteTokens, t)}</dd>
+              </>
+            )}
             <dt>{t('message.turnUsage.output')}</dt>
             <dd>{exactCount(usage.outputTokens, t)}</dd>
           </dl>

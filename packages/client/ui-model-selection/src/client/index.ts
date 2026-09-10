@@ -46,15 +46,30 @@ function rowId(providerId: string, modelId: string): string {
   return `${providerId}/${modelId}`
 }
 
+const BUILTIN_DESCRIPTION_KEYS: Readonly<Record<string, ModelKey>> = {
+  'deepseek-official/deepseek-v4-flash': 'option.deepseekV4Flash.description',
+  'deepseek-official/deepseek-v4-pro': 'option.deepseekV4Pro.description',
+}
+
+function descriptionOf(
+  providerId: string,
+  model: ModelDirectoryState['groups'][number]['models'][number],
+  t: TranslateNS<'model'>,
+): string | undefined {
+  const key = BUILTIN_DESCRIPTION_KEYS[rowId(providerId, model.id)]
+  return key !== undefined && model.description === en[key] ? t(key) : model.description
+}
+
 /** Flatten the directory into popup rows; failure rows are listed for visibility but never selectable. */
 function optionsOf(directory: ModelDirectoryState, t: TranslateNS<'model'>): SelectOption[] {
   const rows: SelectOption[] = []
   for (const group of directory.groups) {
     for (const model of group.models) {
+      const description = descriptionOf(group.id, model, t)
       rows.push({
         id: rowId(group.id, model.id),
         label: model.name,
-        detail: model.description !== undefined ? `${group.name} · ${model.description}` : group.name,
+        detail: description !== undefined ? `${group.name} · ${description}` : group.name,
         ...(directory.current !== null
           && directory.current.provider === group.id
           && directory.current.model === model.id

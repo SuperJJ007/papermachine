@@ -6,8 +6,7 @@
     - img
 - img
 - text: Minimal mode
-- button "Session log":
-  - text: Session log
+- button "More actions":
   - img
-- button "Open the sidebar":
+- button "Open right sidebar":
   - img

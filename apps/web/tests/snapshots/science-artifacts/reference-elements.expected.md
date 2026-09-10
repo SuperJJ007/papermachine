@@ -1,13 +1,14 @@
 - tablist:
-  - tab "Artifact library Close":
-    - text: ⌂
-    - button "Close"
   - tab "Missing revision Close" [selected]:
     - text: Missing revision
-    - button "Close"
-  - button "Split to the right"
-  - button "Show the sidebar fullscreen"
-  - button "Close the sidebar"
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
 - button "Artifact library":
   - img
   - text: Artifact library

@@ -134,7 +134,7 @@ Node 部署在受支持的 macOS、Linux 与 Windows 目标上获得 `@vscode/ri
 
 #### 模型看到的内容
 
-该插件注册作用域内的每个请求都包含下方独立注册的 glob 与 grep 指导。agent 作用域的工具限制可以隐藏任一 schema，而不移除其提示词段。
+组装时，每个段落通过 `ctx.tools.get(name, scope)` 检查对应工具，仅在其可见时输出。grep 段落仅在 read 可见时包含后续使用 read 的句子。同一受支持工具集合下，原文和段落顺序保持不变，包括通过 `run_code` 暴露的 PTC 能力。 这种按 scope 选择文本的机制适用于系统提示词段落。工具 schema 描述仍是注册时的文本；具体而言，即使 scope 隐藏了 read，grep 的 schema 仍会推荐 read。尚未实现按 scope 改变 schema 措辞。
 
 ##### 启用 `sampleOverCapGlobResults: true` 时的 Glob 指导
 
@@ -156,11 +156,11 @@ Use the grep tool — not shell grep or rg — to search file contents. Use read
 
 #### Token 影响
 
-工具注册期间每个请求有固定的指导成本；必填的采样选择决定采用哪一个 glob 变体。
+指导成本取决于可见工具；必填的采样选择决定采用哪一个 glob 变体。
 
 #### KV Cache 影响
 
-插件作用域、采样选择与指导文本不变时前缀稳定。激活、dispose（资源释放）或改变选择可能使该提示词段的复用失效。
+可见工具集合、插件作用域、采样选择与指导文本不变时前缀稳定。限制、激活、dispose（资源释放）或改变选择可能从首个变化的段落开始使复用失效。
 
 ### 工具 schema
 

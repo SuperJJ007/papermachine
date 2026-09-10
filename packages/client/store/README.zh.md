@@ -32,6 +32,7 @@ kind: "package-library"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **持久化仅限浏览器本地**——持久化 store 使用 `localStorage` 中的 JSON；非浏览器运行时会禁用持久化，本包也不提供跨设备同步。
+- **Web 壳构建输入**——静态 ESM 为 Vite 保留第三方导入；独立消费方自行提供开发依赖（[依赖规则](../AGENTS.md#dependency-declaration)）。
 
 
 <a id="dev-note"></a>
@@ -46,4 +47,4 @@ kind: "package-library"
 
 **运行时不变式：** 不发布伴生入口。本包只导出库引擎，不创建进程级状态；每个 store 实例由其所属测试覆盖。
 
-持久化把已保存对象字段合并到 `init()`，新增字段保留默认值。声明为 `transient` 的字段不参与序列化，即使旧数据包含这些字段，恢复时也使用 `init()` 的值。
+持久化把已保存对象字段合并到 `init()`，新增字段保留默认值。声明为 `transient` 的字段不参与序列化，即使旧数据包含这些字段，恢复时也使用 `init()` 的值。仅保存投影的所有者提供 `persistence.save(state)` 和 `persistence.restore(saved, initial)`，替代默认合并和过滤；restore 校验解析后的 JSON，将接受的偏好填入完整初始状态并返回。回调失败与存储错误一样，不会中断 store。

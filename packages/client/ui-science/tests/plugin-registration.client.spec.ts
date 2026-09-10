@@ -46,6 +46,7 @@ async function setup() {
   ctx.provide('locale', { subscribe: () => () => {}, register: vi.fn(() => releaseLocale), bind: () => (key: string) => key } as never)
   ctx.provide('connection', {} as never)
   ctx.provide('sessions', {} as never)
+  ctx.provide('uiWorkspace', { openSession: vi.fn() } as never)
   const scienceEdits = {
     submit: vi.fn<(...args: unknown[]) => Promise<{ ok: boolean; value?: { accepted: boolean }; error?: { message: string } }>>()
       .mockResolvedValue({ ok: true, value: { accepted: true } }),
@@ -91,14 +92,16 @@ function submission(sessionId = SID, attachments: ComposerSubmission['attachment
 }
 
 describe('ui-science public composition', () => {
-  it('registers artifact body/title, guide, menu, independent Science view and standard tool rows', async () => {
+  it('registers artifact body/title, independent library page, menu, independent Science view and standard tool rows', async () => {
     const b = await setup()
     expect(b.registerTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'science-artifact', patterns: ['dsh-resource://science-artifact/*'] }))
     expect(b.registerResource).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'science-artifact' }))
     expect(b.slots.entries('sidebar.right.pane.tab')[0]?.component).toBe(ScienceDetailsView)
     expect(b.slots.entries('sidebar.right.pane.tab.title')).toHaveLength(2)
     expect(b.slots.entries('sidebar.right.tab.menu.item')).toHaveLength(1)
-    expect(b.slots.entries('sidebar.right.tab.guide')[0]?.component).toBe(ScienceLibrary)
+    expect(b.slots.entries('sidebar.right.pane.tab').find(entry => entry.options.key === 'science-library')?.component).toBe(ScienceLibrary)
+    expect(b.slots.entries('sidebar.right.tab.guide')).toHaveLength(0)
+    expect(b.registerTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'science-library', kind: 'science-library', guide: [expect.objectContaining({ order: 0 })] }))
     expect(b.slots.entries('conversation.view')[0]?.component).toBe(ScienceTraceView)
     expect(b.slots.entries('conversation.view')[0]?.options.id).toBe('science')
     expect(b.slots.entries('conversation.chat.turnTail')[0]?.component).toBe(ScienceTurnArtifacts)
@@ -110,7 +113,8 @@ describe('ui-science public composition', () => {
     await b.fiber.dispose()
     expect(b.slots.entries('sidebar.right.pane.tab')).toHaveLength(0)
     expect(b.slots.entries('conversation.view')).toHaveLength(0)
-    for (const release of [b.releaseLocale, b.releaseHandler, b.releaseTab, b.releaseResource]) expect(release).toHaveBeenCalledTimes(1)
+    expect(b.releaseTab).toHaveBeenCalledTimes(2)
+    for (const release of [b.releaseLocale, b.releaseHandler, b.releaseResource]) expect(release).toHaveBeenCalledTimes(1)
   })
 
   it('binds Remote reads and provenance commands to the artifact tab session', async () => {

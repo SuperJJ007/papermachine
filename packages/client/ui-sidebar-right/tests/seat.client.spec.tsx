@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PaneId, SplitId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { dockPaneIds, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -56,7 +57,7 @@ function transition(property = 'transform') {
   }
 }
 
-async function mountSeat(viewportWidth = 1440, canShow = true) {
+async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
   const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn() }
@@ -67,7 +68,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.declare({
-    'rightbar': { kind: 'single', scope: 'session' },
+    'rightbar': { kind: 'single', scope: 'root' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
   await runtime.sessions.add({ id: SESSION })
@@ -93,12 +94,13 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
     runtime.ctx.sidebarRightTabs.register({
       id: 'test/text', kind: 'text', priority: 'builtin', patterns: ['dsh-resource://file/**'],
       title: address => address.slice(address.lastIndexOf('/') + 1),
+      guide: Array.from({ length: entryCount }, (_, order) => ({ order, title: () => 'Test', description: () => 'Test page' })),
     })
     runtime.slots.register({ name: 'sidebar.right.pane.tab', key: 'test/text' }, Body)
     runtime.slots.register({ name: 'sidebar.right.pane.tab.title', key: 'test/text' }, Title)
   })
   const view = runtime.renderSlot('rightbar', { width: 420, viewportWidth, canShow })
-  const instance = runtime.storeOf('rightbar', SESSION) as ReturnType<ReturnType<typeof createSidebarRightStore>['create']>
+  const instance = runtime.storeOf('rightbar.session', SESSION) as ReturnType<ReturnType<typeof createSidebarRightStore>['create']>
   const controller = runtime.ctx.sidebarRight
   const layout = () => instance.getSnapshot().bySession[SESSION]!.layout
   const open = (name = 'a.txt', options?: Parameters<typeof controller.openResource>[1]) => {
@@ -115,6 +117,77 @@ function element(container: HTMLElement, selector: string): HTMLElement {
 }
 
 describe('RightbarSeat presentation', () => {
+  it('hides for a global main panel and retains the Session sidebar state', async () => {
+    const h = await mountSeat()
+    h.open('retained.txt')
+    const retained = h.layout()
+    act(() => { h.runtime.panelInfo.set({ activePanelId: 'other-panel' as MainPanelId }) })
+    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).toBeNull()
+    expect(h.frame.closeRightbar).toHaveBeenCalled()
+    expect(h.layout()).toBe(retained)
+    act(() => { h.runtime.panelInfo.set({ activePanelId: null }) })
+    expect(h.view.container.querySelector('[data-sidebar-right-panel]')).not.toBeNull()
+    expect(h.layout()).toBe(retained)
+  })
+
+  it.each([0, 1, 2])('selects the default from %i guide entries and protects only a sole guide', async (entryCount) => {
+    const h = await mountSeat(1440, true, entryCount)
+    act(() => { h.controller.toggleExpanded() })
+    const initial = Object.values(h.layout().tabs)[0]!
+    expect(initial.kind).toBe(entryCount === 1 ? 'text' : 'guide')
+    if (entryCount !== 1) {
+      expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
+      const before = h.layout()
+      act(() => { h.controller.close(initial.id) })
+      expect(h.layout()).toBe(before)
+      fireEvent.contextMenu(element(h.view.container, '[data-dockkit-tab]'))
+      expect(document.querySelector('[data-dockkit-tab-menu] [role^="menuitem"]')).toBeNull()
+      expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
+      return
+    }
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${initial.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(initial.id) })
+    expect(h.layout().expanded).toBe(false)
+    // The close leaves the layout empty; the next expansion reseeds.
+    expect(Object.keys(h.layout().tabs)).toHaveLength(0)
+    act(() => { h.controller.toggleExpanded() })
+    const reseeded = Object.values(h.layout().tabs)[0]!
+    expect(reseeded.kind).toBe('text')
+    expect(reseeded.id).not.toBe(initial.id)
+    fireEvent.click(element(h.view.container, '[data-dockkit-add-tab]'))
+    const guide = Object.values(h.layout().tabs).find(tab => tab.kind === 'guide')!
+    expect(h.view.container.querySelector('[data-dockkit-add-tab]')).toBeNull()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${reseeded.id}"]`)).not.toBeNull()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(reseeded.id) })
+    expect(h.layout().tabs[reseeded.id]).toBeUndefined()
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${guide.id}"]`)).toBeNull()
+    const preview = h.open('ordinary.txt')
+    expect(h.view.container.querySelector(`[data-dockkit-tab-close="${preview.id}"]`)).not.toBeNull()
+    act(() => { h.controller.close(preview.id) })
+    expect(h.layout().tabs[preview.id]).toBeUndefined()
+    expect(Object.keys(h.layout().tabs)).toEqual([guide.id])
+    expect(h.view.container.querySelectorAll('[data-dockkit-tab-close]')).toHaveLength(0)
+    act(() => { h.controller.split() })
+    expect(Object.values(h.layout().tabs).map(tab => tab.kind)).toEqual(['guide', 'text'])
+  })
+
+  it('offers close for a floating tab while the docked pane keeps its sole tab', async () => {
+    const h = await mountSeat()
+    const floating = h.open('floating.txt')
+    act(() => { h.controller.float(floating.id) })
+    const paneId = getPane(h.layout(), h.layout().floats[0]!).id
+    expect(h.view.container.querySelector('[data-dockkit-tab-close]')).toBeNull()
+    const close = document.querySelector<HTMLButtonElement>(`[data-dockkit-float-close="${paneId}"]`)
+    expect(close).not.toBeNull()
+
+    fireEvent.click(close!)
+
+    expect(h.layout().tabs[floating.id]).toBeUndefined()
+    expect(h.layout().floats).toHaveLength(0)
+    expect(getPane(h.layout(), h.layout().rootId).tabs).toHaveLength(1)
+  })
+
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
@@ -380,11 +453,13 @@ describe('slot-owned useTabInfo', () => {
 
   it('updates guide replacements through the same hook and guide boxes through framework injection', async () => {
     const h = await mountSeat()
+    // The first expansion seeds the guide the replacement renders over.
+    act(() => { h.controller.toggleExpanded() })
     let captured: SidebarRightTabInfo | undefined
     await act(async () => {
       h.runtime.ctx.sidebarRightTabs.register({
         id: 'test/files', kind: 'files', title: () => 'Files',
-        guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
+        guide: [{ order: 1, title: () => 'Files' }],
       })
     })
     expect(h.view.container.querySelector('[data-sidebar-right-guide-entry="files"]')).not.toBeNull()
@@ -440,6 +515,8 @@ describe('slot-owned useTabInfo', () => {
 
   it('hides split controls at two panes and adds a guide only to a pane without one', async () => {
     const h = await mountSeat()
+    // Expanding first seeds the left pane's guide; only the right pane will lack one.
+    act(() => { h.controller.toggleExpanded() })
     h.open()
     const splitButtons = () => h.view.container.querySelectorAll<HTMLButtonElement>('[data-dockkit-split-button]')
     expect(splitButtons()).toHaveLength(1)

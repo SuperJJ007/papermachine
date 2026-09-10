@@ -3,23 +3,22 @@
  * `RemoteResult` frames.
  *
  * An address names the file in one of two scopes. A `session` address,
- * `dsh-resource://file/session/<sessionId>/<path>`, carries a path relative to
- * that Session's workspace root: the Host receives the relative path as-is and
+ * `dsh-resource://file/session/<sessionId>/<path>`, carries an absolute path or one
+ * relative to that Session's workspace root: the Host receives the path as-is and
  * resolves it against the root it holds. Only the Host's `stat.absolutePath`
  * selects the change-feed key; no Client Session summary is needed.
  * An `absolute` address, `dsh-resource://file/absolute/<path>`, carries no
- * Session and is read through the Session on screen. An address neither scope
+ * Session and cannot authorize a Host call. An address neither scope
  * resolves yields one failure frame — `workspace-file/unsupported-address` for
  * a string outside the grammar, `workspace-file/unknown-workspace` when the
- * absolute address has no current Session — and ends.
+ * address carries no Session — and ends.
  *
  * The first frame is the file's `stat`; every Host-reported write yields the
- * metadata flagged `changed`; a reported disappearance, or a write while the
- * last stat had failed, runs `stat` again and flags what it finds; a reload
- * runs `stat` again and clears the flag. Failures travel as `ok: false` frames, never as thrown errors: the
+ * metadata with its reported version; a reported disappearance, or a write while the
+ * last stat had failed, runs `stat` again. Failures travel as `ok: false` frames, never as thrown errors: the
  * Remote face does not reject, and anything thrown inside the stream is a
  * programming error the resource model lets surface. A failed stat does not end
- * the stream: the next write or reload stats again. One {@link ChangeFeed}
+ * the stream: the next write stats again. One {@link ChangeFeed}
  * serves every open file of the Client.
  */
 import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
@@ -30,61 +29,49 @@ import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceFileStat } from '../types.ts'
 import type { ChangeFeed } from './change-feed.ts'
 import type { WorkspaceFilesRemote } from './remote.ts'
-import type { WorkspaceFileResource } from './types.ts'
-
-/** The current Session used to authorize an absolute address. */
-export interface SessionLookup {
-  /**
-   * The Session on screen, which an `absolute` address is read through.
-   * @returns its id, or `undefined` while no Session is current.
-   */
-  current(): SessionId | undefined
-}
 
 /** The Session and unmodified path submitted to the Host. */
 interface HostFile {
   readonly sessionId: SessionId
-  /** The path the Host receives: workspace-relative for a `session` address, absolute for an `absolute` one. */
+  /** The path the Host receives: absolute or workspace-relative. */
   readonly path: string
 }
 
 /**
- * Build the `file` provider over one Remote face, one change feed, and the Client's Session list.
+ * Build the `file` provider over one Remote face and one change feed.
  * @param remote - the Remote face carrying `workspaceFiles.stat`.
  * @param changes - the per-session change fan-out.
- * @param sessions - the current Session, read for absolute addresses on every open and reload.
  * @returns the provider to register into `ctx.resources`.
  */
 export function createFileResourceProvider(
   remote: WorkspaceFilesRemote,
   changes: ChangeFeed,
-  sessions: SessionLookup,
 ): ResourceProvider<'file'> {
   return {
     protocol: 'file',
-    async *open(address, { signal }): AsyncIterable<RemoteResult<WorkspaceFileResource>> {
-      const resolved = resolve(address, sessions)
+    async *open(address, { signal }): AsyncIterable<RemoteResult<WorkspaceFileStat>> {
+      const resolved = resolve(address)
       if (!resolved.ok) {
         yield resolved
         return
       }
       const { sessionId, path } = resolved.value
       // Queue changes delivered to this Client while stat is pending.
-      const notices = changes.follow(sessionId, address, signal)
+      const notices = changes.follow(sessionId, signal)
       const stat = (): Promise<RemoteResult<WorkspaceFileStat>> => remote.workspaceFiles.stat(sessionId, path, signal)
       // Read through a call: a plain `signal.aborted` is narrowed to `false` by
       // the first check and would read as always-false after the later awaits.
       const aborted = (): boolean => signal.aborted
       // Undefined while the last stat failed: the follow is on the address, not
-      // on the file, so a write or a reload can still bring the file live.
-      let current: WorkspaceFileResource | undefined
+      // on the file, so a write can still bring the file live.
+      let current: WorkspaceFileStat | undefined
       try {
         if (!await notices.ready || aborted()) return
         const first = await stat()
         if (aborted()) return
         if (first.ok) {
           notices.bind(first.value.absolutePath)
-          current = metadataOf(first.value, false)
+          current = first.value
           yield { ok: true, value: current }
         } else {
           yield first
@@ -97,11 +84,11 @@ export function createFileResourceProvider(
             // Frames report observations: holding this version already means the
             // consumer learns nothing new.
             if (notice.version === current.version) continue
-            current = { ...current, version: notice.version, changed: true }
+            current = { ...current, version: notice.version }
             yield { ok: true, value: current }
             continue
           }
-          // A Host notice may mean stale content; only a reload clears the flag.
+          // A Host notice may mean stale content.
           const again = await stat()
           if (aborted()) return
           if (!again.ok) {
@@ -110,16 +97,12 @@ export function createFileResourceProvider(
             continue
           }
           notices.bind(again.value.absolutePath)
-          current = metadataOf(again.value, notice.kind !== 'restat')
+          current = again.value
           yield { ok: true, value: current }
         }
       } finally {
         notices.dispose()
       }
-    },
-    reload(address) {
-      const resolved = resolve(address, sessions)
-      if (resolved.ok) changes.requestRestat(resolved.value.sessionId, address)
     },
   }
 }
@@ -127,10 +110,9 @@ export function createFileResourceProvider(
 /**
  * Resolve one address to the Host call it stands for, or to the failure frame it earns.
  * @param address - the full address, scheme included.
- * @param sessions - the Client's Session list.
  * @returns the Host file, or the `unsupported-address` / `unknown-workspace` failure.
  */
-function resolve(address: string, sessions: SessionLookup): RemoteResult<HostFile> {
+function resolve(address: string): RemoteResult<HostFile> {
   const parsed = parseFileAddress(address)
   if (parsed === undefined) return { ok: false, error: unsupportedAddress(address) }
   if (parsed.scope === 'session') {
@@ -138,9 +120,7 @@ function resolve(address: string, sessions: SessionLookup): RemoteResult<HostFil
     const sessionId = parsed.sessionId as SessionId
     return { ok: true, value: { sessionId, path: parsed.path } }
   }
-  const sessionId = sessions.current()
-  if (sessionId === undefined) return { ok: false, error: unknownWorkspace(address) }
-  return { ok: true, value: { sessionId, path: parsed.path } }
+  return { ok: false, error: unknownWorkspace(address) }
 }
 
 /**
@@ -157,25 +137,14 @@ function unsupportedAddress(address: string): RemoteError<'workspace-file/unsupp
 }
 
 /**
- * The failure frame's error for an absolute address with no current Session.
+ * The failure frame's error for an absolute address with no Session.
  * @param address - the offending address.
  * @returns the typed error.
  */
 function unknownWorkspace(address: string): RemoteError<'workspace-file/unknown-workspace'> {
   return new RemoteError(
     'workspace-file/unknown-workspace',
-    `${address} requires a current Session`,
+    `${address} requires a dsh-resource://file/session/<sessionId>/<path> address`,
     { address },
   )
-}
-
-/**
- * The resource value one `stat` result amounts to.
- * @param stat - what the Host reported.
- * @param changed - whether the consumer's content may be stale: `true` after a
- *   Host notice prompted the stat, `false` for the opening stat and a reload's.
- * @returns the metadata frame value.
- */
-function metadataOf(stat: WorkspaceFileStat, changed: boolean): WorkspaceFileResource {
-  return { absolutePath: stat.absolutePath, version: stat.version, changed, ...(stat.bytes === undefined ? {} : { bytes: stat.bytes }) }
 }

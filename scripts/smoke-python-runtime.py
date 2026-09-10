@@ -33,9 +33,8 @@ CODE_PROMPT = "Use run_code to compute the packaged worker smoke value."
 CODE_WORKER_TEXT = "code worker smoke ok"
 WORKFLOW_PROMPT = "Use workflow to compute the packaged worker smoke value without agents."
 WORKFLOW_WORKER_TEXT = "workflow worker smoke ok"
-MINIMAL_PROMPT = "Exercise the packaged minimal agent's persistent shell and string-replacement editor."
+MINIMAL_PROMPT = "Exercise the packaged minimal agent's persistent shell."
 MINIMAL_TEXT = "minimal agent smoke ok"
-MINIMAL_EDITOR_PATH_PREFIX = "Editor path: "
 FS_SEARCH_PROMPT = "Exercise the packaged filesystem search tools."
 FS_SEARCH_TEXT = "filesystem search smoke ok"
 FS_SEARCH_MARKER = "PACKAGED_FS_SEARCH_OK"
@@ -335,7 +334,7 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
         spawn_node = spawn_node_tool_followup(call_id, tool_name, tool_text)
         if spawn_node is not None:
             return spawn_node
-        minimal = minimal_tool_followup(body, call_id, tool_name, tool_text)
+        minimal = minimal_tool_followup(call_id, tool_name, tool_text)
         if minimal is not None:
             return minimal
         advanced = advanced_tool_followup(body, call_id, tool_name, tool_text)
@@ -354,14 +353,7 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
         for message in reversed(messages)
         if isinstance(message, dict) and message.get("role") == "user"
     ]
-    minimal_prompt = next(
-        (
-            prompt
-            for prompt in user_prompts
-            if prompt.startswith(f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}")
-        ),
-        None,
-    )
+    minimal_prompt = next((prompt for prompt in user_prompts if prompt == MINIMAL_PROMPT), None)
     # The minimal composition's assembled system prompt, advertised tool schemas, and
     # model-visible messages are pinned by its snapshot, not asserted here.
     if minimal_prompt is not None:
@@ -534,12 +526,11 @@ def spawn_node_tool_followup(
 
 
 def minimal_tool_followup(
-    body: dict[str, object],
     call_id: str,
     tool_name: str,
     tool_text: str,
 ) -> list[dict[str, object]] | None:
-    """Verify the checked-in minimal composition's PTY and editor."""
+    """Verify the checked-in minimal composition's persistent PTY."""
     if not call_id.startswith("minimal-"):
         return None
     if call_id == "minimal-bash-1" and tool_name == MINIMAL_SHELL_TOOL:
@@ -554,33 +545,6 @@ def minimal_tool_followup(
         expected = f"COUNT=2 CWD={MINIMAL_SHELL_SECOND_CWD}"
         if expected.lower() not in tool_text.lower():
             raise AssertionError(f"persistent shell did not retain state: {tool_text}")
-        messages = body.get("messages")
-        if not isinstance(messages, list):
-            raise AssertionError("persistent editor smoke request has no messages")
-        editor_path = next(
-            (
-                text.split(MINIMAL_EDITOR_PATH_PREFIX, 1)[1].strip()
-                for message in messages
-                if isinstance(message, dict) and message.get("role") == "user"
-                for text in [message_text(message.get("content"))]
-                if MINIMAL_EDITOR_PATH_PREFIX in text
-            ),
-            None,
-        )
-        if editor_path is None:
-            raise AssertionError("persistent editor smoke prompt has no editor path")
-        return tool_call_chunks(
-            "minimal-editor",
-            "str_replace_editor",
-            {
-                "command": "create",
-                "path": editor_path,
-                "file_text": "created by packaged editor\n",
-            },
-        )
-    if call_id == "minimal-editor" and tool_name == "str_replace_editor":
-        if "New file created successfully" not in tool_text:
-            raise AssertionError(f"packaged editor did not create its file: {tool_text}")
         return text_chunks(MINIMAL_TEXT)
     raise AssertionError(f"unexpected minimal-agent follow-up: {call_id} {tool_name}: {tool_text}")
 
@@ -1083,8 +1047,6 @@ def smoke_sdk_minimal(
     first_request = len(MockModelHandler.requests)
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-minimal-") as temporary:
         root = Path(temporary).resolve()
-        editor_path = root / "created.txt"
-        prompt = f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}{editor_path}"
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
         patches = ()
@@ -1112,13 +1074,11 @@ def smoke_sdk_minimal(
             base_url=base_url,
             request_timeout_seconds=60,
         ) as harness:
-            result = harness.run(prompt, session_id="minimal-agent-smoke")
+            result = harness.run(MINIMAL_PROMPT, session_id="minimal-agent-smoke")
 
         event_text = json.dumps(result.events)
         if MINIMAL_TEXT not in event_text:
             raise AssertionError(f"minimal agent run emitted no final response: {result.events}")
-        if editor_path.read_text() != "created by packaged editor\n":
-            raise AssertionError(f"packaged editor wrote unexpected content: {editor_path.read_text()!r}")
         assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2")
 
         requests = MockModelHandler.requests[first_request:]
@@ -1361,7 +1321,7 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         assert result.final_response == SNAPSHOT_FINAL_TEXT, result.final_response
         feedback_types = [event.get("type") for event in result.events
                           if str(event.get("type")).startswith("feedback/")]
-        if feedback_types != ["feedback/record", "feedback/message-put", "feedback/message-put", "feedback/message-delete"]:
+        if feedback_types != ["feedback/record", "feedback/record", "feedback/message-put", "feedback/message-put", "feedback/message-delete"]:
             raise AssertionError(f"advanced snapshot did not exercise all feedback mutations: {feedback_types}")
         methods = [notification.method for notification in result.notifications]
         if methods.count("subagent.started") != 2 or methods.count("subagent.finished") != 2:
@@ -1877,7 +1837,7 @@ def build_in_history_snapshot_files(
     assert all(event.get("surfaceOp") in (None, "append") for event in result.events)
     first_tool = next(index for index, event in enumerate(result.events) if event.get("type") == "tool/result")
     assert result.events.index(systems[1]) > first_tool
-    assert len(requests) == 4, requests
+    assert len(requests) == 3, requests
     request_prompts = []
     for index, request in enumerate(requests):
         messages = request["messages"]
@@ -2158,6 +2118,10 @@ def normalize_snapshot_value(
     }
     if normalized.get("type") == "session" and "createdAt" in normalized:
         normalized["createdAt"] = 0
+    if normalized.get("type") == "subagent/catalog":
+        data = normalized.get("data")
+        if isinstance(data, dict) and "childCreatedAt" in data:
+            data["childCreatedAt"] = 0
     if "seq" in normalized and "time" in normalized:
         normalized["time"] = 0
     if normalized.get("type") in ("assistant/message", "assistant/attempt"):

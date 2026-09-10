@@ -1,8 +1,8 @@
 /**
  * Producer of the `changes` stream: every `fs/observed` emission whose target
  * lies inside a generation's workspace root becomes one frame of that
- * generation. Observations are emitted by tools after their own filesystem
- * operation, so the feed covers Agent writes only; the OS is not watched.
+ * generation. Instrumented filesystem operations emit these observations; the
+ * operating system is not watched.
  * Each generation acknowledges its observation queue and resolved workspace
  * root with `ready` before emitting any queued or live changes.
  */

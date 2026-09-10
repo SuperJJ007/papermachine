@@ -49,7 +49,14 @@ async function bench() {
   }
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
-  runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
+  runtime.ctx.provide('uiWorkspace', {
+    openWorkspace: async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      const id = await connectWorkspace()
+      beforeOpen(id)
+      runtime.sessions.open(id)
+    },
+    openSession: (id: SessionId) => { runtime.sessions.open(id) },
+  } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
     id: ROOT,
@@ -60,12 +67,12 @@ async function bench() {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({
-    'conversation': { kind: 'single', scope: 'session-maybe' },
+    'main': { kind: 'keyed', scope: 'root' },
   }, (_props: { renderSlot?: unknown }) => null)
 
   const feature = await runtime.mount({ inject: [...inject], apply })
   runtime.renderRoot()
-  const entryOf = (key: 'conversation' | 'conversation.session' | 'conversation.session.header' | 'conversation.composer.bar') =>
+  const entryOf = (key: 'main.conversation' | 'conversation.session' | 'conversation.session.header' | 'conversation.composer.bar') =>
     runtime.slots.entries(key)[0]!
   const conversationApi = (id: SessionId) => {
     const entry = entryOf('conversation.session')
@@ -77,7 +84,7 @@ async function bench() {
     return { instance, injected }
   }
   const residentApi = (id: SessionId | undefined) => {
-    const entry = entryOf('conversation')
+    const entry = entryOf('main.conversation')
     return (entry.inject as unknown as (sessionId: SessionId | undefined) => ConversationInjected)(id)
   }
   const headerApi = (id: SessionId) => {
@@ -145,6 +152,21 @@ describe('Conversation inject API', () => {
 
     removeTrajectory()
     removeChat()
+    await b.runtime.dispose()
+  })
+
+  it('opens an originating Session before committing its requested View and focus', async () => {
+    const b = await bench()
+    const otherId = 'other-view-session' as SessionId
+    await b.runtime.sessions.add({ id: otherId, session: sessionFakeFor() }, { current: true })
+    const target = b.conversationApi(ROOT)
+    const other = b.conversationApi(otherId)
+    const openSession = vi.spyOn(b.runtime.ctx.uiWorkspace, 'openSession')
+    b.runtime.ctx.conversation.openView(ROOT, 'trajectory', 'call-origin')
+    expect(openSession).toHaveBeenCalledWith(ROOT)
+    expect(b.runtime.sessions.list.getSnapshot().current).toBe(ROOT)
+    expect(target.instance.getSnapshot().viewRequest).toEqual({ view: 'trajectory', focus: 'call-origin' })
+    expect(other.instance.getSnapshot().viewRequest).toBeNull()
     await b.runtime.dispose()
   })
 

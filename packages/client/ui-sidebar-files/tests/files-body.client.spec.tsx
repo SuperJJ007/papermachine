@@ -9,7 +9,7 @@
  * was cut or could not be read, and reload asks again for the expanded levels
  * only. The two pure helpers the rows are built from are checked on their own.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -43,21 +43,76 @@ describe('FilesBody', () => {
     expect(script.list).not.toHaveBeenCalled()
   })
 
-  it('lists the root on mount, names it by its basename, and draws directories first with dotfiles kept', async () => {
+  it('lists the root on mount, heads it with its path split at the last segment, and draws directories first with dotfiles kept', async () => {
     const { view, script } = mountBody()
     expect(script.list).toHaveBeenCalledWith(SESSION, ROOT, expect.any(AbortSignal))
     expect(view.container.querySelector('[data-files-row="loading"]')).not.toBeNull()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     expect(view.container.querySelector('[data-files-state="tree"]')?.getAttribute('data-files-root')).toBe(ROOT)
-    expect(view.container.querySelector('[data-files-state="tree"] > div')?.textContent).toBe('app')
+    const path = view.container.querySelector('[data-files-path]')
+    expect(path?.getAttribute('title')).toBe(ROOT)
+    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
     expect(names(view.container)).toEqual([`${ROOT}/src`, `${ROOT}/.env`, `${ROOT}/pipe`, `${ROOT}/README.md`])
+    const envIcon = view.container.querySelector(`[data-files-path="${ROOT}/.env"] svg`)?.innerHTML
+    const readmeIcon = view.container.querySelector(`[data-files-path="${ROOT}/README.md"] svg`)?.innerHTML
+    expect(envIcon).not.toBe(readmeIcon)
   })
 
-  it('labels a separator-only root by the root itself, since it has no final segment', async () => {
+  it('heads a separator-only root by the root itself, since it has no final segment', async () => {
     const { view, script } = mountBody('/')
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    expect(view.container.querySelector('[data-files-state="tree"] > div')?.textContent).toBe('/')
+    const path = view.container.querySelector('[data-files-path]')
+    expect([...path?.querySelectorAll('span > span') ?? []].map(span => span.textContent)).toEqual(['/'])
     expect(names(view.container)).toEqual(['/src', '/.env', '/pipe', '/README.md'])
+  })
+
+  it('marks the root path clipped while its text is wider than its box, re-reading on resize', async () => {
+    class FakeResizeObserver implements ResizeObserver {
+      static latest: FakeResizeObserver | undefined
+      readonly observe = vi.fn()
+      readonly unobserve = vi.fn()
+      readonly disconnect = vi.fn()
+      constructor(private readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.latest = this
+      }
+
+      fire(): void {
+        this.callback([], this)
+      }
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    let boxWidth = 300
+    const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 200 })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => boxWidth })
+    try {
+      const { view, script } = mountBody()
+      await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+      const path = view.container.querySelector<HTMLElement>('[data-files-path]')
+      const text = path?.firstElementChild
+      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      const observer = FakeResizeObserver.latest
+      if (observer === undefined) throw new Error('expected the path to observe its size')
+      expect(observer.observe).toHaveBeenCalledWith(path)
+      expect(observer.observe).toHaveBeenCalledWith(text)
+
+      boxWidth = 120
+      act(() => { observer.fire() })
+      expect(path?.hasAttribute('data-files-path-clipped')).toBe(true)
+
+      boxWidth = 300
+      act(() => { observer.fire() })
+      expect(path?.hasAttribute('data-files-path-clipped')).toBe(false)
+      view.unmount()
+      expect(observer.disconnect).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+      for (const [name, descriptor] of [['offsetWidth', offsetWidth], ['clientWidth', clientWidth]] as const) {
+        if (descriptor === undefined) Reflect.deleteProperty(HTMLElement.prototype, name)
+        else Object.defineProperty(HTMLElement.prototype, name, descriptor)
+      }
+    }
   })
 
   it('a directory click lists that level once and marks it expanded; a second click collapses without asking again', async () => {

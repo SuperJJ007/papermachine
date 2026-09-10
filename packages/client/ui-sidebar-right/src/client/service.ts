@@ -24,8 +24,8 @@
  * hand the store one settled intent and record the navigation in the Tab
  * domain. Placement is the caller's option, never a type's property.
  *
- * Wiring follows `LayoutController.attachPanels`: the registration hands the
- * service its store actions, and the service is the face other plugins hold.
+ * The registration adopts Session stores and injects the mounted seat binding;
+ * callers use the service's navigation methods.
  */
 import type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { activeDockPaneId, canSplit, dockPaneIds, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -73,7 +73,7 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
       adopted.get(sessionId)?.unsubscribe()
       const sync = (): void => {
         const surface = store.getSnapshot().bySession[sessionId]
-        if (surface !== undefined) controller.tabDomain.sync(sessionId, surface.layout)
+        controller.tabDomain.sync(sessionId, surface?.layout)
       }
       const adoption: Adoption = { store, unsubscribe: store.subscribe(sync) }
       adopted.set(sessionId, adoption)
@@ -112,8 +112,8 @@ export interface SidebarRightPlacement {
   /** Take this tab's place — its pane and its strip slot — and close it in the same step. */
   readonly replaceTab?: TabId
   /**
-   * Defaults to `true`: a tab already showing the same (kind, contentId) is
-   * focused and handed `params`. `false` opens another tab regardless.
+   * Resource tabs reveal an existing (kind, contentId) by default; `false`
+   * permits duplicates. Pages always deduplicate within the target pane.
    */
   readonly revealIfOpened?: boolean
 }
@@ -137,18 +137,6 @@ const RESOURCE_SCHEME = 'dsh-resource://'
 
 /** The outward right-Sidebar face (`ctx.sidebarRight`). */
 export interface ISidebarRight {
-  /** Open a resource in the originating session; released sessions are ignored.
-   * @param sessionId - Session that owns the initiating UI action.
-   * @param address - Stable resource address.
-   * @param options - Placement and navigation parameters.
-   */
-  openResourceIn(sessionId: SessionId, address: string, options?: SidebarRightOpenResourceOptions): void
-  /** Open a page in the originating session; released sessions are ignored.
-   * @param sessionId - Session that owns the initiating UI action.
-   * @param kind - Registered page kind.
-   * @param options - Placement and navigation parameters.
-   */
-  openTabIn<K extends string>(sessionId: SessionId, kind: K, options?: SidebarRightOpenTabOptions<K>): void
   /**
    * Open a resource: claim it, place it, reveal the column, record the navigation.
    *
@@ -170,7 +158,7 @@ export interface ISidebarRight {
    */
   openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): void
   /**
-   * Close one tab of the mounted session.
+   * Close one tab of the mounted session; the sole docked guide remains open.
    * @param tabId - the tab to close.
    */
   close(tabId: TabId): void
@@ -197,7 +185,7 @@ export interface ISidebarRight {
    * splits.
    * @param paneId - the pane to split; defaults to the active docked pane.
    * @returns the new pane's id, or `undefined` when nothing was split: the pane
-   *   is missing or floating, the budget is spent, or two halves would not fit.
+   *   is missing, floating, or empty, the budget is spent, or two halves would not fit.
    */
   split(paneId?: PaneId): PaneId | undefined
   /**
@@ -299,7 +287,7 @@ export class SidebarRightController implements ISidebarRight {
   }
 
   /**
-   * Close a tab of one session, for the tab's own action; nothing happens
+   * Close a tab of one session, preserving the sole docked guide; nothing happens
    * for a session whose store was never adopted or whose adoption was released.
    * Shared by the Tab domain and session-owned extension actions.
    * @param sessionId - the session the tab is in.
@@ -356,7 +344,7 @@ export class SidebarRightController implements ISidebarRight {
   }
 
   /**
-   * Close one tab of the mounted session.
+   * Close one tab of the mounted session; the sole docked guide remains open.
    * @param tabId - the tab to close.
    */
   close(tabId: TabId): void {

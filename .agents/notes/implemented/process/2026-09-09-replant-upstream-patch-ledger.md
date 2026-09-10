@@ -96,6 +96,12 @@ D10 removes the owned Science `workspaceFiles`/`workspaceFile` methods; their pr
 
 Published packages register secondary entries, shared chunks, kernel assets, and presets through the existing `packageFileExtras` mechanism, and all four package `files` lists match exactly. Merely shrinking `files` would remove public entrypoints and runtime resources from installed packages. Named payload registrations preserve those capabilities without weakening global rules. Each of the four packages rejects both missing entries and additional unowned entries.
 
+## rc.1 integration
+
+The rc.1 composition retains the Science Remote mount alongside session feedback. MCP discovery rejects repeated continuation cursors before replacing the curated tool generation; include/exclude/rename/describe remain deployment-owned. The Science preset retains its own artifact events, versioned reads and edits; upstream file delivery does not replace those identities.
+
+The [native-sidebar decision](../architecture/2026-09-10-science-native-sidebar.md) owns the client additions: an independent Science Library page, session-addressed navigation, layout-width persistence through owner-defined JSON projection and validation, and synchronous adoption of restored resource occurrences. Versioned browser preference keys discard the earlier layout representation. Sidebar tab JSON retains the existing top-level validation; complete nested DockKit validation remains an explicit limitation. The public controller already provides cross-session tab navigation, so redundant ISidebarRight declarations are removed. The ordinary workspace document viewer uses the upstream documentpreview package.
+
 ## Alternatives considered
 
 **Retain the workspace file Remotes.** Upstream provides file browsing and reads; duplicating them adds maintenance cost. D10 removes them while retaining the condition for minimal additions.

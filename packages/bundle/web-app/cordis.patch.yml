@@ -225,10 +225,10 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
-    # The right Sidebar's first outside tab type: workspace text files, read
-    # through the bounded workspaceFiles endpoint.
-    - id: ui-sidebar-textpreview
-      name: '@deepseek-ai/dsh-client-ui-sidebar-textpreview'
+    # The right Sidebar's document tab: bounded file reads with selectable
+    # Markdown, code, HTML, PDF, and plain-text renderers.
+    - id: ui-sidebar-documentpreview
+      name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
     # The right Sidebar's workspace file tree tab type.
     - id: ui-sidebar-files
@@ -315,8 +315,9 @@
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
 
-    # Per-message feedback: Like/Dislike plus an optional note in the
-    # assistant-message action strip, over the messageFeedback Remote.
+    # The feedback surface: Like/Dislike in the assistant-message action
+    # strip, the feedback dialog behind Dislike and /feedback with its
+    # acknowledgement toast, over the messageFeedback and sessionFeedback Remotes.
     - id: ui-message-feedback
       name: '@deepseek-ai/dsh-client-ui-message-feedback'
 

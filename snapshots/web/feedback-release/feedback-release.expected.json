@@ -15,8 +15,9 @@
     },
     {
       "type": "feedback/message-put",
-      "rating": "positive",
-      "note": "Read both files before answering."
+      "rating": "negative",
+      "note": "Read both files before answering.",
+      "category": "task-result"
     },
     {
       "type": "feedback/message-delete"

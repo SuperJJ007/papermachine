@@ -41,7 +41,7 @@ const headerRecord = releasedV2SessionFormatCodec.encodeHeader(currentHeader, ta
 const eventRecord = releasedV2SessionFormatCodec.encodeEvent(currentEvent)
 ```
 
-`releasedV1SessionFormatCodec` reads the frozen v1 physical language one row at a time. `sessionFormatV1ToV2` creates the cardinality-changing Stage that the static catalog connects to that decoder without retaining a v1 event array. The catalog remaps declared references and validates the released-v2 envelope, inherited cut, event admission, and relationships. Persistence applies full installed-current validation in its Worker before publication. `releasedV2SessionFormatCodec` creates a current row decoder and encodes current headers and events one record at a time.
+`releasedV1SessionFormatCodec` reads the frozen v1 physical language one row at a time. `sessionFormatV1ToV2` creates the cardinality-changing Stage that the static catalog connects to that decoder without retaining a v1 event array. The catalog remaps declared references and validates the released-v2 envelope, inherited cut, event admission, and relationships. Persistence applies full installed-current validation in its Worker before publication. `releasedV2SessionFormatCodec` creates a released-v2 row decoder and encodes v2 headers and events one record at a time.
 
 A successful v1 `assistant/message` must cite its complete ordered attempt. The migration removes the cited top-level chunks and obsolete message provenance, compacts the chunks without joining token boundaries, and stores the stream on that message. An unclaimed attempt becomes one log-only `assistant/attempt` at its final chunk position. Unrelated interleaved events keep their relative order.
 

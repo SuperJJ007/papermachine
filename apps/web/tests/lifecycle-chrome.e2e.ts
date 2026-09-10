@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page, WebSocketRoute } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria,
@@ -72,10 +72,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
 
   it.skipIf(MODE === 'record')('opens the shared slash menu from plus with only Command candidates', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-command-menu-launcher'))
+    const input = page.locator('[data-composer-input]').first()
+    onTestFinished(async () => {
+      await input.press('Escape')
+      await writeComposerDraft(page, input, '')
+      await page.getByRole('listbox', { name: 'Trigger suggestions' }).waitFor({ state: 'hidden' })
+    })
     const launcher = page.getByRole('button', { name: 'Commands' })
     await launcher.click()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('text: Commands')
@@ -84,9 +91,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const launchedBox = await menu.boundingBox()
     await page.locator('[data-composer-input]').first().press('Escape')
     await expect.poll(() => menu.count()).toBe(0)
-    const input = page.locator('[data-composer-input]').first()
     await writeComposerDraft(page, input, '/')
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const typedBox = await menu.boundingBox()
     expect(launchedBox).not.toBeNull()
     expect(typedBox).not.toBeNull()
@@ -114,7 +121,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const launcher = zhPage.getByRole('button', { name: '指令' })
       await launcher.click()
       const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
-      await menu.waitFor({ timeout: 10_000 })
+      await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+      await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
       const snapshot = await captureStableAria(zhPage, '[role="listbox"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(COMMAND_MENU_ZH_EXPECTED, snapshot, MODE)
       expect(zhTripwire.pageErrors).toEqual([])

@@ -255,13 +255,16 @@ export function planPlaceTab(
 /**
  * Resolve a tab release on a pane body: the centre moves the tab in, an edge
  * splits the pane and seats the tab in the new half. A pane's only tab released
- * on that pane changes nothing in either zone: the split would empty the pane
- * and seat the tab beside where it already was.
+ * on that pane's centre changes nothing; released on its edge it splits, and
+ * the factory's tab backfills the pane the drag would otherwise empty — without
+ * a factory that release also changes nothing, since the split would empty the
+ * pane and seat the tab beside where it already was.
  * @param state - current layout.
  * @param mint - id source for a pane an edge release creates.
  * @param tabId - the dragged tab.
  * @param targetPaneId - pane under the pointer.
  * @param zone - dock region the pointer released in.
+ * @param makeTab - builds the tab that backfills a pane its only tab splits away from.
  * @returns the operations, or none when the release changes nothing.
  */
 export function planDropTab(
@@ -270,6 +273,7 @@ export function planDropTab(
   tabId: TabId,
   targetPaneId: PaneId,
   zone: DockZone,
+  makeTab?: TabFactory,
 ): readonly LayoutOp[] {
   const source = findTabPane(state, tabId)
   const target = getPane(state, targetPaneId)
@@ -281,20 +285,25 @@ export function planDropTab(
     return [tabInto(source, tabId, targetPaneId, target.tabs.length)]
   }
 
-  if (source.id === targetPaneId && source.tabs.length === 1) return NOTHING
+  const vacates = source.id === targetPaneId && source.tabs.length === 1
+  if (vacates && makeTab === undefined) return NOTHING
   if (!canSplit(state)) return NOTHING
   const newPaneId = mint('pane')
-  return [
-    {
-      type: 'split',
-      paneId: targetPaneId,
-      axis: split.axis,
-      direction: split.direction,
-      newPaneId,
-      newSplitId: mint('split'),
-    },
-    tabInto(source, tabId, newPaneId, 0),
-  ]
+  const ops: LayoutOp[] = [{
+    type: 'split',
+    paneId: targetPaneId,
+    axis: split.axis,
+    direction: split.direction,
+    newPaneId,
+    newSplitId: mint('split'),
+  }]
+  // The backfill seats before the move so the moved tab ends focused, as any
+  // other drop leaves it.
+  if (vacates && makeTab !== undefined) {
+    ops.push({ type: 'openTab', paneId: targetPaneId, tab: makeTab(mint('tab')), index: source.tabs.length })
+  }
+  ops.push(tabInto(source, tabId, newPaneId, 0))
+  return ops
 }
 
 /**

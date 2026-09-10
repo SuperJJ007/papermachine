@@ -18,9 +18,6 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../core/agent"
-    },
-    {
       "path": "../../core/session"
     },
     {
@@ -28,6 +25,9 @@
     },
     {
       "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../session/session-persistence"
     },
     {
       "path": "../../typert/protocol"

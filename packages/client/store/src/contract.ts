@@ -56,6 +56,22 @@ export type BakedActions<T, A extends ActionsDecl<T>> = {
 export interface StoreSpec<T, A extends ActionsDecl<T>> {
   init: () => T
   persist?: string
+  /** Owner-defined JSON projection and validation, replacing the default merge and transient filtering. */
+  persistence?: {
+    /**
+     * Project a snapshot into browser preferences.
+     * @param state - Current snapshot.
+     * @returns JSON-compatible preferences to save.
+     */
+    save: (state: T) => unknown
+    /**
+     * Validate saved preferences and apply them to a fresh state.
+     * @param saved - Parsed storage value.
+     * @param initial - Fresh initial state.
+     * @returns Validated restored state.
+     */
+    restore: (saved: unknown, initial: T) => T
+  }
   /** Top-level fields restored from init and omitted from persisted JSON. */
   transient?: readonly (keyof T)[]
   actions: A

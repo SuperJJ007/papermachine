@@ -33,8 +33,8 @@ export interface DockSurfaceProps {
    * split control disabled with `labels.splitPaneNarrow` (see README).
    */
   readonly canSplit: boolean
-  /** Hide the split control when the pane budget is spent; defaults to false. Width-blocked controls remain disabled. */
-  readonly hideSplitAtCapacity?: boolean
+  /** Hide a blocked split control — pane budget spent or pane too narrow — instead of rendering it disabled; defaults to false. */
+  readonly hideSplitWhenBlocked?: boolean
   /** Body drop geometry: all edge bands, or left/right halves with whole-pane moves once splitting is unavailable. */
   readonly dropZones?: 'edges' | 'horizontal'
   /** Smallest share a divider may leave a pane; defaults to the kit's fraction. */
@@ -45,6 +45,14 @@ export interface DockSurfaceProps {
    * end controls where they are and the chips as the only shrinking part.
    */
   readonly canAddTab?: (paneId: PaneId) => boolean
+  /**
+   * Whether a tab draws its close control and its menu's close item. Called
+   * per rendered chip on every render; omit to keep every tab closable.
+   * `false` removes both routes without moving the chip: the close control
+   * paints over the title's end rather than beside it, so the chip is the same
+   * width either way. The menu still opens and carries the embedder's items.
+   */
+  readonly canCloseTab?: (tabId: TabId) => boolean
   readonly intents: DockIntents
   readonly labels: DockLabels
   readonly renderTab: TabRenderer
@@ -95,7 +103,7 @@ const NO_PREVIEW: Preview = { draggingTabId: undefined, dropTarget: undefined, s
 /** Nothing measured yet: every pane fits until a reading says otherwise. */
 const NO_FITS: ReadonlyMap<PaneId, HalvesFit> = new Map()
 
-/** The default add-control policy: every pane offers one. */
+/** The default policy for the omitted callbacks: every pane offers the add control, every tab its close. */
 const ALWAYS = (): boolean => true
 
 /**
@@ -154,8 +162,8 @@ function sameSizes(a: readonly number[], b: readonly number[]): boolean {
 
 /** The split tree and the gestures over it. */
 export function DockSurface({
-  state, canSplit, canAddTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
-  dropZones = 'edges', minPaneFraction = MIN_PANE_FRACTION, hideSplitAtCapacity = false,
+  state, canSplit, canAddTab, canCloseTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
+  dropZones = 'edges', minPaneFraction = MIN_PANE_FRACTION, hideSplitWhenBlocked = false,
 }: DockSurfaceProps): ReactNode {
   const surface = useRef<HTMLDivElement | null>(null)
   const [preview, setPreview] = useState<Preview>(NO_PREVIEW)
@@ -176,10 +184,10 @@ export function DockSurface({
   // wider or narrower). A reading that changed nothing renders nothing.
   const remeasure = useCallback((): void => {
     withSurface((root) => {
-      const next = measurePaneFits(root)
+      const next = measurePaneFits(root, hideSplitWhenBlocked)
       setFits(current => sameFits(current, next) ? current : next)
     })
-  }, [withSurface])
+  }, [withSurface, hideSplitWhenBlocked])
   useLayoutEffect(() => { remeasure() })
   useEffect(() => { onRoom?.(fits) }, [fits, onRoom])
   useEffect(() => {
@@ -265,8 +273,9 @@ export function DockSurface({
       })
     },
     splitBlock,
-    hideSplitAtCapacity,
+    hideSplitWhenBlocked,
     canAddTab: canAddTab ?? ALWAYS,
+    canCloseTab: canCloseTab ?? ALWAYS,
     dropTarget: preview.dropTarget,
     horizontalDrops: dropZones === 'horizontal',
     draggingTabId: preview.draggingTabId,

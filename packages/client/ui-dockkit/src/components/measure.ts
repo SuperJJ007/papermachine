@@ -64,11 +64,30 @@ function dividerSize(root: HTMLElement): number {
 }
 
 /**
+ * The rendered split control's footprint in the strip's fixed part: its box
+ * plus the strip's own gap, both of which the strip sheds when the control
+ * hides. 0 while the control is hidden or unmeasured.
+ */
+function splitControlFootprint(pane: HTMLElement): number {
+  const control = pane.querySelector('[data-dockkit-split-button]')
+  if (control === null) return 0
+  const width = control.getBoundingClientRect().width
+  if (!(width > 0)) return 0
+  const strip = pane.querySelector('[data-dockkit-strip]')
+  /* v8 ignore next -- the control only renders inside a strip. */
+  return width + (strip === null ? 0 : px(getComputedStyle(strip).columnGap))
+}
+
+/**
  * Measure every docked pane under `root`.
  * @param root - the docked surface's element.
+ * @param splitHiddenWhenBlocked - whether the embedder hides blocked split
+ * controls (`hideSplitWhenBlocked`); the room rule then leaves the control's
+ * footprint out of each strip's fixed part, so the reading cannot flip with
+ * the control's visibility (see `PaneMeasure.splitControlWidth`).
  * @returns each pane's fit, keyed by pane id.
  */
-export function measurePaneFits(root: HTMLElement): ReadonlyMap<PaneId, HalvesFit> {
+export function measurePaneFits(root: HTMLElement, splitHiddenWhenBlocked = false): ReadonlyMap<PaneId, HalvesFit> {
   const minimums: SplitMinimums = { divider: dividerSize(root), chip: chipMinimum(root), body: SPLIT_MINIMUMS.body }
   const fits = new Map<PaneId, HalvesFit>()
   for (const [paneId, pane] of paneElements(root)) {
@@ -77,6 +96,7 @@ export function measurePaneFits(root: HTMLElement): ReadonlyMap<PaneId, HalvesFi
       strip: rectOf(pane.querySelector('[data-dockkit-strip]')),
       chipsWidth: rectOf(pane.querySelector('[data-dockkit-strip-tabs]')).width,
       fillWidth: rectOf(pane.querySelector('[data-dockkit-strip-fill]')).width,
+      splitControlWidth: splitHiddenWhenBlocked ? splitControlFootprint(pane) : 0,
     }, minimums))
   }
   return fits

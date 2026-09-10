@@ -1,6 +1,6 @@
 /**
  * The change feed's promises: one Host stream per session, delivery by absolute
- * path, local stat requests, and a follower's life bounded by its signal or by
+ * path, and a follower's life bounded by its signal or by
  * the stream's end.
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -16,7 +16,7 @@ function harness() {
   const remote = new FakeRemote()
   const feed = new ChangeFeed(remote)
   const follow = (sessionId: SessionId, path: string, controller = new AbortController()) => {
-    const follower = feed.follow(sessionId, path, controller.signal)
+    const follower = feed.follow(sessionId, controller.signal)
     follower.bind(path)
     return { it: follower[Symbol.asyncIterator](), controller }
   }
@@ -27,10 +27,10 @@ describe('ChangeFeed — one Host stream per session', () => {
   it('starts a later follower from the existing session acknowledgement without opening another stream', async () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
-    const first = feed.follow(S1, 'first-resource', controller.signal)
+    const first = feed.follow(S1, controller.signal)
     try {
       await expect(first.ready).resolves.toBe(true)
-      const second = feed.follow(S1, 'second-resource', controller.signal)
+      const second = feed.follow(S1, controller.signal)
       await expect(second.ready).resolves.toBe(true)
       expect(remote.calls).toEqual(['changes', 'accept'])
       expect(remote.opened).toHaveLength(1)
@@ -189,26 +189,14 @@ describe('ChangeFeed — delivery', () => {
     await expect(two.it.next()).resolves.toEqual({ done: false, value: { kind: 'changed', version: 'v2' } })
     await expect(peek(one.it)).resolves.toBe('silent')
   })
-
-  it('hands a stat request to the followers of that path only', async () => {
-    const { feed, follow } = harness()
-    const mine = follow(S1, '/w/a.txt')
-    const other = follow(S1, '/w/b.txt')
-    await settle()
-    feed.requestRestat(S1, '/w/a.txt')
-    feed.requestRestat(S2, '/w/a.txt')
-    feed.requestRestat(S1, '/w/nobody.txt')
-    await expect(mine.it.next()).resolves.toEqual({ done: false, value: { kind: 'restat' } })
-    await expect(peek(other.it)).resolves.toBe('silent')
-  })
 })
 
 describe('ChangeFeed — a follower ends', () => {
   it('ends every follower and disposes the session stream for an unknown wire frame kind', async () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
-    const first = feed.follow(S1, 'first-resource', controller.signal)
-    const second = feed.follow(S1, 'second-resource', controller.signal)
+    const first = feed.follow(S1, controller.signal)
+    const second = feed.follow(S1, controller.signal)
     const firstIterator = first[Symbol.asyncIterator]()
     const secondIterator = second[Symbol.asyncIterator]()
     try {
@@ -248,7 +236,7 @@ describe('ChangeFeed — a follower ends', () => {
     const { remote, feed } = harness()
     const controller = new AbortController()
     controller.abort()
-    const it = feed.follow(S1, '/w/a.txt', controller.signal)[Symbol.asyncIterator]()
+    const it = feed.follow(S1, controller.signal)[Symbol.asyncIterator]()
     await expect(it.next()).resolves.toEqual({ done: true, value: undefined })
     await settle()
     expect(remote.opened).toEqual([])

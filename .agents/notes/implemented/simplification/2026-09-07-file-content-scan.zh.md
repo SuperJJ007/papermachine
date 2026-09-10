@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-[`contentHasFile`](../../../../packages/llm/llm/src/content.ts) 使用直接迭代，替代递归的 `Array.some` 回调。它保留提前退出、嵌套工具结果遍历，以及其他块类型返回 false 的行为。它不存储身份、校验结果或冻结证明。图片检测、文件投影、请求构建和 238 ms 请求历史预算保持不变。
+[`contentHasFile`](../../../../packages/llm/llm/src/content.ts) 使用直接迭代，替代递归的 `Array.some` 回调。它保留提前退出、嵌套工具结果遍历，以及其他块类型返回 false 的行为。它不存储身份、校验结果或冻结证明。图片检测、文件投影和请求构建保持既有行为。[请求冻结校准](2026-09-06-agent-request-freeze-provenance.zh.md)拥有请求历史预算。
 
 ## Measurement evidence
 

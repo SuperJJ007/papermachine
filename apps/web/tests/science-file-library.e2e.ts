@@ -219,4 +219,38 @@ describe('web e2e: project Science file library', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('keeps library navigation and the native rightbar control accessible before the first message', async () => {
+    onTestFailed(() => saveFailureShot(page, 'science-sidebar-navigation'))
+    await page.getByRole('button', { name: /^New session$/i }).first().click()
+    await page.getByText('Into the Unknown', { exact: false }).waitFor()
+    expect(await page.getByRole('button', { name: 'Artifact library', exact: true }).count()).toBe(0)
+
+    const expand = page.getByRole('button', { name: 'Open right sidebar', exact: true })
+    await expand.click()
+    const guide = page.locator('[data-sidebar-right-guide]')
+    await guide.waitFor()
+    const libraryCard = guide.locator('[data-sidebar-right-guide-entry="science-library"]')
+    const filesCard = guide.locator('[data-sidebar-right-guide-entry="files"]')
+    expect(await libraryCard.innerText()).toContain('Browse project artifacts and versions')
+    const libraryBox = await libraryCard.boundingBox()
+    const filesBox = await filesCard.boundingBox()
+    if (libraryBox === null || filesBox === null) throw new Error('Guide cards are not visible')
+    expect(Math.abs(libraryBox.height - filesBox.height)).toBeLessThanOrEqual(1)
+    expect(Math.abs(libraryBox.width - filesBox.width)).toBeLessThanOrEqual(1)
+    expect(await libraryCard.locator('svg').count()).toBe(1)
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./expected/science-sidebar-navigation/guide.expected.md', import.meta.url)),
+      await captureStableAria(page, '[data-sidebar-right-guide]', scaffold.workspaceCwd), MODE,
+    )
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
+    await expand.waitFor()
+    await expand.click()
+    await libraryCard.click()
+    await page.locator('[data-rightbar-col]').getByRole('textbox', { name: 'Search', exact: true }).waitFor()
+    expect(await expand.isVisible()).toBe(false)
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
+    await expand.waitFor()
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
 })

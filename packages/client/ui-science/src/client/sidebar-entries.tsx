@@ -1,7 +1,7 @@
 /** Public Sidebar navigation controls and reactive artifact titles. */
 import { useEffect, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ScienceLibraryIcon } from './ScienceLibraryIcon.tsx'
 import css from './sidebar-entries.module.css'
 import type { ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import type { ScienceLibraryArtifact } from './library-artifact.ts'
@@ -34,17 +34,7 @@ export function ScienceArtifactMenu({ tab, dismiss, openLibrary, t }: PropsRunti
   return <button type="button" className={css.entry} role="menuitem" onClick={() => { openLibrary(); dismiss() }}>{t('library.home')}</button>
 }
 
-/** Keep the project library reachable before the first message in a blank session. */
-export function ScienceLibraryFooter({ useSessions, openLibrary, t, wide }: PropsRuntime<'sidebar.footer.action'> & PropsLocale<'science'> & {
-  openLibrary: (sessionId: import('@deepseek-ai/dsh-session').SessionId) => void
-  wide?: boolean
-}) {
-  const current = useSessions(state => state.current)
-  if (current === undefined) return null
-  return <button type="button" className={`${css.entry} ${css.footer}`} aria-label={t('library.home')} onClick={() => { openLibrary(current) }}><IconFolderOpenOutline16 />{wide && t('library.home')}</button>
-}
-
 /** Home marker for the Science library inside the native document strip. */
 export function ScienceLibraryTitle({ t }: PropsLocale<'science'>) {
-  return <span className={css.home} aria-label={t('library.home')} title={t('library.home')}>⌂</span>
+  return <span className={css.home} aria-label={t('library.home')} title={t('library.home')}><ScienceLibraryIcon size={20} /></span>
 }

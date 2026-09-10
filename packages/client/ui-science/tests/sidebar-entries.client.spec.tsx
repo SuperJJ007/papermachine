@@ -3,10 +3,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { ScienceArtifactMenu, ScienceArtifactTitle, ScienceLibraryFooter } from '../src/client/sidebar-entries.tsx'
+import { ScienceArtifactMenu, ScienceArtifactTitle } from '../src/client/sidebar-entries.tsx'
 import { en } from '../src/client/locales.ts'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
-import { baseProjection, rawArtifact, SESSION } from './science-details-view-fixtures.client.ts'
+import { baseProjection, rawArtifact } from './science-details-view-fixtures.client.ts'
 
 afterEach(cleanup)
 const t = makeTranslate(en)
@@ -40,26 +40,5 @@ describe('Science Sidebar contributions', () => {
     const props = { tab: { kind: 'files' }, openLibrary: vi.fn(), dismiss: vi.fn(), t } as Parameters<typeof ScienceArtifactMenu>[0]
     render(<ScienceArtifactMenu {...props} />)
     expect(screen.queryByRole('menuitem')).toBeNull()
-  })
-})
-
-
-describe('Science blank-session library entry', () => {
-  it('opens the library for a selected blank session', () => {
-    const openLibrary = vi.fn()
-    const props = {
-      useSessions: (select: (state: { current: typeof SESSION }) => unknown) => select({ current: SESSION }), openLibrary, t,
-    } as unknown as Parameters<typeof ScienceLibraryFooter>[0]
-    render(<ScienceLibraryFooter {...props} />)
-    fireEvent.click(screen.getByRole('button', { name: t('library.home') }))
-    expect(openLibrary).toHaveBeenCalledWith(SESSION)
-  })
-
-  it('hides the action when no session exists', () => {
-    const props = {
-      useSessions: (select: (state: { current: undefined }) => unknown) => select({ current: undefined }), openLibrary: vi.fn(), t,
-    } as unknown as Parameters<typeof ScienceLibraryFooter>[0]
-    render(<ScienceLibraryFooter {...props} />)
-    expect(screen.queryByRole('button')).toBeNull()
   })
 })

@@ -1,0 +1,100 @@
+{
+  "date": "2026-09-10",
+  "branch": "replant/0.1.5",
+  "sourceBefore": "2be1c88b42",
+  "node": "24.14.0",
+  "pathPrefix": "/private/tmp/dsh-rc1-node/bin:/opt/miniconda3/bin",
+  "checks": [
+    {
+      "name": "client-tests",
+      "command": "pnpm exec vitest run packages/client/ui-science/tests packages/client/ui-brand-papermachine/tests packages/client/ui-sidebar-right/tests packages/client/ui-conversation/tests packages/client/ui-layout/tests packages/client/store/tests",
+      "result": "1219 passed, 2 failed; repaired in composition follow-up",
+      "log": "pm-p4-client-tests.log",
+      "sha256": "8f4d288c6c0ed18521222490bdb768288e41ddc2b4007757032e3872e0b28261"
+    },
+    {
+      "name": "composition-follow-up",
+      "command": "pnpm exec vitest run packages/client/ui-science/tests/real-composition.client.spec.tsx",
+      "result": "5 passed, including both previous failures",
+      "log": "pm-p4-composition-final.log",
+      "sha256": "08dca20cafb46b3d2712308a7e86ba3bef7c83008d24998d17f294b86b65fa44"
+    },
+    {
+      "name": "persistence-coverage",
+      "command": "pnpm exec vitest run packages/client/ui-sidebar-right/tests/persistence.client.spec.ts --coverage --coverage.include=packages/client/ui-sidebar-right/src/client/persistence.ts",
+      "result": "14 passed; statements, branches, functions, lines 100%",
+      "log": "pm-p4-persistence-coverage-final.log",
+      "sha256": "51fb174ed1047f189b339ed44b777bb531da7cbd370a0c2f8135cbfcdfaa5e94"
+    },
+    {
+      "name": "web-replay",
+      "command": "DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/science-stop.e2e.ts apps/web/tests/science-artifact-types.e2e.ts apps/web/tests/science-trace-process.e2e.ts apps/web/tests/science-trace-cold-restore.e2e.ts apps/web/tests/science-chart-outcome.e2e.ts apps/web/tests/science-transcript-chrome.e2e.ts apps/web/tests/science-file-library.e2e.ts apps/web/tests/science-settings.e2e.ts",
+      "result": "8 files, 28 tests passed, no skips",
+      "log": "pm-p4-web-replay-final.log",
+      "sha256": "684f0e7461a4718b9062c906b08ccae3a84660d5bc8328f8f947ce3a2c987688"
+    },
+    {
+      "name": "build",
+      "command": "SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk pnpm run build",
+      "result": "passed; 238 client artifacts",
+      "log": "pm-p4-build.log",
+      "sha256": "40ef2d5085c17de3cafdf231568d153a30989d3dc39aa3eb67b4ff813ce4bc34"
+    },
+    {
+      "name": "typecheck",
+      "command": "pnpm run typecheck",
+      "result": "passed",
+      "log": "pm-migration-typecheck.log",
+      "sha256": "5fa35c74c9dc95a6f51d525a0200e2ddb8ff9cff22904d37ec21e1fe310344e2"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm run lint",
+      "result": "passed",
+      "log": "pm-p4-lint-final.log",
+      "sha256": "3a05b22f02f3d7aa190438e5f4fbc19298358ddc56eee1870e46009f46a35e78"
+    },
+    {
+      "name": "i18n",
+      "command": "pnpm run verify-client-ui-i18n",
+      "result": "passed; 655 source files",
+      "log": "pm-p4-i18n.log",
+      "sha256": "549d6a993b1ff54d221b7b1c39eb71d4666df79445bdbe851ac43f647ffe066b"
+    },
+    {
+      "name": "duplication",
+      "command": "pnpm run duplication",
+      "result": "passed; zero clones",
+      "log": "pm-p4-duplication.log",
+      "sha256": "891c221e379d8a5f9b3e246328eb77eafdce6f2aaf2c435e1391bce111cab29d"
+    },
+    {
+      "name": "client-catalog",
+      "command": "pnpm exec tsx scripts/gen-client-catalog.ts --check",
+      "result": "passed",
+      "log": "pm-p4-client-catalog.log",
+      "sha256": "49d8de9950e1084aac7c8df4550b5fd378197ef9988050674b64228e59d9d0fd"
+    },
+    {
+      "name": "publint",
+      "command": "pnpm exec publint packages/client/ui-science",
+      "result": "passed with warning: existing ./src/* export does not match packed files",
+      "log": "pm-p4-publint.log",
+      "sha256": "523a23431daf88fe8af3132241a8344c5c788f1b0ef302caaf4dfd9a9974cb5d"
+    },
+    {
+      "name": "package-dependencies",
+      "command": "pnpm run verify-package-dependencies",
+      "result": "passed",
+      "log": "pm-p4-package-dependencies.log",
+      "sha256": "88226ccf3cbe99f55e2555825d2874d8bd2e78920dec36df346772ff5f1e9042"
+    },
+    {
+      "name": "doc-sync",
+      "command": "pnpm run doc-sync",
+      "result": "25 passed, 9 existing failures; not a passing repository-wide gate",
+      "log": "pm-p4-doc-sync-final.log",
+      "sha256": "c2e2eebb144a6e93bf86780f98953874f5671f2cb55798cb45294ec8f95582e3"
+    }
+  ]
+}

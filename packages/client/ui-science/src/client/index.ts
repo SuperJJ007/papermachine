@@ -1,4 +1,5 @@
 /** Science UI assembled through public Sidebar, Conversation and generated Remote services. */
+import { ScienceLibraryIcon } from './ScienceLibraryIcon.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -16,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-science-session/types'
 import { ScienceDetailsView, type ScienceDetailsInjected } from './ScienceDetailsView.tsx'
 import { ScienceLibrary } from './ScienceLibrary.tsx'
 import { scienceEditMessageDefinition } from './science-edit-message.ts'
-import { ScienceLibraryAction, ScienceArtifactTitle, ScienceArtifactMenu, ScienceLibraryFooter, ScienceLibraryTitle } from './sidebar-entries.tsx'
+import { ScienceLibraryAction, ScienceArtifactTitle, ScienceArtifactMenu, ScienceLibraryTitle } from './sidebar-entries.tsx'
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow } from './ScienceExecutionRow.tsx'
 import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
@@ -43,7 +44,7 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
 }
 
 /** Services required for the complete Science browser composition. */
-export const inject = ['slots', 'locale', 'remote', 'remote.science', 'remote.scienceEdits', 'connection', 'sessions', 'conversation', 'uiConversation', 'settingsScope', 'uiWorkspace', 'sidebarRight', 'sidebarRightTabs', 'resources']
+export const inject = ['slots', 'locale', 'remote', 'remote.science', 'remote.scienceEdits', 'connection', 'sessions', 'conversation', 'uiConversation', 'settingsScope', 'sidebarRight', 'sidebarRightTabs', 'resources']
 
 /** @param ctx - Browser plugin context. */
 export function apply(ctx: Context): void {
@@ -76,7 +77,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: 'science-library', kind: 'science-library',
     title: () => t('library.home'),
-    guide: [{ order: 0, title: () => t('library.home') }],
+    guide: [{ order: 0, title: () => t('library.home'), description: () => t('library.description'), icon: ScienceLibraryIcon }],
   }), 'science: library page type')
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab', key: 'science-artifact', locale: NS, store,
@@ -111,10 +112,6 @@ export function apply(ctx: Context): void {
     name: 'sidebar.right.pane.tab', key: 'science-library', locale: NS, store,
     inject: id => ({ loadLibrary: () => ctx.remote.science.scienceLibrary(id), loadImage: createScienceImageUrlLoader(id) }),
   }, ScienceLibrary))
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action', id: 'science-library', locale: NS,
-    inject: () => ({ openLibrary: (id: SessionId) => { ctx.uiWorkspace.openSession(id); ctx.sidebarRight.openTabIn(id, 'science-library') } }),
-  }, ScienceLibraryFooter))
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities', id: 'science-library', locale: NS,
     inject: id => ({ openLibrary: () => { ctx.sidebarRight.openTabIn(id, 'science-library') } }),

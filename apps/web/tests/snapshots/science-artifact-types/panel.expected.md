@@ -1,23 +1,27 @@
 ## Details column — artifact viewer (csv/json/md/png)
 - tablist:
-  - tab "Artifact library Close":
-    - text: ⌂
-    - button "Close"
   - tab "summary.csv Close":
     - text: summary.csv
-    - button "Close"
+    - button "Close":
+      - img
   - tab "metrics.json Close":
     - text: metrics.json
-    - button "Close"
+    - button "Close":
+      - img
   - tab "report.md Close":
     - text: report.md
-    - button "Close"
+    - button "Close":
+      - img
   - tab "plot.png Close" [selected]:
     - text: plot.png
-    - button "Close"
-  - button "Split to the right"
-  - button "Show the sidebar fullscreen"
-  - button "Close the sidebar"
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
 - button "Artifact library":
   - img
   - text: Artifact library

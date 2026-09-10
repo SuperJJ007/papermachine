@@ -1,0 +1,2 @@
+- button "Artifact library Browse project artifacts and versions"
+- button "Workspace files Browse files in this session's workspace"

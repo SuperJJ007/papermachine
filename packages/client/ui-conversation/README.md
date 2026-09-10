@@ -13,6 +13,7 @@ English | [中文](README.zh.md)
 
 ## Table of Contents
 
+
 - [Conversation assembly](#conversation-assembly)
 - [Shell and standard props](#shell-and-standard-props)
 - [Temporary composer entries](#temporary-composer-entries)
@@ -35,6 +36,8 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
+
+A blank Session keeps `conversation.session.header.corner` at the top-right of the conversation so the right Sidebar can be reopened before the first message. The title, utilities and view tabs remain hidden; the corner takes no space from the Hero or composer.
 
 Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft text and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
 
@@ -114,7 +117,6 @@ None; Conversation assembly and browser input state do not alter provider-side p
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Only registered targets can render** — the shell deliberately has no implicit fallback target beyond the registered `chat` preference.
-
 
 <a id="dev-note"></a>
 ### Dev Note

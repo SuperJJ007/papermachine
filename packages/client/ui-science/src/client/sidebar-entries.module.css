@@ -20,5 +20,4 @@
   outline: 2px solid var(--dsw-alias-label-primary);
   outline-offset: 2px;
 }
-.footer { justify-content: flex-start; width: 100%; min-height: 36px; }
-.home { font-size: 20px; line-height: 1; }
+.home { display: inline-flex; align-items: center; line-height: 1; }

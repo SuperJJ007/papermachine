@@ -100,7 +100,7 @@ D10 删除 Science 自有 `workspaceFiles`/`workspaceFile`，删除前 commit �
 
 rc.1 组合在会话反馈 Remote 之外保留 Science Remote 挂载。MCP 发现会在替换经过筛选的工具集之前拒绝重复续传游标；include/exclude/rename/describe 仍由部署配置负责。Science preset 保留自有产物事件、版本化读取和编辑；上游文件交付不替代这些身份。
 
-[原生侧栏决定](../architecture/2026-09-10-science-native-sidebar.zh.md)负责客户端新增能力：独立的 Science Library 页面、按会话导航、由所属模块投影 JSON 并校验恢复的布局宽度持久化，以及恢复资源 occurrence 时的同步准入。带版本的浏览器偏好键丢弃早期布局表示。侧栏标签 JSON 保留既有顶层校验；完整嵌套 DockKit 校验仍是明确限制。公开 controller 已提供跨会话标签导航，因此移除冗余 ISidebarRight 声明。普通工作区文档查看器使用上游 documentpreview 包。
+[原生侧栏决定](../architecture/2026-09-10-science-native-sidebar.zh.md)负责客户端新增能力：独立的 Science Library 页面、按会话导航、由所属模块投影 JSON 并校验恢复的布局宽度持久化，以及恢复资源 occurrence 时的同步准入。带版本的浏览器偏好键丢弃早期布局表示。侧栏偏好校验完整节点树、标签归属、活动引用、分栏比例、浮窗矩形和标识计数器。撤销操作仅属于当前页面。空白会话保留原生标题栏角落控件；取消的左侧成果库动作不需要额外导航槽位。公开 controller 已提供跨会话标签导航，因此移除冗余 ISidebarRight 声明。普通工作区文档查看器使用上游 documentpreview 包。
 
 ## 考虑过的替代方案
 

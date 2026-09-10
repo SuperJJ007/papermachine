@@ -5,7 +5,6 @@
     - button "Close":
       - img
   - tab "Artifact library Close":
-    - text: ⌂
     - button "Close":
       - img
   - button "New tab":

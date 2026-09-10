@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-science-native-sidebar.md
-2026-09-10-science-native-sidebar.md: b1055f61e4f038fb25db99877e60ea69a36cbbd9
-2026-09-10-science-native-sidebar.zh.md: 04dfb8750dda868afc5c756d7c25c8f5e5acb1b9
+2026-09-10-science-native-sidebar.md: 5bd7602205634505e8e2ebfa37b68e231335b223
+2026-09-10-science-native-sidebar.zh.md: fc0b7704c567078d9f5a5794401cb658566d191d

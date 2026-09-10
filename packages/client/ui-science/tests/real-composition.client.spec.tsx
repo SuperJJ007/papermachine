@@ -84,14 +84,12 @@ async function bench(fullLayout = false) {
 }
 
 describe('Science public composition', () => {
-  it('returns from a global main panel before opening the footer library', async () => {
+  it('keeps library navigation out of a global main panel', async () => {
     const b = await bench(true)
     b.runtime.slots.register({ name: 'main', key: 'global-test' }, () => <div>Global test panel</div>)
     act(() => { b.ctx.layout.selectPanel('global-test' as MainPanelId) })
     expect(b.view.getByText('Global test panel')).toBeTruthy()
-    fireEvent.click(b.view.getByRole('button', { name: 'Artifact library' }))
-    expect(b.view.queryByText('Global test panel')).toBeNull()
-    expect(await b.view.findByRole('button', { name: 'Open Loss curve, version 1' })).toBeTruthy()
+    expect(b.view.queryByRole('button', { name: /Artifact library/ })).toBeNull()
   })
 
   it('keeps the native guide alongside an independently deduplicated library page', async () => {
@@ -108,7 +106,7 @@ describe('Science public composition', () => {
     act(() => { b.ctx.sidebarRight.openTab('guide') })
     expect(b.ctx.sidebarRight.active()?.kind).toBe('guide')
     expect(await b.view.findByRole('button', { name: 'Files' })).toBeTruthy()
-    fireEvent.click(b.view.getByRole('button', { name: 'Artifact library' }))
+    fireEvent.click(b.view.getByRole('button', { name: /^Artifact library/ }))
     expect(b.ctx.sidebarRight.active()?.kind).toBe('science-library')
   })
 

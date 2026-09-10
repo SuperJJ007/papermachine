@@ -1,6 +1,5 @@
 - tablist:
   - tab "Artifact library Close":
-    - text: ⌂
     - button "Close":
       - img
   - tab "Files Close":

@@ -5,6 +5,8 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-science
 
+The library guide card and resource tab share the Microsoft Fluent Color Library icon (see `THIRD-PARTY-NOTICES.txt`).
+
 English | [中文](README.zh.md)
 
 ## Summary
@@ -78,6 +80,7 @@ An existing session's settled `publish_outcome` result defaults to a one-line re
 
 The card registers into `settings.plugin.item` under the fixed `science-runtime` namespace — the namespace `@deepseek-ai/dsh-science-runtime/with-settings` registers, not a package or product id — so it appears whenever the Host serves that namespace and stays absent otherwise, with no navigation row or Host change of its own. It binds the namespace through `ctx.settingsScope` and edits only `['science', 'pythonPrefix']` and `['science', 'rPrefix']` (the section root is the profile map itself, addressed by the fixed `science` profile id, not a `profiles` wrapper field), plus `unsetPath(['science'])` for the explicit remove-override action; no code path writes the section root. Both fields are `role('secret')`, so their stored value never rides a settings response — the card learns per-field presence from `SettingsScopeSnapshot.secrets` and never echoes a stored path back into an input. A blank replacement input is a no-op. The card's status line reports the running Host's actually-bound state against what is currently stored — `effective` (the profile is bound and the Host has already read it), `pendingRestart` (stored and bound disagree, in either direction: a save the Host has not read yet, or a removal the Host is still bound to), or `notConfigured` — read from `SettingsScopeSnapshot.effective` (the value the Host's `restart`-applies Science Runtime entry read at its own registration, frozen until the next Host start) against `.value` (the currently stored section), never from a client-local flag, so the reading survives a page reload. The card owns its own staging and revision fencing rather than importing the Plugins section's card chrome or staged-form model as values, which the bundle-purity gate forbids. Its chrome is built on `@deepseek-ai/dsh-client-ui-primitives`' shared atoms — `Input` for both prefix fields, `Pill` for the Configured/Not configured badge, and `Button` for Save/Discard/Remove override — rather than raw unstyled elements, so the card matches the app's own controls; only the card container's border/radius/background and the collapsed-by-default header/chevron layout, none of which any primitive provides, are this package's own CSS. Collapsed, only the header (name, description, and the expand toggle) is in the accessibility tree — every field, hint, and action button renders only once expanded, matching every sibling card's behavior and accessible-naming register.
 
+
 ## Selection store
 
 The session-scoped selection store persists selected artifact versions and collapsed library groups under `dsh.science.selection.v1`. Native Sidebar state owns document layout, and `ui-layout` owns rightbar width. Process disclosures survive view switches but reset on reload. Each artifact pane independently owns its content/provenance page, provenance subpage and lightbox. Authorized Remotes supply library metadata; the selection store contains no business facts. Version navigation updates both selection and native tab parameters; resource addresses contain only artifact identity.
@@ -112,7 +115,7 @@ Artifact thumbnails and content resolve through this package's own session-scope
 ## Files toggle
 <a id="files-toggle"></a>
 
-The session header and sidebar footer open the project library through public Sidebar actions. The footer first opens its Session through Workspace navigation so the library is visible when returning from a global main panel. A blank session has an identity before its first message, so its footer action can open the library. With no current session the footer renders nothing. The legacy Host `toggleScope` boot value does not govern these native registrations.
+The session header opens the project library through public Sidebar actions. The native Guide card also opens the library for blank Sessions. The legacy Host `toggleScope` boot value does not govern these native registrations.
 
 Project files opens the upstream `files` page. `api/workspace-files`, `ui-sidebar-files` and installed file viewers own directory listing, authorization and preview; Science adds no workspace-file Remote or private file-tab renderer.
 
@@ -124,9 +127,11 @@ The version's `remote.science.scienceVersions` summary carries the store-owned p
 
 ## Workbench shell
 
+The library opens from the native right-Sidebar Guide card, which supplies a localized description and matches the two-line Workspace files card. Opening the library preserves the selected Session, including a blank Session.
+
 Science uses public conversation and Sidebar registrations with session-scoped readers and callbacks:
 
-- `sidebar.footer.action` and `conversation.session.header.utilities` open the project library.
+- `conversation.session.header.utilities` open the project library.
 - `conversation.input.dock` presents staged edit targets. `registerSubmissionHandler` submits targets with the instruction and clears them only after Host acceptance; ordinary image attachments are rejected before submission.
 - `conversation.chat.turnTail` presents each turn's artifacts once.
 - `tool.call.toolview` presents Science calls through standard dispatch.

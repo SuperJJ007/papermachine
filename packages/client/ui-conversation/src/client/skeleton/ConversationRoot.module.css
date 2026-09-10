@@ -47,11 +47,15 @@
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 
-/* Blank hero/settling: keep the strict Session header mounted without taking
-   column space; the root-owned scrollport and composer remain below it. */
-.headerHidden {
-  display: none;
+/* Blank sessions retain the corner control without moving the hero or composer. */
+.headerBlank {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
 }
+
+.headerBlank:empty { display: none; }
 
 .titleRow {
   display: flex;

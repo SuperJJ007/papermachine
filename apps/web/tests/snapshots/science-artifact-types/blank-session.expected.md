@@ -1,10 +1,13 @@
 - tablist:
   - tab "Artifact library Close" [selected]:
-    - text: ⌂
-    - button "Close"
-  - button "Split to the right"
-  - button "Show the sidebar fullscreen"
-  - button "Close the sidebar"
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
 - button "Project files"
 - textbox "Search"
 - combobox "Artifact sort":

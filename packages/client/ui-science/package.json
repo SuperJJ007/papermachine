@@ -97,6 +97,7 @@
     "@deepseek-ai/dsh-client-ui-workspace": "workspace:^"
   },
   "files": [
+    "THIRD-PARTY-NOTICES.txt",
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",

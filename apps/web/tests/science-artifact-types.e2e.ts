@@ -23,6 +23,7 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
+  openScienceSeed,
   seedSession,
   watchConsole,
   webSnapshotMode,
@@ -232,19 +233,13 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
       }))
     }
     await seedSession(scaffold, scienceFixture(opened.projectId, stored), SEED_ID, 'science')
-    await scaffold.ctx.sessionController.resolveAgent(SessionId(SEED_ID))
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
 
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"][aria-selected]').filter({ hasNotText: 'New Session' }).first()
-    await sessionRow.waitFor({ timeout: 10_000 })
-    await sessionRow.click()
+    await openScienceSeed(page, 'Summarize the experiment as csv, json, markdown, and a chart.')
   }, 120_000)
 
   afterAll(async () => {
@@ -296,8 +291,8 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     // All four document tabs stay open. Scope to the document tab strip, not
     // the details header's "Artifacts"/"Project files" page tabs.
     const openArtifactsTabs = detailsPanel.getByRole('tablist').first()
-    expect(await openArtifactsTabs.getByRole('tab').count()).toBe(5)
-    expect(await openArtifactsTabs.getByRole('tab', { name: /Artifact library/ }).count()).toBe(1)
+    expect(await openArtifactsTabs.getByRole('tab').count()).toBe(4)
+    expect(await openArtifactsTabs.getByRole('tab', { name: /Artifact library/ }).count()).toBe(0)
 
     const aria = await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd)
     expect(aria).not.toContain('/private/host/science')
@@ -382,14 +377,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(await current.getByRole('listitem').count()).toBe(4)
   }, 60_000)
 
-  it('shows the shared artifact library by default for a brand-new blank Science session', async () => {
+  it('opens the shared artifact library through Guide for a brand-new blank Science session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-blank-session-library'))
     await page.getByRole('button', { name: /^New session$/i }).first().click()
     await page.getByText('Into the Unknown', { exact: false }).waitFor({ timeout: 15_000 })
     if (await page.getByRole('textbox', { name: 'Choose workspace' }).isVisible()) {
       await connectFreshWorkspace(page, dirname(scaffold.workspaceCwd), basename(scaffold.workspaceCwd))
     }
-    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).click()
+    await page.locator('[data-sidebar-right-guide-entry="science-library"]').click()
     const details = page.locator('[data-rightbar-col]')
     await details.getByRole('textbox', { name: 'Search', exact: true }).waitFor({ timeout: 10_000 })
     expect(await details.getByRole('button', { name: 'Project files', exact: true }).count()).toBe(1)

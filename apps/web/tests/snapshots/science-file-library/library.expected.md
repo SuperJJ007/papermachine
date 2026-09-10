@@ -1,7 +1,6 @@
 ## Details column — project file library
 - tablist:
   - tab "Artifact library Close" [selected]:
-    - text: ⌂
     - button "Close":
       - img
   - tab "Files Close":

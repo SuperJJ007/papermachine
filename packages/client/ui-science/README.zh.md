@@ -5,6 +5,8 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-science
 
+成果库引导卡片与资源标签页统一使用 Microsoft Fluent Color Library 图标（来源见 `THIRD-PARTY-NOTICES.txt`）。
+
 [English](README.md) | 中文
 
 ## 摘要
@@ -78,6 +80,7 @@ Science 保留原生上下文可见性、轮次统计和 Turn Process Folding，
 
 该卡片以固定的 `science-runtime` 命名空间——`@deepseek-ai/dsh-science-runtime/with-settings` 注册的命名空间，而非某个包名或产品 id——为键注册进 `settings.plugin.item`，因此只要 Host 服务了该命名空间它就会出现，否则不留任何痕迹，也无需任何导航条目或 Host 侧改动。它通过 `ctx.settingsScope` 绑定该命名空间，只编辑 `['science', 'pythonPrefix']` 与 `['science', 'rPrefix']`（分节根部本身就是配置档案映射，以固定的 `science` 配置档案 id 寻址，而非包一层 `profiles` 字段），加上用于显式移除覆盖动作的 `unsetPath(['science'])`；没有任何代码路径会写入分节根部。两个字段都是 `role('secret')`，其存储值从不出现在任何 settings 响应里——卡片从 `SettingsScopeSnapshot.secrets` 获知逐字段的存在状态，并且从不把已存储的路径回显进输入框。留空的替换输入是空操作。卡片的状态行会把运行中 Host 的实际绑定状态与当前存储值对照后上报——`effective`（配置档案已绑定，且 Host 已经读取过）、`pendingRestart`（存储值与绑定值不一致，无论方向：Host 尚未读取的新保存值，或 Host 仍绑定着、已从存储中移除的旧值），或 `notConfigured`——读取自 `SettingsScopeSnapshot.effective`（Host 的 `applies: 'restart'` Science Runtime 入口在自身注册时读到的值，冻结至下一次 Host 启动）与 `.value`（当前存储的分节）的对照，而非某个客户端本地的标志位，因此页面刷新后这一判断保持不变。该卡片拥有自己的暂存与 revision 设栅，而不是把**插件配置**分区的卡片外观或暂存表单模型作为值导入——bundle 纯净度门禁禁止这样做。它的外观构建在 `@deepseek-ai/dsh-client-ui-primitives` 的共享原子之上——两个前缀字段用 `Input`，Configured/Not configured 徽章用 `Pill`，保存/放弃修改/移除覆盖都用 `Button`——而不是未加样式的原生元素，因此卡片与应用自身的控件保持一致；只有卡片容器的边框/圆角/背景，以及默认收起的 header/chevron 布局——没有任何原生组件提供这两者——才是本包自己的 CSS。收起时，可访问性树里只有 header（名称、描述与展开开关）——每个字段、提示与操作按钮都只在展开后才会渲染，与每个兄弟卡片的行为及可访问名称的措辞保持一致。
 
+
 ## 选择状态存储
 
 按会话的选择存储以 `dsh.science.selection.v1` 持久化所选产物版本及库分组折叠状态。原生侧栏状态负责文档布局，`ui-layout` 负责右栏宽度。过程展开状态在切换视图时保留、刷新时重置。每个产物面板独立持有内容/溯源页面、溯源子页及灯箱状态。授权 Remote 提供库元数据，选择存储不包含业务事实。版本导航同步更新选择和原生标签参数；资源地址仅包含产物身份。
@@ -112,7 +115,7 @@ Artifact 缩略图与内容通过本包自己的会话作用域加载器（`scie
 ## 文件 toggle
 <a id="files-toggle"></a>
 
-会话标题栏和侧栏底部通过公开 Sidebar 动作打开项目产物库。底部入口先通过 Workspace 导航打开所属 Session，确保从全局主面板返回时产物库可见。空白会话在首条消息之前已有身份，因此底部入口可以打开产物库。没有当前会话时，底部入口不渲染。旧 Host 的 `toggleScope` 启动值不控制这些原生注册。
+会话标题栏通过公共 Sidebar 操作打开项目成果库。原生 Guide 卡片也支持为空白会话打开成果库。旧版 Host 的 `toggleScope` 启动值不控制这些原生注册。
 
 项目文件打开上游 `files` 页面。`api/workspace-files`、`ui-sidebar-files` 及已安装文件查看器负责目录列表、授权和预览；Science 不添加工作区文件 Remote 或私有文件标签渲染器。
 
@@ -124,9 +127,11 @@ Artifact 缩略图与内容通过本包自己的会话作用域加载器（`scie
 
 ## 工作台外壳
 
+成果库通过原生右侧边栏的 Guide 卡片打开。卡片提供本地化说明，与工作区文件卡片采用相同的两行布局。打开成果库保留所选会话，包括空白会话。
+
 Science 使用公开的对话与 Sidebar 注册，读取器和回调按会话绑定：
 
-- `sidebar.footer.action` 与 `conversation.session.header.utilities` 打开项目产物库。
+- `conversation.session.header.utilities` 打开项目产物库。
 - `conversation.input.dock` 显示待提交编辑目标。`registerSubmissionHandler` 连同指令提交目标，仅在 Host 接受后清空；普通图片附件在提交前被拒绝。
 - `conversation.chat.turnTail` 每轮仅呈现一次产物。
 - `tool.call.toolview` 通过标准分派呈现 Science 调用。

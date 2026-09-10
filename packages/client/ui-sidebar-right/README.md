@@ -67,7 +67,7 @@ After every action the kit's settle planner keeps the expanded surface populated
 
 The docked surface's last tab carries one more rule, decided in the store's `closeTab` and mirrored to the kit through `canCloseTab`: the guide standing as the only docked tab draws no close control and no menu close item — its chip sits quiet, and with no extension item contributed a secondary press opens no menu — and a programmatic close of it records nothing; any other tab standing alone closes together with the column in one entry — the layout stays empty until the next expansion seeds its current default page. Floating panels take no part in the rule: they render whether or not the column is expanded, and their tabs close freely.
 
-State persists per session under `dsh.sidebar.right.v2` in browser storage; v1 preferences are ignored. Switching sessions retains each layout; reloading restores the native records and their resource occurrences before rendering.
+Current layouts and identity counters persist per session under `dsh.sidebar.right.v2`; v1 preferences are ignored. Restoration validates the complete node tree, tab ownership, active references, split ratios, floating geometry and identity counters before adopting resource occurrences. Invalid preferences leave the fresh initial state usable. Undo history remains local to the current page and restarts on reload.
 
 <a id="extension-seats"></a>
 ## Extension seats
@@ -118,7 +118,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Browser-local persistence.** Stored JSON must be an object, but nested layout records have no complete structural validation; malformed browser preferences can prevent restoration. Each session restores its native tab layout and expanded state. Restored records acquire their resource occurrences before rendering. `openResourceIn` and `openTabIn` target the originating session even if the active session changes.
+- **Browser-local persistence.** Preferences are local to this browser; reload restores layout but not undo history. Each session restores its native tab layout and expanded state. Restored records acquire their resource occurrences before rendering. `openResourceIn` and `openTabIn` target the originating session even if the active session changes.
 - **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
 - **Hard-coded stacking.** The panel and the float host use fixed z-index values because the client has no z-index token layer yet.
 - **Undo is not exposed.** The recorded sequence is stepped only through the `@internal` service methods; product controls are deliberately absent.

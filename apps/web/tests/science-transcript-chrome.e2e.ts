@@ -130,13 +130,13 @@ describe('web e2e: Science transcript uses native Chat process chrome', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-transcript-chrome'))
     const groupRow = page.locator('[role="treeitem"]').first()
     await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
+    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
     const sessionRow = page.getByRole('treeitem').filter({ hasText: 'Science transcript chrome' })
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
-    await expect.poll(() => page.getByText('python · epoch 1 · started', { exact: true }).count()).toBe(1)
-    // Opening history is cold-safe; explicitly activate the Agent to reconcile its recorded kernel.
+    // History observation promotes the Agent asynchronously, potentially before first paint.
+    // The cold snapshot above pins the recorded state; the UI must show settled reconciliation.
     await scaffold.ctx.sessionController.resolveAgent(SessionId(SEED_ID))
     await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
 

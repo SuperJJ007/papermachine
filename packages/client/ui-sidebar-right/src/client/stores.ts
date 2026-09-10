@@ -35,6 +35,7 @@ import {
   planDropTab, planDuplicateTab, planFloatTab, planOpenContent, planPlaceTab, planResizeSplit, planSetExpanded,
   planSetMode, planSettle, planSplitPane, planUnfloatPane, record, replay, stepBack, stepForward,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { restoreSidebarPreferences, saveSidebarPreferences } from './persistence.ts'
 import { GUIDE_KIND, pageAddress, type SidebarRightSeed } from './contract/seed.ts'
 
 /** One session's docking surface: the layout, its sequence, and the id counter. */
@@ -267,6 +268,7 @@ export function createSidebarRightStore(
   return defineStore({
     init: (): SidebarRightState => ({ bySession: {} }),
     persist: 'dsh.sidebar.right.v2',
+    persistence: { save: saveSidebarPreferences, restore: restoreSidebarPreferences },
     actions: {
       // Materialize a session's surface without changing it, so the first read
       // after a session switch sees the collapsed empty column rather than nothing.

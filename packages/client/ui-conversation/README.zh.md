@@ -13,6 +13,7 @@ kind: "package-reference"
 
 ## 目录
 
+
 - [Conversation 组装](#conversation-assembly)
 - [Shell 与标准 props](#shell-and-standard-props)
 - [临时 composer entry](#temporary-composer-entries)
@@ -35,6 +36,8 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props
+
+空白会话在对话区右上方保留 `conversation.session.header.corner`，以便在首条消息前重新展开右侧栏。标题、工具区和视图标签保持隐藏；角落控件不占用欢迎页或输入框的布局空间。
 
 工作区选择使用 `uiWorkspace.openWorkspace` 准备目标并提交导航。草稿文字和附件仅在请求仍有效时，通过它的同步准备回调搬移；后续导航或所有者释放会保留原草稿。
 
@@ -114,7 +117,6 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 <a id="known-limitations-and-deferred-work"></a>
 
 - **只有已注册 target 可以渲染**——除已注册的 `chat` 偏好外，shell 刻意不提供隐式 fallback target。
-
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -644,6 +644,11 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
     const details = page.locator('[data-rightbar-col]')
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
+    const originalTitle = await details.getByRole('textbox', { name: 'Enter text', exact: true }).first().inputValue()
+    const originalImage = await details.getByRole('img', { name: 'Observed series', exact: true }).getAttribute('src')
+    const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
+    if (session === undefined) throw new Error('Science chart fixture was not seeded')
+    const originalEvents = session.snapshotEvents()
     const preview = vi.spyOn(scaffold.ctx.scienceRuntime, 'previewChartEdit')
       .mockResolvedValue({ png: PNG, chart: CHART, failedOps: [] })
     try {
@@ -659,9 +664,19 @@ describe('web e2e: Science chart and Outcome replay', () => {
         fileURLToPath(new URL('./expected/science-artifacts/title-preview.expected.md', import.meta.url)),
         await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
       )
+      await details.getByRole('button', { name: 'Discard changes', exact: true }).click()
+      await expect.poll(() => details.getByRole('textbox', { name: 'Enter text', exact: true }).first().inputValue()).toBe(originalTitle)
+      await expect.poll(() => details.getByRole('img', { name: 'Observed series', exact: true }).getAttribute('src')).toBe(originalImage)
+      expect(await details.getByRole('button', { name: 'Commit as new version', exact: true }).isDisabled()).toBe(true)
+      expect(session.snapshotEvents()).toEqual(originalEvents)
+      await compareOrRefreshGolden(
+        fileURLToPath(new URL('./expected/science-artifacts/title-discard.expected.md', import.meta.url)),
+        await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
+      )
     } finally {
       preview.mockRestore()
-      await details.getByRole('button', { name: 'Discard changes', exact: true }).click()
+      const discard = details.getByRole('button', { name: 'Discard changes', exact: true })
+      if (await discard.isEnabled()) await discard.click()
     }
   })
 

@@ -10,7 +10,7 @@ Artifact reads and edit previews can finish after the user selects another versi
 
 ## Decision
 
-Native artifact panes scope asynchronous reads and preview work to their current immutable version and lifetime. Late completion cannot overwrite a newer selection. Preview result callbacks update presentation without being treated as a fresh edit that restarts the debounce cycle. Page-local undo and draft state end with their owning editor.
+Native artifact panes scope asynchronous reads and preview work to their current immutable version and lifetime. Late completion cannot overwrite a newer selection. Preview result callbacks update presentation without being treated as a fresh edit that restarts the debounce cycle. Page-local undo and draft state end with their owning editor. Discard also ends the direct-control draft lifetime: remounting the control group restores text, font, legend, and checkbox values from the saved chart together, while clearing pending operations invalidates in-flight previews. Clearing only the operation list leaves visible inputs and later combined font edits inconsistent with the saved version.
 
 Maximizing or restoring a pane changes layout, not session authorization. Cross-session viewing does not turn the viewed producer into the active editing session; Remote authorization and Runtime admission remain authoritative.
 

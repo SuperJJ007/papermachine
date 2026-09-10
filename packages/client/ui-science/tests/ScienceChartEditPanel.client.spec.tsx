@@ -518,6 +518,22 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     expect(onPreviewSrc).not.toHaveBeenCalled()
   })
 
+  it('discard ignores a preview already in flight and restores the saved title', async () => {
+    let resolvePreview: (outcome: { ok: true; pngBase64: string; failedOps: [] }) => void = () => {}
+    const onPreview = vi.fn(() => new Promise<{ ok: true; pngBase64: string; failedOps: [] }>((resolve) => { resolvePreview = resolve }))
+    const onPreviewSrc = vi.fn()
+    panel({ onPreview, onPreviewSrc })
+    fireEvent.change(within(expandRow('Title')).getByLabelText('Enter text'), { target: { value: 'Discard me' } })
+    await vi.waitFor(() => { expect(onPreview).toHaveBeenCalled() })
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(within(expandRow('Title')).getByLabelText<HTMLInputElement>('Enter text').value).toBe('Loss')
+    expect(onPreviewSrc).toHaveBeenLastCalledWith(undefined)
+    onPreviewSrc.mockClear()
+    resolvePreview({ ok: true, pngBase64: 'bGF0ZQ==', failedOps: [] })
+    await Promise.resolve()
+    expect(onPreviewSrc).not.toHaveBeenCalled()
+  })
+
   it('accumulates multiple staged ops before Save, and lists committed plus pending ops', () => {
     const chart = chartState({ ops: [{ op: 'set_title', axes: null, text: 'Old' }] })
     panel({ chart, version: 5 })
@@ -546,6 +562,38 @@ describe('ScienceChartEditPanel: pending accumulation and the op list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
     expect(screen.queryByText(/pending:/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Commit as new version' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('discard restores every direct control without saving or retaining draft operations', async () => {
+    const { onSave } = panel({ chart: chartState({ elements: [
+      element({ id: 'title', kind: 'title', current: 'Saved title' }),
+      element({ id: 'subtitle', kind: 'subtitle', current: 'Saved subtitle' }),
+      element({ id: 'x_label', kind: 'x_label', axes: 0, current: 'Saved X' }),
+      element({ id: 'y_label', kind: 'y_label', axes: 0, current: 'Saved Y' }),
+      element({ id: 'legend', kind: 'legend', axes: 0, current: { loc: 1 } }),
+      element({ id: 'grid', kind: 'grid', axes: 0, current: true }),
+      element({ id: 'font', kind: 'font', current: { family: ['serif'], size: 14 } }),
+    ] }) })
+    for (const input of screen.getAllByRole('textbox', { name: 'Enter text' })) {
+      fireEvent.change(input, { target: { value: 'Unsaved preview' } })
+    }
+    fireEvent.change(screen.getByLabelText('Legend position'), { target: { value: 'lower left' } })
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.change(screen.getByLabelText('Font family'), { target: { value: 'Arial' } })
+    fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
+    expect(screen.getAllByRole<HTMLInputElement>('textbox', { name: 'Enter text' }).map(input => input.value))
+      .toEqual(['Saved title', 'Saved subtitle', 'Saved X', 'Saved Y'])
+    expect(screen.getByLabelText<HTMLSelectElement>('Legend position').value).toBe('upper right')
+    expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>('Font family').value).toBe('serif')
+    expect(screen.getByLabelText<HTMLInputElement>('Font size').value).toBe('14')
+    expect(screen.queryByText(/pending:/)).toBeNull()
+    expect(onSave).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '16' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Commit as new version' }))
+    expect(onSave).toHaveBeenCalledWith([{ op: 'set_font', axes: null, family: 'serif', size: 16 }])
+    await screen.findByText('Human-edited version committed.')
   })
 
   it('reports onPendingChange(true) on the first staged op and onPendingChange(false) once Discard clears it (B4)', () => {

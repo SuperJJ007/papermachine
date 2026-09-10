@@ -379,6 +379,7 @@ export function ScienceChartEditPanel({
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
   const [previewing, setPreviewing] = useState(false)
   const [annotationsExpanded, setAnnotationsExpanded] = useState(false)
+  const [discardRevision, setDiscardRevision] = useState(0)
 
   useEffect(() => {
     onPendingChange?.(pending.length > 0)
@@ -443,7 +444,7 @@ export function ScienceChartEditPanel({
     <div className={css.elementPanelColumns}>
       <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
         <h4 id="science-direct-edit-heading">{t('edit.elements')}</h4>
-        <ul className={css.directEditRows}>{direct.map((row, index) => <Fragment key={row.element.id}>
+        <ul key={discardRevision} className={css.directEditRows}>{direct.map((row, index) => <Fragment key={row.element.id}>
           {multiAxes && row.element.axes !== null && direct[index - 1]?.element.axes !== row.element.axes
             && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: row.element.axes + 1 })}</li>}
           <DirectEditRow element={row.element} referenceable={row.referenceable}
@@ -472,7 +473,10 @@ export function ScienceChartEditPanel({
     </p>)}
     <div className={css.panelActions}>
       <button type="button" className={css.regionButton} disabled={pending.length === 0 || saving}
-        onClick={() => { setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([]) }}>
+        onClick={() => {
+          setDiscardRevision(value => value + 1)
+          setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([])
+        }}>
         {t('panel.discard')}
       </button>
       <button type="button" className={css.editSubmit} disabled={pending.length === 0 || saving} onClick={() => {

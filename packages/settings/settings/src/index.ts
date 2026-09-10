@@ -107,6 +107,8 @@ export interface SettingsDescriptor {
    * tell "saved" from "in effect" apart for a restart-scoped namespace.
    */
   effective: unknown
+  /** Whether stored values differ from the running owner, computed before secret redaction. */
+  pendingRestart: boolean
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }
@@ -540,6 +542,7 @@ export abstract class SettingsProvider extends Service {
         schema: registration.schema.toJSON(),
         value: registration.resolved,
         effective: registration.effective,
+        pendingRestart: !deepEqualJson(registration.resolved, registration.effective),
         revision: registration.revision,
         ...base === undefined ? {} : { base },
         ...detachedUser === undefined ? {} : { user: detachedUser },

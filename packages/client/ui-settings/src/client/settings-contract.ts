@@ -16,6 +16,8 @@ export interface SettingsScopeSnapshot<T> {
   value: T | undefined
   /** Redacted value currently applied by the Host owner. */
   effective: T | undefined
+  /** Host-computed difference between stored and effective values, including redacted fields. */
+  pendingRestart: boolean
   /** Presence of schema-declared secrets, without their values. */
   secrets: ReadonlyArray<{ path: string[]; set: boolean }>
   /**

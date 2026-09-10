@@ -132,6 +132,8 @@ interface SettingsDescriptor {
    * tell "saved" from "in effect" apart for a restart-scoped namespace.
    */
   effective: unknown
+  /** Whether stored values differ from the running owner, computed before secret redaction. */
+  pendingRestart: boolean
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }

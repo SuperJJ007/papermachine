@@ -73,6 +73,15 @@ describe('ScienceSettingsCardController', () => {
   })
 
   describe('hostState', () => {
+    it('keeps a replacement of an existing secret pending across controller recreation', () => {
+      const stub = host()
+      stub.publish(ready({ value: { science: {} }, effective: { science: {} }, pendingRestart: true }))
+      const controller = new ScienceSettingsCardController(stub.scope)
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('pendingRestart')
+      stub.publish({ pendingRestart: false })
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('effective')
+    })
+
     it("reports 'effective' when the running Host's own read already matches what is stored", () => {
       const stub = host()
       const controller = new ScienceSettingsCardController(stub.scope)

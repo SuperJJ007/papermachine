@@ -213,6 +213,9 @@ describe('registration', () => {
     expect(redacted.value).toEqual({})
     expect(redacted.effective).toEqual({})
     expect(redacted.secrets).toEqual([{ path: ['token'], set: true }])
+    expect(redacted.pendingRestart).toBe(true)
+    await ctx.settings.update(ns, { token: 'first' })
+    expect(ctx.settings.describe({ redactSecrets: true }).find(entry => entry.ns === ns)!.pendingRestart).toBe(false)
   })
 
   it('reads undefined for an unregistered namespace', async () => {

@@ -18,7 +18,7 @@
  *
  * {@link ScienceSettingsCardController.hostState} answers whether the
  * RUNNING Host has already bound the stored `science` profile, from the
- * scope's `effective`/`value` snapshot fields rather than a client-local
+ * scope's Host-computed `pendingRestart` flag rather than a client-local
  * flag — a page reload (a fresh controller instance) reports the same
  * pending-restart state it did before the reload, because the Host, not the
  * browser, is what has not restarted yet.
@@ -67,7 +67,7 @@ export interface ScienceSettingsFieldState {
  * The RUNNING Host's actually-bound `science` profile compared with what is
  * currently stored, independent of this browser session's own save history —
  * a page reload answers exactly as it did before the reload, because it is
- * read from the scope's `effective`/`value` snapshot fields, not from a
+ * read from the scope's Host-computed `pendingRestart` flag, not from a
  * client-local flag. `'pendingRestart'` covers both directions: a value just
  * saved (the Host has not read it yet) and a value just cleared (the Host
  * still has the old one bound).
@@ -249,18 +249,15 @@ export class ScienceSettingsCardController {
   }
 
   /**
-   * Compare the RUNNING owner's `effective` snapshot against the currently
-   * stored `value`: equal and configured means the Host already acted on the
-   * stored `science` profile; equal and absent means nothing is configured
-   * either way; any mismatch — added or removed since the Host last read —
-   * means a restart is still owed.
+   * Use the Host's unredacted comparison; profile presence determines whether
+   * an applied namespace contains the profile this card edits.
    * @returns the running Host's bound state vs what is currently stored.
    */
   private hostState(): ScienceHostState {
     const snapshot = this.scope.getSnapshot()
     const stored = isRecord(snapshot.value) && Object.hasOwn(snapshot.value, PROFILE_ID)
     const bound = isRecord(snapshot.effective) && Object.hasOwn(snapshot.effective, PROFILE_ID)
-    if (stored !== bound) return 'pendingRestart'
+    if (snapshot.pendingRestart || stored !== bound) return 'pendingRestart'
     return stored ? 'effective' : 'notConfigured'
   }
 

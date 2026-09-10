@@ -78,7 +78,7 @@ function piAiNamespace(
   userProviders: Record<string, JsonValue> = providers,
   baseProviders: Record<string, JsonValue> = {},
 ): SettingsNamespaceView {
-  return { effective: { providers },
+  return { pendingRestart: false, effective: { providers },
     ns: 'llm-pi-ai',
     schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
     // `value` is the effective section; `user` is only the layer this page

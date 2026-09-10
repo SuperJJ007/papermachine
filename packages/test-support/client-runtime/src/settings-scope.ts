@@ -32,6 +32,7 @@ export interface StubSettingsScope<T> {
 export function stubSettingsScope<T>(): StubSettingsScope<T> {
   let snapshot: SettingsScopeSnapshot<T> = {
     effective: undefined,
+    pendingRestart: false,
     secrets: [],
     status: 'loading', value: undefined, base: undefined, user: undefined,
     revision: undefined, writable: false, mode: 'host',

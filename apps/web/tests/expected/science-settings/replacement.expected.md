@@ -1,0 +1,53 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - heading "插件" [level=2]
+  - paragraph: 配置和查看本部署已安装的插件。
+  - tablist "插件视图":
+    - tab "插件配置" [selected]
+    - tab "插件列表"
+  - tabpanel "插件配置":
+    - list:
+      - listitem:
+        - 'button "展开设置: 终端"':
+          - text: 终端 限制 agent 运行的每一条命令。
+          - img
+      - listitem:
+        - 'button "展开设置: Agent 循环"':
+          - text: Agent 循环 Agent 如何派发工具调用。
+          - img
+      - listitem:
+        - 'button "展开设置: Subagent"':
+          - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
+          - img
+      - listitem:
+        - 'button "展开设置: 网页搜索"':
+          - text: 网页搜索 DeepSeek 搜索提供方。
+          - img
+      - listitem:
+        - 'button "收起设置: Science" [expanded]':
+          - text: Science 固定 science 配置档案的 Conda 前缀。
+          - img
+        - text: Python 前缀 已配置
+        - textbox "Python 前缀"
+        - paragraph: 已有 Conda 环境的绝对路径，需包含 bin/python 或 python.exe。
+        - text: R 前缀 未配置
+        - textbox "R 前缀"
+        - paragraph: 已有 Conda 环境的绝对路径，需包含 bin/Rscript 或 Scripts/Rscript.exe。
+        - status: 已保存；重启 Host 后生效。
+        - button "移除覆盖"
+        - button "放弃修改" [disabled]
+        - button "保存" [disabled]

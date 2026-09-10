@@ -26,7 +26,7 @@ function resolveDefault(view: SettingsNamespaceView) {
 
 function view(defaultPreset: string, revision = 0, schema: SettingsNamespaceView['schema'] = SCHEMA): SettingsNamespaceView {
   return {
-    effective: { defaultPreset },
+    pendingRestart: false, effective: { defaultPreset },
     ns: 'permission',
     schema,
     value: { defaultPreset },

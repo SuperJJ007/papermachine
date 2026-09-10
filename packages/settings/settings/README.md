@@ -160,4 +160,4 @@ This Dev Note is working context for maintainers: open design directions that ar
 
 </details>
 
-Descriptors expose the redacted `effective` value currently used by the owner. For restart-scoped registrations it remains the registration-time value while saved `value` may advance; live registrations advance both. Each value is redacted independently before transport.
+Descriptors expose the redacted `effective` value currently used by the owner. For restart-scoped registrations it remains the registration-time value while saved `value` may advance; live registrations advance both. Each value is redacted independently before transport. The Host computes `pendingRestart` from stored and effective values before redaction; replacing an existing secret remains pending across page reloads until Host restart.

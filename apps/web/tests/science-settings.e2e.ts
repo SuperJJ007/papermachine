@@ -4,12 +4,13 @@
 // that layering produces. Zero model calls: everything is client state plus
 // the settings document on a blank frame, so there is no fixture and a stray
 // stream would fail loud on the open llm seam.
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -169,6 +170,49 @@ describe('web e2e: plugin configuration section', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('distinguishes a replaced secret from the running profile across page and Host restarts', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'science-settings-replacement-'))
+    await writeFile(join(home, 'settings.yaml'), `science-runtime:\n  science:\n    pythonPrefix: ${SENTINEL_PYTHON_PREFIX}\n`)
+    let local: WebScaffold | undefined
+    const tab = await browser.newPage({ locale: ZH_BROWSER_LOCALE })
+    const errors = watchConsole(tab)
+    async function showCard() {
+      await tab.getByRole('button', { name: '设置', exact: true }).click()
+      const dialog = tab.getByRole('dialog', { name: '设置' })
+      await dialog.getByRole('button', { name: '插件', exact: true }).click()
+      await dialog.getByRole('button', { name: '展开设置: Science', exact: true }).click()
+      return dialog
+    }
+    try {
+      local = await launchWebScaffold({ harnessHome: home })
+      await tab.goto(local.authenticatedUrl, { waitUntil: 'load' })
+      const dialog = await showCard()
+      expect(await dialog.getByText('已配置并生效。').count()).toBe(1)
+      await dialog.getByLabel('Python 前缀').fill(`${SENTINEL_PYTHON_PREFIX}-replacement`)
+      await dialog.getByRole('button', { name: '保存', exact: true }).click()
+      await expect.poll(() => dialog.getByText('已保存；重启 Host 后生效。').count()).toBe(1)
+      await tab.reload({ waitUntil: 'load' })
+      const reopened = await showCard()
+      expect(await reopened.getByText('已保存；重启 Host 后生效。').count()).toBe(1)
+      expect(await reopened.getByLabel('Python 前缀').inputValue()).toBe('')
+      expect(await reopened.innerText()).not.toContain(SENTINEL_PYTHON_PREFIX)
+      await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'replacement.expected.md'),
+        await captureStableAria(tab, '[role="dialog"]', local.workspaceCwd), MODE)
+      await local.close()
+      local = undefined
+      local = await launchWebScaffold({ harnessHome: home })
+      await tab.goto(local.authenticatedUrl, { waitUntil: 'load' })
+      const restarted = await showCard()
+      expect(await restarted.getByText('已配置并生效。').count()).toBe(1)
+      expect(await restarted.getByText('已保存；重启 Host 后生效。').count()).toBe(0)
+      expect(errors.pageErrors).toEqual([])
+    } finally {
+      await tab.close()
+      await local?.close()
+      await rm(home, { recursive: true, force: true })
+    }
+  }, 120_000)
+
   it('removes the Science profile override back to unconfigured', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-science-reset'))
     const dialog = await openPlugins()
@@ -199,6 +243,6 @@ describe('web e2e: plugin configuration section', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['section.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['section.expected.md', 'replacement.expected.md'])
   })
 })

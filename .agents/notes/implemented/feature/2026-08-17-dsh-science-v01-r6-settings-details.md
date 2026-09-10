@@ -29,3 +29,5 @@ Users can distinguish a saved change from a running profile. Registration must f
 ## Related
 
 Related owners: [science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.md); [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.md).
+
+Settings descriptors carry `pendingRestart`, computed from unredacted stored and effective values by the provider. The Remote and client scope preserve this boolean. Presence alone cannot distinguish two configured secret values, and comparing redacted objects loses that difference. The Science card therefore uses the Host verdict; page reloads preserve it and a Host restart clears it. Provider regression covers secret replacement and restoration, and the real Web scenario covers an initially configured profile, replacement, page reload, and Host restart.

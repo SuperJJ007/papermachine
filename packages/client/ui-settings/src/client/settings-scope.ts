@@ -71,6 +71,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
       status: persistence === 'host' ? 'loading' : 'unavailable',
       value: undefined,
       effective: undefined,
+      pendingRestart: false,
       secrets: [],
       base: undefined,
       user: undefined,
@@ -192,6 +193,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     const decoded = this.decode(view)
     this.store.update((draft) => {
       draft.effective = this.decode({ ...view, value: view.effective })
+      draft.pendingRestart = view.pendingRestart
       draft.secrets = view.secrets
       draft.revision = view.revision
       draft.base = view.base

@@ -51,7 +51,7 @@ const useSessionPendingInteraction: DeepSeekOnboardingDialogProps['useSessionPen
 
 function deepSeekNamespace(apiKeyEnv: string | null): SettingsNamespaceView {
   const value = apiKeyEnv === null ? {} : { apiKeyEnv }
-  return { effective: value,
+  return { pendingRestart: false, effective: value,
     ns: 'llm-deepseek',
     schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
     value,

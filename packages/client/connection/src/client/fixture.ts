@@ -1886,6 +1886,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             schema: {},
             value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
             effective: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+            pendingRestart: false,
             applies: 'live',
             secrets: [{ path: ['apiKey'], set: false }],
             revision: 0,

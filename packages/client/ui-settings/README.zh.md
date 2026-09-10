@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+Host 在脱敏前比较存储值与生效值并提供 `pendingRestart`；替换已有秘密字段后，刷新页面仍显示待重启，直到 Host 重启。
+
 功能插件用本包存储与编辑自己的偏好设置，而无需重新实现传输层或 schema 处理。每个组合挂载一次即可；它注入 `remote` 服务及其 `settings` 命名空间，并持有浏览器中唯一的 `settings.describe` 读取方。
 
 ### 绑定命名空间

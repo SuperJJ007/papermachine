@@ -25,6 +25,8 @@ This package lets web-client features expose editable preferences backed by the 
 <a id="use-this-package"></a>
 ## Use this package
 
+The Host computes `pendingRestart` from stored and effective values before redaction; replacing an existing secret remains pending across page reloads until Host restart.
+
 Feature plugins use this package to store and edit their preferences without re-implementing transport or schema handling. Mount it once per composition; it injects the `remote` service with its `settings` namespace and owns the single `settings.describe` reader in the browser.
 
 ### Binding a namespace

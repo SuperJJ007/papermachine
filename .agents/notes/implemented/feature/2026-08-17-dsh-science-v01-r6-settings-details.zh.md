@@ -29,3 +29,5 @@ Science 呈现使用原生侧栏资源与页面。设置的所有权不需要私
 ## 相关决策
 
 相关 owner：[science-preset-deployment-policy](../architecture/2026-09-09-science-preset-deployment-policy.zh.md); [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.zh.md).
+
+设置描述包含 `pendingRestart`，由 provider 在脱敏前比较存储值与生效值，Remote 和客户端 scope 保留这个布尔值。仅判断存在性无法区分两个均已配置的秘密值，比较脱敏对象也会丢失该差异。Science 卡片因此使用 Host 的判断，刷新页面保留待重启状态，Host 重启后清除。Provider 回归覆盖秘密值替换与恢复；真实 Web 场景覆盖初始已配置环境、替换、页面刷新和 Host 重启。

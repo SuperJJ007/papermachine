@@ -25,6 +25,7 @@ import {
   interpreterArgv,
   interpreterPathEnv,
   localeEnvironment,
+  windowsEnvironment,
   MAX_OUTPUT_BYTES,
   quiesce,
 } from './execution.ts'
@@ -197,35 +198,6 @@ interface PendingChart {
 type PendingRequest = PendingExecute | PendingChart
 
 /**
- * Fixed ambient Windows system variables carried through unchanged from the
- * Host's own environment into a win32 kernel spawn — the POSIX allowlist's
- * empty-base start stays exactly as narrow as before. A win32 process given
- * no `SystemRoot` cannot initialize Winsock (Python's `socket` module fails
- * with WinError 10106), so `TCP transport` selection on win32
- * ({@link selectKernelTransportKind}) makes this list load-bearing, not
- * cosmetic. `TEMP`/`TMP` are deliberately absent here: unlike these ambient
- * identity/locale variables, they are the win32 equivalent of the POSIX
- * `TMPDIR` entry below and are set to the kernel's own scratch directory,
- * never the Host's ambient temp directory.
- */
-const WIN32_AMBIENT_ENVIRONMENT_KEYS = [
-  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
-  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA',
-  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
-] as const
-
-/** Carry through the fixed win32 ambient keys present in the Host's own environment; absent on every other platform. */
-function win32AmbientEnvironment(): NodeJS.ProcessEnv {
-  if (process.platform !== 'win32') return {}
-  const entries: [string, string][] = []
-  for (const key of WIN32_AMBIENT_ENVIRONMENT_KEYS) {
-    const value = process.env[key]
-    if (value !== undefined) entries.push([key, value])
-  }
-  return Object.fromEntries(entries)
-}
-
-/**
  * Exact empty-base child environment for a persistent kernel's baseline
  * spawn (per-run TMPDIR/SCIENCE_ARTIFACT_DIR are the driver's own job).
  * `SCIENCE_WORKSPACE_DIR` exposes the Session's immutable workspace path
@@ -238,7 +210,7 @@ function win32AmbientEnvironment(): NodeJS.ProcessEnv {
  * `sys.path` see again within the same kernel. On win32, `TEMP`/`TMP` join
  * `TMPDIR` as the kernel's own scratch temp directory — neither Python's
  * `tempfile` nor R's `tempdir()` consult `TMPDIR` on Windows — and a fixed
- * set of ambient Windows system variables ({@link win32AmbientEnvironment})
+ * set of ambient Windows system variables ({@link windowsEnvironment})
  * is carried through from the Host, since a process with none of them cannot
  * initialize Winsock.
  * @param binding - the observed interpreter binding selecting the language and canonical Conda prefix.
@@ -256,7 +228,6 @@ export function kernelEnvironment(
   return {
     HOME: sessionScratch.home,
     TMPDIR: kernelScratch.tmp,
-    ...(process.platform === 'win32' ? { TEMP: kernelScratch.tmp, TMP: kernelScratch.tmp } : {}),
     PATH: interpreterPathEnv(binding.canonicalPrefix),
     SCIENCE_STATE_DIR: sessionScratch.state,
     ...(session.header.cwd === undefined ? {} : { SCIENCE_WORKSPACE_DIR: session.header.cwd }),
@@ -264,7 +235,7 @@ export function kernelEnvironment(
       ? { PYTHONUSERBASE: kernelScratch.userLibrary }
       : { R_LIBS_USER: kernelScratch.userLibrary }),
     ...localeEnvironment(),
-    ...win32AmbientEnvironment(),
+    ...windowsEnvironment(kernelScratch.tmp),
   }
 }
 

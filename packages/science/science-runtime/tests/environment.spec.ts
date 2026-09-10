@@ -15,6 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
 import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig, type Config } from '../src/config.ts'
+import { windowsEnvironment } from '../src/execution.ts'
 import { observeProfile, prefixHistoryDigest, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
@@ -376,7 +377,12 @@ describe('ScienceRuntime.bindEnvironment', () => {
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
       expect(spec.environmentBase).toBe('empty')
-      expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
+      expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ', ...Object.keys(windowsEnvironment(''))].sort())
+      if (process.platform === 'win32') {
+        expect(spec.env?.SystemRoot).toBe(process.env.SystemRoot)
+        expect(spec.env?.TEMP).toBe(spec.env?.TMPDIR)
+        expect(spec.env?.TMP).toBe(spec.env?.TMPDIR)
+      }
       expect(spec.cwd).toMatch(/[\\/]probes[\\/]/)
     }
     const [versionSpec, utf8Spec, packagesSpec] = subprocess.specs

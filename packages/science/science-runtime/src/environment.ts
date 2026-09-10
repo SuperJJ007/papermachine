@@ -11,7 +11,7 @@ import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ScienceRuntimeError } from './types.ts'
 import type { ConfiguredProfile } from './config.ts'
-import { assertPrefixReadOnly, confineWithEnforcement, interpreterPathEnv, localeEnvironment } from './execution.ts'
+import { assertPrefixReadOnly, confineWithEnforcement, interpreterPathEnv, localeEnvironment, windowsEnvironment } from './execution.ts'
 import { containsPath, createProbeScratch, planProbeScratch, removeProbeScratch } from './scratch.ts'
 import type { ScienceProbeScratch, ScienceSessionScratch } from './scratch.ts'
 
@@ -155,6 +155,7 @@ function probeEnvironment(prefix: string, scratch: ScienceProbeScratch): NodeJS.
     TMPDIR: scratch.tmp,
     PATH: interpreterPathEnv(prefix),
     ...localeEnvironment(),
+    ...windowsEnvironment(scratch.tmp),
   }
 }
 

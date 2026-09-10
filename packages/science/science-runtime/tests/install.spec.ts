@@ -138,6 +138,23 @@ describe('install scratch', () => {
 })
 
 describe('installEnvironment', () => {
+  it('provides Windows startup variables while keeping temporary files in install scratch', () => {
+    const scratch = planInstallScratch(makeRoot())
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const previous = process.env.SystemRoot
+    process.env.SystemRoot = 'C:\\Windows'
+    try {
+      const env = installEnvironment('C:\\prefix', scratch)
+      expect(env.SystemRoot).toBe('C:\\Windows')
+      expect(env.TEMP).toBe(scratch.tmp)
+      expect(env.TMP).toBe(scratch.tmp)
+    } finally {
+      platform.mockRestore()
+      if (previous === undefined) delete process.env.SystemRoot
+      else process.env.SystemRoot = previous
+    }
+  })
+
   it('isolates HOME/TMPDIR to the install scratch and roots MAMBA_ROOT_PREFIX at the target prefix', () => {
     const root = makeRoot()
     const scratch = planInstallScratch(root)

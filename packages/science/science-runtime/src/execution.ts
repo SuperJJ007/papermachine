@@ -67,6 +67,29 @@ function windowsInterpreterPathEnv(canonicalPrefix: string): string {
     .join(';')
 }
 
+/** Windows system variables required by interpreter startup and runtime libraries. */
+const WIN32_AMBIENT_ENVIRONMENT_KEYS = [
+  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+] as const
+
+/**
+ * Fixed Windows system entries needed by empty-base interpreter processes.
+ * Copies only the declared ambient keys and confines temporary files to scratch.
+ * @param temporaryDirectory - the child operation's owned scratch temp directory.
+ * @returns Windows ambient entries and TEMP/TMP, or no entries on other platforms.
+ */
+export function windowsEnvironment(temporaryDirectory: string): NodeJS.ProcessEnv {
+  if (process.platform !== 'win32') return {}
+  const entries: [string, string][] = []
+  for (const key of WIN32_AMBIENT_ENVIRONMENT_KEYS) {
+    const value = process.env[key]
+    if (value !== undefined) entries.push([key, value])
+  }
+  return { ...Object.fromEntries(entries), TEMP: temporaryDirectory, TMP: temporaryDirectory }
+}
+
 /** Complete pre-publication plan with no Host scratch path exposed publicly. */
 export interface RunPlan {
   readonly runId: ReturnType<typeof ScienceRunId>

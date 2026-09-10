@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi, type MockInstance } from 'vitest'
 import {
   cliGateOptions,
+  collectDescendants,
   defaultConcurrency,
   formatGateResultReason,
   gatesForMode,
@@ -945,6 +946,28 @@ describe('fail-fast scheduling', () => {
       write.mockRestore()
     }
   }, 30000)
+})
+
+describe('process-table descendants', () => {
+  it('visits each descendant once when parent links cycle or repeat', () => {
+    expect(collectDescendants(10, [[10, 20], [20, 10], [30, 20], [20, 10], [30, 30], [40, 30]]))
+      .toEqual([20, 30, 40])
+    expect(collectDescendants(10, [[10, 10]])).toEqual([])
+  })
+
+  it('preserves breadth-first order and excludes unrelated processes', () => {
+    expect(collectDescendants(10, [[20, 10], [30, 10], [40, 20], [50, 99]]))
+      .toEqual([20, 30, 40])
+    expect(collectDescendants(99, [])).toEqual([])
+  })
+
+  it('enumerates wide process tables without passing children as function arguments', () => {
+    const children: Array<[number, number]> = Array.from({ length: 150_000 }, (_, index) => [index + 3, 2])
+    const result = collectDescendants(1, [[2, 1], ...children])
+    expect(result).toHaveLength(150_001)
+    expect(result[0]).toBe(2)
+    expect(result.at(-1)).toBe(150_002)
+  })
 })
 
 describe('process-table parsing', () => {

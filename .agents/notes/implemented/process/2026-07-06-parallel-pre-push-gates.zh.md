@@ -22,6 +22,8 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 
 各门禁的包脚本仍是临时本地运行所用的命令入口。`hygiene` 调用包含相同十三道检查且限制为本地四个 worker 的调度器模式，而 `doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)）。
 
+进程表遍历对每个 PID 最多访问一次，并排除根进程。Windows 父进程 PID 重用可能使观测表出现环；资源采样和终止枚举均不得沿环无限遍历。遍历使用独立队列并逐个加入子进程，避免宽进程表超过 JavaScript 参数数量限制。这些检查限制枚举工作量，但不能证明 PID 重用前后的进程身份。
+
 ## 验证
 
 [scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定 hygiene、消费方与原生 Windows 清单及其失败语义，通过真实子进程验证信号终止，并证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。

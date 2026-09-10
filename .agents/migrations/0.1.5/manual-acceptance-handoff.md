@@ -1,5 +1,7 @@
 # 实机验收交接：2026-09-11
 
+第 1、2 步当前收尾：[已验收成果与提交](step-1-closeout.md)、[工作目录选择修复及剩余平台验收](step-2-closeout.md)。
+
 Current checkpoint: [step 1 closeout](step-1-closeout.md) records the four local repair commits and the accepted evidence. The observations below retain the original acceptance context; superseded gaps are resolved by the two linked closeout records. Windows/WSL acceptance remains separate.
 
 本记录接续[实机验收清单](manual-acceptance.md)。验收对象为提交 ddccc29695，分支 replant/0.1.5，工作目录 /Users/superjj/ccproj/pm-replant。该提交包含此前迁移代码；本记录不包含产品修复，整体验收尚未完成。

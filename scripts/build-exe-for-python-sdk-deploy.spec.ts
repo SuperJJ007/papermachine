@@ -136,7 +136,9 @@ describe('Python closure deployment', () => {
       fileURLToPath(new URL('./build-exe-for-python-sdk.ts', import.meta.url)),
       '--dry-run', '--skip-build', '--targets=node24-macos-arm64'], {
       cwd: new URL('..', import.meta.url), encoding: 'utf8',
-      env: { ...process.env, npm_execpath: 'test-pnpm.mjs' },
+      // Windows child processes choose one spelling of each environment key.
+      env: { ...Object.fromEntries(Object.entries(process.env)
+        .filter(([name]) => name.toLowerCase() !== 'npm_execpath')), npm_execpath: 'test-pnpm.mjs' },
     })
     expect(dryRun.status).toBe(0)
     const command = dryRun.stdout.split(/\r?\n/).find(line => line.endsWith(' run verify-runtime-closure'))!

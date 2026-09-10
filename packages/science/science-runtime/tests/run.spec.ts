@@ -14,7 +14,7 @@ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { DESCENDANT_GRACE_MS, MAX_OUTPUT_BYTES } from '../src/execution.ts'
-import { KernelProcess } from '../src/kernel-process.ts'
+import { KernelProcess, KernelProtocolError } from '../src/kernel-process.ts'
 import { KernelSet } from '../src/kernel-set.ts'
 import { planSessionScratch } from '../src/scratch.ts'
 import ScienceRuntime from '../src/index.ts'
@@ -600,9 +600,8 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-run-kernel-start-failed')
     await bindFakePython(harness.runtime, session)
-    // The no-ready driver never sends READY: KernelProcess.start() throws
-    // KernelProtocolError once the (short) start deadline elapses, which
-    // startRun must translate to KERNEL_START_FAILED before publication.
+    // The deadline may expire during connection or while awaiting READY;
+    // either failure must reject before publishing a run.
     installTestKernelSet(harness.ctx, harness.runtime, {
       assetsRoot: KERNEL_ASSETS_NO_READY_ROOT,
       kernelStartTimeoutMs: 200,
@@ -612,6 +611,22 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
     expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
+  it('reports a kernel handshake failure before publishing a run', async () => {
+    const { runtime, session } = await readyPythonHarness('science-run-handshake-failure')
+    const start = vi.spyOn(KernelProcess, 'start').mockRejectedValueOnce(new KernelProtocolError('invalid READY frame'))
+    try {
+      const rejection = runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })
+      await expect(rejection).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
+      await expect(rejection).rejects.toThrow('the kernel did not complete its startup handshake')
+      expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+    } finally {
+      start.mockRestore()
+    }
   })
 
   it('classifies a discarded kernel whose own teardown also failed as KERNEL_START_FAILED with the AggregateError cause class', async () => {

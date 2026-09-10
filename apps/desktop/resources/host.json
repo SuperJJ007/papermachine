@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "logMaxBytes": 5242880,
+  "logMaxRotatedFiles": 2
+}

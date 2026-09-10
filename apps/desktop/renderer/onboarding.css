@@ -1,0 +1,1 @@
+html { color-scheme: light dark; font: 16px system-ui; } body { margin: 0; } main { max-width: 680px; margin: 48px auto; padding: 24px; } button, select, textarea { font: inherit; padding: 10px; margin: 8px 8px 8px 0; } textarea { display: block; width: 95%; } pre { white-space: pre-wrap; overflow-wrap: anywhere; } #home { overflow-wrap: anywhere; } details { margin: 20px 0; }

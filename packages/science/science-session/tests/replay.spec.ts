@@ -201,7 +201,7 @@ describe('Science cold replay', () => {
       .toBe(events.at(-1)!.seq)
   })
 
-  it('discards a version-mismatched checkpoint and refolds the complete log', async () => {
+  it('discards the previous checkpoint version and refolds the complete log', async () => {
     const ctx = await harness()
     const session = ctx.sessions.create(SessionId('science-checkpoint-version'), {
       meta: { agentPreset: 'science' },
@@ -212,7 +212,7 @@ describe('Science cold replay', () => {
     const science = checkpoint.science!
     const mismatched = {
       ...checkpoint,
-      science: { ...science, ver: science.ver + 1 },
+      science: { ...science, ver: science.ver - 1 },
     }
 
     expect(ctx.sessionProjections.viewCheckpoint(mismatched)).not.toHaveProperty('science')

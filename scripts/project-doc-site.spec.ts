@@ -450,9 +450,37 @@ describe('docsPages locale routes', () => {
     const translated = rootPages.filter(page => page.contentLocale === 'zh-CN')
     const fallbacks = rootPages.filter(page => page.contentLocale === 'en-US')
 
-    expect(translated).toHaveLength(48)
+    expect(translated).toHaveLength(49)
     expect(translated.every(page => page.source.endsWith('.zh.md'))).toBe(true)
     expect(fallbacks).toEqual([])
+  })
+
+  it('exposes Science through both locale navigation and machine-readable routes', () => {
+    for (const locale of ['root', 'en'] as const) {
+      const prefix = locale === 'en' ? 'en/' : ''
+      const suffix = locale === 'root' ? '.zh' : ''
+      const route = `${prefix}reference/subsystems/science.md`
+      const page = docsPages.find(candidate => candidate.route === route)
+      expect(page).toMatchObject({
+        locale,
+        source: `docs/subsystems/science${suffix}.md`,
+        contentLocale: locale === 'root' ? 'zh-CN' : 'en-US',
+        label: locale === 'root' ? '科学计算' : 'Science',
+        sidebar: locale === 'root' ? 'zh-reference' : 'en-reference',
+        section: locale === 'root' ? '执行与工具' : 'Execution and tools',
+        outline: [2, 3],
+      })
+      expect(rewriteMarkdown(`[Science](science${suffix}.md)\n`, {
+        locale,
+        sourcePath: `docs/subsystems/README${suffix}.md`,
+        route: `${prefix}reference/subsystems/index.md`,
+        pages: docsPages,
+        repoRoot: repositoryRoot,
+        repositoryRef: 'abc123',
+      })).toBe('[Science](./science.md)\n')
+      expect(rawMarkdownFiles()).toContain(route)
+      expect(llmsTxt({ title: 'Docs', description: 'Reference', base: '/' })).toContain(`](/${route})`)
+    }
   })
 
   it('publishes the Cordis core API under matching locale structures', () => {

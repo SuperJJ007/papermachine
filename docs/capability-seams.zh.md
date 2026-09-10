@@ -9,6 +9,16 @@
 
 ```mermaid
 flowchart LR
+  pkg_science_artifact_store["science-artifact-store"]
+  svc_scienceArtifactStore["ctx.scienceArtifactStore<br/>Project artifact storage"]
+  pkg_science_runtime["science-runtime"]
+  pkg_tool_science["tool-science"]
+  svc_scienceRuntime["ctx.scienceRuntime<br/>Science execution"]
+  svc_scienceEdits["ctx.scienceEdits<br/>Science edit admission"]
+  pkg_client_ui_science["client-ui-science"]
+  svc_scienceReads["ctx.scienceReads<br/>Science artifact reads"]
+  pkg_session_attachment_index["session-attachment-index"]
+  svc_sessionAttachments["ctx.sessionAttachments<br/>Session attachment references"]
   pkg_attachment["attachment"]
   svc_attachments["ctx.attachments<br/>Durable binary attachment storage"]
   pkg_attachment_local["attachment-local"]
@@ -290,7 +300,10 @@ flowchart LR
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
+  pkg_science_artifact_store --> svc_scienceArtifactStore
+  pkg_science_runtime --> svc_scienceRuntime
   pkg_session --> svc_sessions
+  pkg_session_attachment_index --> svc_sessionAttachments
   pkg_session_log_deepseek --> svc_deepseekLlmApiExtensions
   pkg_session_persistence --> svc_sessionPersistence
   pkg_session_persistence_jsonl --> svc_sessionPersistence
@@ -331,6 +344,8 @@ flowchart LR
   pkg_terminal --> svc_terminals
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
+  pkg_tool_science --> svc_scienceEdits
+  pkg_tool_science --> svc_scienceReads
   pkg_tool_subagent --> svc_subagentModelSelection
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
@@ -393,6 +408,12 @@ flowchart LR
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_scienceArtifactStore --> pkg_science_runtime
+  svc_scienceArtifactStore --> pkg_tool_science
+  svc_scienceEdits --> pkg_client_ui_science
+  svc_scienceReads --> pkg_client_ui_science
+  svc_scienceRuntime --> pkg_tool_science
+  svc_sessionAttachments --> pkg_tool_science
   svc_sessionPersistence --> pkg_agent_loop
   svc_sessionPersistence --> pkg_hooks_claude_code
   svc_sessionPersistence --> pkg_hooks_codex
@@ -476,6 +497,11 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.scienceArtifactStore` | `core` | [`science-artifact-store`](../packages/science/science-artifact-store) | - | [`science-runtime`](../packages/science/science-runtime), [`tool-science`](../packages/science/tool-science) | - | 负责项目身份、不可变产物版本和溯源信息。 |
+| `ctx.scienceRuntime` | `core` | [`science-runtime`](../packages/science/science-runtime) | - | [`tool-science`](../packages/science/tool-science) | - | 负责解释器进程并记录持久化 Science 执行事实。 |
+| `ctx.scienceEdits` | `core` | [`tool-science`](../packages/science/tool-science) | - | [`client-ui-science`](../packages/client/ui-science) | - | 校验精确版本编辑请求，并提交可记录的用户消息。 |
+| `ctx.scienceReads` | `core` | [`tool-science`](../packages/science/tool-science) | - | [`client-ui-science`](../packages/client/ui-science) | - | 授权项目产物元数据与字节访问。 |
+| `ctx.sessionAttachments` | `core` | [`session-attachment-index`](../packages/session/session-attachment-index) | - | [`tool-science`](../packages/science/tool-science) | - | 从已准入的 Session 事件中提取完整附件引用。 |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | [`api-session-controller`](../packages/api/session-controller), [`tool-fs`](../packages/fs/tool-fs), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-deepseek`](../packages/llm/llm-deepseek) | - | 宿主会在会话事件之前提交已接受的图片；提供方适配器将已授权的持久引用解析为提供方原生内容。 |
 | `ctx.fileUploads` | `core` | [`client-file-upload`](../packages/client/file-upload) | - | [`api-session-controller`](../packages/api/session-controller) | - | 负责流式接收、持久存储和暂存回执生命周期；Session Controller 将回执绑定到已接受的提交。 |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | 适配器注册提供方实现；agent loop（智能体循环）与压缩功能调用提供方无关的流服务。 |

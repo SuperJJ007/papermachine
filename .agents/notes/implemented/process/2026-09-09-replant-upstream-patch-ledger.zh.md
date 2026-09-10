@@ -102,6 +102,16 @@ rc.1 组合在会话反馈 Remote 之外保留 Science Remote 挂载。MCP 发�
 
 [原生侧栏决定](../architecture/2026-09-10-science-native-sidebar.zh.md)负责客户端新增能力：独立的 Science Library 页面、按会话导航、由所属模块投影 JSON 并校验恢复的布局宽度持久化，以及恢复资源 occurrence 时的同步准入。带版本的浏览器偏好键丢弃早期布局表示。侧栏偏好校验完整节点树、标签归属、活动引用、分栏比例、浮窗矩形和标识计数器。撤销操作仅属于当前页面。空白会话保留原生标题栏角落控件；取消的左侧成果库动作不需要额外导航槽位。公开 controller 已提供跨会话标签导航，因此移除冗余 ISidebarRight 声明。普通工作区文档查看器使用上游 documentpreview 包。
 
+## 发布检查
+
+七个 Science 和 UI 包不发布空的不变量伴随插件，并移除其发布配置。Science Session 伴随插件保留持久事件与投影检查；注册表清理和纯格式化由所属测试验证。[伴随插件规则](../simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md)决定何时需要为可独立观察的关系提供伴随插件。
+
+[Python 可执行程序构建器](../../../../scripts/build-exe-for-python-sdk.ts) 使用 pnpm 共享锁文件部署，以独立的 hoisted 目录为目标并显式注入工作区包。它要求带版本的锁文件包含运行时 importer，禁用 legacy 回退，并保留锁文件的 peer 设置。pnpm legacy hoister 在工作区包链接上导入时，可能为保留嵌套依赖而将源 `node_modules` 重命名到部署包内。受维护的共享锁文件路径将安装限定在目标目录内，直接提供完整闭包，无需从源端 hoist 位置补拷。事后重装源依赖会掩盖破坏性步骤；先复制工作区则会增加另一套包发现和复制实现。
+
+生产闭包不含已打补丁的 Electron 打包工具，因此部署允许未使用的补丁。临时 pnpm `updateConfig` hook 在部署所用的 `file:` URL 身份下保留本地包的构建批准和拒绝规则，不批准未知脚本。无论成功或失败，hook 都会被删除。构建器共用的 pnpm 调用对每个子命令禁用自动依赖刷新，包括闭包前置检查和构建。未受约束的前置 run 可能在隔离部署开始前重装源依赖，即使锁文件无需重新解析，也会重建 bin 启动脚本和 workspace-state 元数据。显式部署及闭包验证保留各自检查；其他 install 命令保留正常校验。[部署回归测试](../../../../scripts/build-exe-for-python-sdk-deploy.spec.ts) 在独立的五包工作区复现 legacy 源目录移动，对比受维护部署及构建拒绝前后的源目录身份、链接和文件哈希，检查模块实例相等，并在调用 pnpm 前拒绝缺失或不完整的锁文件。真实可执行程序及已安装 wheel 的验收与这些临时工作区证据分开进行。
+
+附件授权明确把 `deliverables/presented` 和 `subagent/catalog` 归为 attachment-free：两者分别携带文件系统路径和子会话发现元数据，不携带已存储附件引用。文本预览仍仅接收允许的文件扩展名和完整 UTF-8。遥测接收器属于私有部署工作区；发布检查拒绝 npm 入口和载荷声明，node:test 在不写入云服务的情况下验证其现有 HTTP 行为。Science 客户端发布清单包含内嵌 Library 图案许可文件，并拒绝缺失或额外载荷。
+
 ## 考虑过的替代方案
 
 **保留工作区文件 Remote。** 上游提供文件浏览与读取，复制整套实现扩大维护成本；按 D10 删除，保留必要时最小补足的条件。
@@ -115,3 +125,21 @@ rc.1 组合在会话反馈 Remote 之外保留 Science Remote 挂载。MCP 发�
 ## 上游回馈
 
 迁移 PLAN §7 列出通用重试上下文修复（第 1 项，以五行源码落地）、无窗口 ACL 控制台初始化（第 2 项）及上游可选链问题（第 6 项）。第 7 项补充 headless 驱动挂载默认 preset 并持久记录 `meta.agentPreset`，以及 `subprocess-local/tests/spawn-runner.spec.ts` 对宿主 `NoDefaultCurrentDirectoryInExePath` 的假设。以上均未提交上游；本次收尾不修改 PLAN，也不发送上游消息。spawn-runner 测试可在移除该宿主变量后验证，保持其预期子进程行为。
+
+## P6 文档决定
+
+### 静态配置 schema
+
+[配置目录生成器](../../../../scripts/gen-config-catalog.ts)沿包内相对导入和别名查找 `const` schema 初始化表达式，并识别配置声明中的 TypeScript 内置类型 `ReadonlyMap`。它读取语法树，不执行配置代码。动态调用、无法解析的名称和循环 schema 引用仍然报错；每个发现的 schema 字段仍必须存在于声明的配置类型中。拒绝合法的导入常量会让包的源码布局依赖文档生成方式，而接纳无法解析的 schema 会静默遗漏受校验字段。[生成器测试](../../../../scripts/gen-config-catalog.spec.ts)覆盖有效别名和 `ReadonlyMap`、未知集合类型、未声明的 schema 字段，以及计算表达式或循环 schema 的拒绝；四项测试全部通过。文档测试清单将这些用例与现有文档标准检查一起运行。
+
+### 桌面产物发现
+
+[双语语料发现](../../../../scripts/translation-pairing.ts)只排除根位于 `apps/desktop/.desktop-build/` 的桌面构建产物，并同时约束 glob 遍历和源码路径判定。其部署运行时和打包产物携带复制的文档，这些文档的原始相对路径不属于手写源码语料。若排除整个桌面源码树，则会隐藏维护中文档缺少翻译的问题。[配对测试](../../../../scripts/translation-pairing.spec.ts)确认生成运行时和产物中的 README 被排除，而 `apps/desktop/README.md` 和 `apps/desktop/resources/README.md` 仍须配对；67 项测试全部通过。
+
+### Science 网站路由
+
+[网站清单](../../../../website/docs.ts)将 canonical [Science 子系统](../../../../docs/subsystems/science.zh.md)文档对映射到 `reference/subsystems/science.md` 和 `en/reference/subsystems/science.md`，归入现有“执行与工具”导航分组。canonical Markdown 保留在 `docs/`；原生右侧 Sidebar 和平级 Process 视图也在其中说明。仅有子系统索引条目不会让页面出现在网站上：显式清单负责双语路由、导航、原始 Markdown 输出和 `llms.txt`。[站点投影测试](../../../../scripts/project-doc-site.spec.ts)校验这些入口和重写后的子系统索引链接。70 项网站测试与本地文档构建通过；构建后检查解析了 2,720 个内部锚点引用，并确认 203 份原始 Markdown 文件及 `llms.txt` 齐全。这些检查只生成本地产物，不部署站点。
+
+## 桌面 Host 管道所有权
+
+Host 关闭时，每个继承的字节管道描述符仅由对应的 Node fs 流持有。即使 `autoClose` 为 false，显式销毁流仍会关闭描述符，因此关闭流程等待 `close`，不再额外调用 `closeSync`；重复关闭可能产生 EBADF，或关闭复用了该描述符编号的其他资源。Electron 关闭请求写端，以释放 Host 等待中的读取。响应写入完成后才关闭响应流，关闭失败仍作为错误报告。回归测试使用真实继承管道，验证重复关闭、完整响应字节和关闭错误传播。

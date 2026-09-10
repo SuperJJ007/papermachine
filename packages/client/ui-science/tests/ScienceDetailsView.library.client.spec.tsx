@@ -301,3 +301,25 @@ describe('Science library public navigation and failures', () => {
     expect(screen.queryByText('private host details')).toBeNull()
   })
 })
+
+it('sorts titled and untitled artifacts by name and switches between compact and square previews', async () => {
+  const loadLibrary = vi.fn<ScienceDetailsViewProps['loadLibrary']>().mockResolvedValue({ ok: true, value: {
+    projectId: 'project-1', artifacts: [
+      libraryArtifact({ artifactId: 'z', title: 'Zebra' }),
+      libraryArtifact({ artifactId: 'b', title: undefined, logicalName: 'beta.png' }),
+      libraryArtifact({ artifactId: 'a', title: 'Alpha' }),
+      libraryArtifact({ artifactId: 'c', title: undefined, logicalName: 'gamma.png' }),
+    ],
+  } })
+  render(<TestLibrary {...props(baseProjection(), { loadLibrary })} />)
+  await screen.findByText('4 artifacts')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Artifact sort' }), { target: { value: 'name' } })
+  expect(screen.getAllByRole('button', { name: /^Open / }).map(item => item.getAttribute('aria-label'))).toEqual([
+    'Open Alpha, version 1', 'Open beta.png, version 1', 'Open gamma.png, version 1', 'Open Zebra, version 1',
+  ])
+  const layout = screen.getByRole('button', { name: 'Switch grid or list view' })
+  fireEvent.click(layout)
+  expect(document.querySelectorAll('[data-variant="tile"]')).toHaveLength(4)
+  fireEvent.click(layout)
+  expect(document.querySelectorAll('[data-variant="card"]')).toHaveLength(4)
+})

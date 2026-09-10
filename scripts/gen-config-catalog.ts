@@ -8,7 +8,7 @@
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { LINK_MAP } from './gen-cordis-catalog.ts'
 import { parseJsDoc, pointer, rawJsDoc } from './jsdoc.ts'
@@ -28,7 +28,7 @@ const FENCE = 'ts config-catalog'
  * omission is loud, not silent. */
 const GLOBAL_TYPES = new Set([
   'Array', 'ReadonlyArray', 'Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit',
-  'Promise', 'Map', 'Set', 'Date', 'Error', 'RegExp', 'Exclude', 'Extract', 'NonNullable',
+  'Promise', 'Map', 'ReadonlyMap', 'Set', 'Date', 'Error', 'RegExp', 'Exclude', 'Extract', 'NonNullable',
   'ReturnType', 'Parameters', 'AbortSignal', 'URL', 'Buffer', 'NodeJS', 'Iterable', 'AsyncIterable',
 ])
 
@@ -424,9 +424,33 @@ function walkSchemaExpr(
   expr: ts.Expression,
   where: string,
   violations: string[],
+  cache: Map<string, FileCtx>,
 ): { keys: string[]; composes: string[] } {
   const keys: string[] = []
   const composes: string[] = []
+  const resolving = new Set<string>()
+  const resolveSchema = (value: ts.Expression): ts.Expression => {
+    const expression = unwrapExpr(value)
+    if (!ts.isIdentifier(expression)) return expression
+    const identity = `${ctx.abs}:${expression.text}`
+    if (resolving.has(identity)) return expression
+    resolving.add(identity)
+    const imported = ctx.imports.get(expression.text)
+    if (imported?.specifier.startsWith('.') && imported.specifier.endsWith('.ts')) {
+      const abs = resolve(dirname(ctx.abs), imported.specifier)
+      ctx = loadFile(abs, relative(root, abs).replaceAll('\\', '/'), cache)
+      return resolveSchema(ts.factory.createIdentifier(imported.imported))
+    }
+    for (const statement of ctx.sf.statements) {
+      if (!ts.isVariableStatement(statement)
+        || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === expression.text
+          && declaration.initializer) return resolveSchema(declaration.initializer)
+      }
+    }
+    return expression
+  }
   // Nested paths under one object property's VALUE expression: recurse through
   // chained refinements toward the base call, descending into object/array.
   const collectValuePaths = (value: ts.Expression, base: string): void => {
@@ -495,7 +519,7 @@ function walkSchemaExpr(
     if (ts.isCallExpression(base)) { visit(base); return }
     violations.push(`${where}: schema call '${method}' is not object/intersect and hangs off no walkable base call.`)
   }
-  visit(expr)
+  visit(resolveSchema(expr))
   return { keys, composes }
 }
 
@@ -719,7 +743,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // Statically walk the runtime schema (when one exists) for the subset check.
     const schemaExpr = findSchemaExpr(ctx, pluginClass)
     if (schemaExpr) {
-      const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
+      const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations, cache)
       entry.schemaKeys = keys
       entry.schemaComposes = composes
     } else {

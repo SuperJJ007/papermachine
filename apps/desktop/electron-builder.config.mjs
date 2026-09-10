@@ -1,3 +1,4 @@
+import product from './src/product-version.json' with { type: 'json' }
 import {
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
@@ -48,7 +49,7 @@ export function createElectronBuilderConfig(
   return {
     appId,
     productName: 'PaperMachine',
-    artifactName: 'papermachine-${version}-${os}-${arch}.${ext}',
+    artifactName: `papermachine-${product.version}-\${os}-\${arch}.\${ext}`,
     directories: { output: buildPaths.artifacts },
     asar: true,
     files: [
@@ -60,6 +61,7 @@ export function createElectronBuilderConfig(
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
       { from: buildPaths.seed, to: 'seed' },
+      { from: 'resources', to: 'product' },
     ],
     mac: {
       category: 'public.app-category.developer-tools',

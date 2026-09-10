@@ -7,9 +7,8 @@
 //
 // Selector convention: CSS Modules hash as [hash]_[local], so class-substring
 // selectors are unreliable — anchor on data-* attributes (data-variant /
-// data-sample) or visible text. The one [class*=] use below
-// (frame/handle) rides local names that survive hashing as suffixes; prefer
-// data-* for anything new.
+// data-sample) or visible text. The app frame directly owns the rightbar
+// column; the drag handles identify their owning side.
 //
 // Flow order matters: chat rounds first (the bash round reuses the first
 // send's session), geometry and theme after, reload recovery last. Tests run
@@ -268,13 +267,13 @@ async function screen(page: Page, name: string): Promise<void> {
 
 /** First column track (px string) of the frame grid. */
 async function firstTrack(page: Page): Promise<string> {
-  return (await page.locator('[class*="frame"]').evaluate(
+  return (await page.locator('div:has(> [data-rightbar-col])').evaluate(
     el => getComputedStyle(el).gridTemplateColumns)).split(' ')[0]!
 }
 
 /** Last column track (details) as a number of pixels. */
 async function detailsTrack(page: Page): Promise<number> {
-  const cols = await page.locator('[class*="frame"]').evaluate(
+  const cols = await page.locator('div:has(> [data-rightbar-col])').evaluate(
     el => getComputedStyle(el).gridTemplateColumns)
   return Number(cols.split(' ').pop()!.replace('px', ''))
 }
@@ -714,6 +713,15 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     page = await newEnglishPage(browser)
     page.on('pageerror', e => pageErrors.push(String(e)))
     await page.goto(baseUrl, { waitUntil: 'load' })
+    // A fresh real Host has no welcome acknowledgement, even with a model key.
+    const welcome = page.getByRole('dialog', { name: 'Internal Testing Notice' })
+    await welcome.waitFor({ timeout: 15_000 })
+    await welcome.getByRole('button', { name: 'Continue', exact: true }).click()
+    await welcome.waitFor({ state: 'detached', timeout: 15_000 })
+    await page.waitForFunction(() => {
+      const root = document.querySelector<HTMLElement>('#root')
+      return root !== null && !root.inert
+    }, undefined, { timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -729,9 +737,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
 
   it('cold start: loading page settles into the three-column frame', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-cold-start'))
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.waitForSelector('div:has(> [data-rightbar-col])', { timeout: 30_000 })
     expect(await page.locator('text=Failed to load plugins').count()).toBe(0)
-    const template = await page.locator('[class*="frame"]').evaluate(el => getComputedStyle(el).gridTemplateColumns)
+    const template = await page.locator('div:has(> [data-rightbar-col])').evaluate(el => getComputedStyle(el).gridTemplateColumns)
     expect(template.split(' ').length).toBe(3)
     await screen(page, '01-cold-start')
   })
@@ -739,8 +747,8 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
   it('empty-state first send completes a real model round', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-first-round'))
     // This scenario spawns its own server against a fresh $DSH_HOME with the
-    // DeepSeek credential inherited from the environment, so no onboarding
-    // step mounts and the page is immediately interactive.
+    // DeepSeek credential inherited from the environment. Setup acknowledges
+    // the welcome notice before this flow connects its first workspace.
     // Fresh world: connect a Workspace so the composer starts live.
     await connectFreshWorkspace(page, sessionsDir)
     const input = page.locator('[data-composer-input]').first()
@@ -823,7 +831,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
   it('sidebar drag widens the column and resets across reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-drag'))
     const before = await firstTrack(page)
-    const handle = page.locator('[class*="handle"]').first()
+    const handle = page.locator('div:has(> [data-rightbar-col]) > [data-side="sidebar"]')
     const box = await handle.boundingBox()
     expect(box).not.toBeNull()
     await page.mouse.move(box!.x + box!.width / 2, box!.y + 300)
@@ -834,7 +842,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     expect(after).not.toBe(before)
     await screen(page, '10-sidebar-dragged')
     await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.waitForSelector('div:has(> [data-rightbar-col])', { timeout: 30_000 })
     expect(await firstTrack(page)).toBe(before)
   })
 
@@ -858,7 +866,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
   it('reload recovery: history replays after a fresh boot', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-reload'))
     await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.waitForSelector('div:has(> [data-rightbar-col])', { timeout: 30_000 })
     await page.locator('p').filter({ hasText: ROUND_DONE_MARKER }).waitFor({ timeout: 30_000 })
     await screen(page, '12-reload-recovery')
   })

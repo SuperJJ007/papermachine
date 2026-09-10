@@ -54,7 +54,11 @@ describe('extractBuiltInAttachments', () => {
   it('ignores a non-block-end assistant/attempt', () => {
     const refs = extractBuiltInAttachments({
       type: 'assistant/attempt',
-      data: { chunk: { type: 'block-start', block: image('sha256:g') } },
+      data: { stream: [
+        { type: 'start', time: 0 },
+        { type: 'chunk', time: 1, chunk: { type: 'block-start', block: image('sha256:g') } },
+        { type: 'chunk', time: 2 },
+      ] },
     })
     expect(refs).toEqual([])
   })

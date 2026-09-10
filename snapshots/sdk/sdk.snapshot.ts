@@ -60,6 +60,7 @@ import {
   type RunResult,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
+import { installProfilePackages } from '@deepseek-ai/dsh-loader-smoke'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -100,6 +101,8 @@ function dirOf(url: string): string {
 }
 
 interface SdkAssertions {
+  /** Extra installed-package identities required only by this scenario overlay. */
+  profilePackages?: Readonly<Record<string, string>>
   /** Additional profile patches applied after the shared composition. */
   patches?: readonly string[]
   /** Final response required from a completed turn before updating goldens. */
@@ -133,6 +136,9 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     environment: { DSH_SNAPSHOT_HUMAN_STEER: '1' },
   },
   'subagent-dsh-sdk-diagnostic': {
+    profilePackages: {
+      '@deepseek-ai/dsh-subagent-dsh-sdk': fileURLToPath(new URL('../../packages/subagent/subagent-dsh-sdk', import.meta.url)),
+    },
     environment: { DSH_TEST_CHILD_PATCH: dshSdkDiagnosticChildPatch },
   },
   'persistent-tools': {
@@ -146,6 +152,9 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     },
   },
   'subagent-dsh-sdk-dynamic-route': {
+    profilePackages: {
+      '@deepseek-ai/dsh-subagent-dsh-sdk': fileURLToPath(new URL('../../packages/subagent/subagent-dsh-sdk', import.meta.url)),
+    },
     environment: { DSH_TEST_PARENT_PROVIDER: 'deepseek-official' },
     dshSdkChild: {
       config: dshSdkChildConfig,
@@ -529,6 +538,13 @@ async function runScenario(scenario: CorpusScenario): Promise<{
 }> {
   const cwd = await mkdtemp(join(tmpdir(), `sdk-snapshot-${scenario.name}-`))
   const dshHome = join(cwd, '.dsh')
+  const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
+  await installProfilePackages(cwd, dshHome, {
+    ...recording ? {} : {
+      '@deepseek-ai/dsh-llm-replay': fileURLToPath(new URL('../../packages/test-support/llm-replay', import.meta.url)),
+    },
+    ...assertions.profilePackages,
+  })
   const sessionsRoot = join(dshHome, 'sessions')
   const replayFixtures = recording ? [] : await hydrateReplayFixtures(scenario, cwd)
   const fixtureContents = await Promise.all((await fixtureFiles(scenario)).map(file => readFile(file, 'utf8')))
@@ -537,7 +553,6 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   const route = modelFromSession(primaryFixture)
   const patchRoot = join(cwd, '.snapshot-patches')
   await mkdir(patchRoot, { recursive: true })
-  const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
   const patches = [...authoredPatches(scenario, !recording), ...assertions.patches ?? []]
     .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index))
   let childSessionsRoot: string | undefined

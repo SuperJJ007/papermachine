@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -76,6 +76,41 @@ afterEach(() => {
 })
 
 describe('desktop host process', () => {
+  it.runIf(process.platform !== 'win32')('stops its watcher after Host shutdown without signalling another Host group', async () => {
+    const project = projectWithHost(`
+process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'local' })
+function onRequestFrame() {}
+`)
+    const watcherPid = join(project, 'watcher-pid')
+    const watcher = join(project, 'watcher.mjs')
+    writeFileSync(watcher, `
+import { writeFileSync } from 'node:fs'
+writeFileSync(${JSON.stringify(watcherPid)}, String(process.pid))
+setInterval(() => {}, 1000)
+`)
+    const otherProject = projectWithHost(`
+process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'other' })
+function onRequestFrame(frame) { if (frame.type === 1) { responseStart(frame.streamId); responseData(frame.streamId, 'alive'); responseEnd(frame.streamId) } }
+`)
+    const other = new DesktopHostProcess(process.execPath, otherProject, otherProject)
+    const host = new DesktopHostProcess(process.execPath, project, project, undefined, {
+      log: { path: join(project, 'logs/host.log'), maxBytes: 1024, maxRotatedFiles: 2 },
+      watchdogEntry: watcher,
+      onExit: () => {},
+    })
+    try {
+      await other.start()
+      await host.start()
+      await vi.waitFor(() => { expect(existsSync(watcherPid)).toBe(true) })
+      const pid = Number(readFileSync(watcherPid, 'utf8'))
+      await host.stop()
+      expect(() => process.kill(pid, 0)).toThrow()
+      expect(await (await other.fetch(new Request('dsh-app://app/alive'))).text()).toBe('alive')
+    } finally {
+      await Promise.all([host.stop(), other.stop()])
+    }
+  })
+
   it('uses the selected PaperMachine home and local runtime despite ambient CLI settings', async () => {
     const project = projectWithHost(`
 process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'local' })

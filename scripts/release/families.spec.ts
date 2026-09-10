@@ -159,6 +159,8 @@ describe('release families', () => {
 
     expect(() => { dsh.verifyBuildArtifacts(official) }).not.toThrow()
     expect(() => { dsh.verifyBuildArtifacts(defaultBuild) }).toThrow(/DSH_CLIENT_TITLE/)
+    const productBuild = buildFixture({ ...officialEnvironment, DSH_CLIENT_BUILD_PROFILE: 'papermachine', DSH_CLIENT_TITLE: 'PaperMachine' })
+    expect(() => { dsh.verifyBuildArtifacts(productBuild) }).toThrow(/DSH_CLIENT_BUILD_PROFILE/)
     expect(() => { dsh.verifyBuildArtifacts(missing) }).toThrow(/record.*missing/)
     expect(() => { vendor.verifyBuildArtifacts(missing) }).not.toThrow()
 

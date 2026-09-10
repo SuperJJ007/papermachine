@@ -172,6 +172,23 @@ describe('the preset list', () => {
     expect(duplicate.getAttribute('data-tip')).toBe(en.duplicateUnavailable)
   })
 
+  it('keeps a non-copyable preset selectable and viewable while refusing duplication', () => {
+    const actions = renderSection({
+      rows: [{ copyable: false, id: 'standard', trust: 'system', isDefault: false }],
+    })
+    const row = rowFor('standard')
+    const duplicate = within(row).getByRole('button', { name: `${en.duplicate}: ${en.presetStandardName}` })
+    expect(duplicate).toHaveProperty('disabled', true)
+    expect(duplicate.getAttribute('data-tip')).toBe(en.notCopyable)
+    fireEvent.click(duplicate)
+    expect(actions.beginCopy).not.toHaveBeenCalled()
+    fireEvent.click(within(row).getByRole('button', { name: `${en.setDefault}: ${en.presetStandardName}` }))
+    expect(actions.makeDefault).toHaveBeenCalledWith('standard')
+    expect(within(row).queryByRole('alert')).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
+    expect(actions.view).toHaveBeenCalledWith('standard')
+  })
+
   it('marks a broken custom preset: unselectable, uncopyable, still deletable', () => {
     const actions = renderSection({
       rows: [

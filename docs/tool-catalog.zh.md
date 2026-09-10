@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `install_science_packages`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime` | `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/artifact-saved` | - | - |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a UI/provider answers the question` | - | ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类答案。 |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`、`ctx.codeRuntime (execution time)`、`ctx.systemPrompt` | `tool/call`、`one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call`、`tool/result` | - | 在 `mode: ptc`／`mode: both` 下，它由工具注册表所有，作为可过滤能力层之外的保留传输机制（参见 PTC mode Agent Note）。在 `ptc` 下，它是注册表对协议格式（wire format）的唯一贡献；其他可见能力在使用已加载运行时语言生成的 SDK 章节中声明。程序通过 binding 调用这些能力，调用按照原生并发约定调度：启动顺序和策略遵循提交顺序，并发安全的函数体最多重叠执行 `maxParallelSubCalls` 个。调用会重新进入完整且受守卫保护的工具流水线，并将每个嵌套执行关联到此外层结果。 |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`、`ctx.systemPrompt`、`ctx.userQuestions (execution time, opportunistic)` | `tool/call`、`plan/mode inactive on an approved review`、`tool/result` | - | 规划未激活时，exit_plan_mode 仍保留在面向模型的 schema 中，这样状态转换不会在规划策略变更之外额外造成工具目录变动。其执行路径会拒绝规划模式之外的调用；在规划模式下，它通过用户交互 seam 提交计划（批准／根据反馈继续规划），批准后会在步骤边界记录规划模式已停用。 |
@@ -45,6 +46,243 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+### `annotate_artifact`
+
+为代码已经生成的产物添加易读标题和可选说明（参见运行结果或 get_science_state 中的产物列表）。标注后的产物会为读者突出显示；应选取最能说明结果的文件，而非每个中间输出。如果用户指定了记录中不存在的产物，仍使用该精确名称调用工具并转述诊断，不要为找不到的文件创建替代品。返回文本回执，不返回文件字节。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "logical_name": {
+      "type": "string",
+      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Exact existing version of logical_name to curate. Defaults to its latest version."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable artifact title."
+    },
+    "caption": {
+      "type": "string",
+      "description": "Optional human-readable caption."
+    }
+  },
+  "required": [
+    "logical_name",
+    "title"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `get_science_state`
+
+返回当前 Science 会话状态：模式、脱敏后的绑定环境、各语言内核状态（运行、退出或中断，含 epoch、结束原因和启动时间），以及近期运行、产物版本和直接编辑历史及省略数量。不接受参数。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `install_science_packages`
+
+通过 conda-forge 将一个或多个软件包安装到此会话绑定的 Python 或 R 环境中，使其在内核重启后仍可用；内核中的 `pip install`/`install.packages()` 则会在重启后丢失。软件包规格使用 conda 语法，例如 "numpy" 或 "numpy=1.26"；R 软件包使用预编译的 conda-forge 二进制文件，无需本地编译工具链。成功后，受影响语言的当前内核将在下一次 run_python/run_r 调用时重启（环境重新绑定，运行结果会说明该事件），清空内存内容；失败不改变持久化内容。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "description": "Interpreter whose environment receives the install.",
+      "enum": [
+        "python",
+        "r"
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "description": "One or more conda-forge package specs, e.g. \"numpy\" or \"numpy=1.26\".",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "language",
+    "packages"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `run_python`
+
+在此会话的持久化 Python 内核中执行源码；变量、导入和定义在调用间保留，直到内核重启。当前目录是不会被捕获的私有临时目录；输出应写入 SCIENCE_ARTIFACT_DIR，工作区文件通过 SCIENCE_WORKSPACE_DIR 或绝对路径访问。使用 `artifact_inputs` 将精确产物版本放入 SCIENCE_INPUT_DIR；使用 `edit_of` 为每个被编辑的输出路径指定精确父版本。空闲超时、环境绑定到新修订、升级中断、崩溃或会话结束都会导致内核重启并清空内存，下一次运行结果会说明原因。运行中的 `pip install` 只影响当前内核，重启后丢失；使用 install_science_packages 将软件包持久化到环境中。异常是需要检查 stdout/stderr 的运行结果，而非工具失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `run_r`
+
+在此会话的持久化 R 内核中执行源码；变量和已加载软件包在调用间保留，直到内核重启。当前目录是不会被捕获的私有临时目录；输出应写入 SCIENCE_ARTIFACT_DIR，工作区文件通过 SCIENCE_WORKSPACE_DIR 或绝对路径访问。使用 `artifact_inputs` 将精确产物版本放入 SCIENCE_INPUT_DIR；使用 `edit_of` 为每个被编辑的输出路径指定精确父版本。空闲超时、环境绑定到新修订、升级中断、崩溃或会话结束都会导致内核重启并清空内存，下一次运行结果会说明原因。运行中的 `install.packages()` 只影响当前内核，重启后丢失；使用 install_science_packages 将软件包持久化到环境中。错误条件是需要检查 stdout/stderr 的运行结果，而非工具失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+来源：[`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 

@@ -116,3 +116,5 @@ export {
   type WorkspaceSymlinkSnapshot,
   type WorkspaceTextFileSnapshot,
 } from './workspace.ts'
+
+export { normalizeScienceSnapshot } from './science.ts'

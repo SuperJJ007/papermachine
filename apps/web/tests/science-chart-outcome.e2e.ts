@@ -39,9 +39,9 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const ARTIFACTS_EXPECTED = fileURLToPath(
-  new URL('./snapshots/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
+  new URL('./expected/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
 )
-const INPUT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifacts/reference-input.expected.md', import.meta.url))
+const INPUT_EXPECTED = fileURLToPath(new URL('./expected/science-artifacts/reference-input.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-chart-outcome-web-e2e'
 const SEED_TITLE = 'Science chart replay'
@@ -632,7 +632,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await details.getByText('Series · α No exposure', { exact: true }).count()).toBe(1)
     expect(await details.getByText('#006ba2', { exact: true }).count()).toBe(2)
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-artifacts/reference-elements.expected.md', import.meta.url)),
+      fileURLToPath(new URL('./expected/science-artifacts/reference-elements.expected.md', import.meta.url)),
       await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
     )
     await saveFailureShot(page, 'science-reference-elements-verified')
@@ -656,7 +656,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
         version: 1, ops: [{ op: 'set_title', axes: 0, text: 'Preview title' }],
       })
       await compareOrRefreshGolden(
-        fileURLToPath(new URL('./snapshots/science-artifacts/title-preview.expected.md', import.meta.url)),
+        fileURLToPath(new URL('./expected/science-artifacts/title-preview.expected.md', import.meta.url)),
         await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
       )
     } finally {

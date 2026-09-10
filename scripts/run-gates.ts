@@ -643,6 +643,14 @@ function coverageGates(): Gate[] {
       label: 'test:coverage-exempt-heavy',
       needs: ['native-system'],
     }),
+    // Receiver suites use node:test and are invisible to the Vitest gates.
+    {
+      id: 'telemetry-receivers-test',
+      label: 'telemetry receivers test',
+      displayCommand: 'node --test apps/telemetry-receivers/tests/*.test.mjs',
+      command: process.execPath,
+      args: ['--test', 'apps/telemetry-receivers/tests/*.test.mjs'],
+    },
   ]
 }
 
@@ -757,7 +765,7 @@ function docSyncLeafGates(options: {
     pnpmScript('skill-invocation-metadata', 'verify-skill-invocation-metadata', { label: 'skill invocation metadata', quick: true }),
     pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt', quick: true }),
     pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets', quick: true }),
-    pnpmExec('doc-standard-tests', ['vitest', 'run', 'scripts/doc-standard.spec.ts'], {
+    pnpmExec('doc-standard-tests', ['vitest', 'run', 'scripts/doc-standard.spec.ts', 'scripts/gen-config-catalog.spec.ts'], {
       label: 'documentation standard tests',
       quick: true,
     }),

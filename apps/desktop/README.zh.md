@@ -31,7 +31,7 @@ Electron 根据应用 locale 选择类型化的中英文字典，并以英文作
 
 ### Seed 安装
 
-安装包内的 seed 是安装工具包，不是可以直接运行的 `node_modules` 目录。打包过程会生成锁文件，在禁用生命周期脚本的情况下在线物化生产依赖图，删除 `node_modules` 以及所有临时 pnpm cache、config 和 state 目录，然后只使用最终 store 完成一次完整离线安装，并验证私有 Desktop Host 的入口与 overlay 均存在。macOS 构建随后从 pnpm 内容寻址 store staging 每个 Mach-O 对象，最多并发四个 Developer ID 签名进程，并且只在所有签名成功后才更新受影响的 SHA-512 索引记录。再一次离线安装会在分片前证明重写后的 store；准备过程随后解包最终归档，并验证每个内嵌签名。签名 seed 保留发布身份、本地第一方 tarball 及其描述文件、项目元数据、锁文件、完整性清单，以及在用户机器上重复该安装所需的 pnpm store 内容。
+安装包内的 seed 是安装工具包，不是可以直接运行的 `node_modules` 目录。打包过程会生成锁文件，在禁用生命周期脚本的情况下在线物化生产依赖图，删除 `node_modules` 以及所有临时 pnpm cache、config 和 state 目录，然后只使用最终 store 完成一次完整离线安装，并验证私有 Desktop Host 的入口与 overlay 均存在。每次离线安装还必须使用内置 Node.js 在隔离临时主目录中启动完整 Host 与客户端插件组合，核对发布版本并等待退出；即使 pnpm 将依赖视为可选项，缺少运行时依赖也会使制备失败。macOS 构建随后从 pnpm 内容寻址 store staging 每个 Mach-O 对象，最多并发四个 Developer ID 签名进程，并且只在所有签名成功后才更新受影响的 SHA-512 索引记录。再一次离线安装会在分片前证明重写后的 store；准备过程随后解包最终归档，并验证每个内嵌签名。签名 seed 保留发布身份、本地第一方 tarball 及其描述文件、项目元数据、锁文件、完整性清单，以及在用户机器上重复该安装所需的 pnpm store 内容。
 
 | Seed 内容 | 可写目标或用途 |
 |---|---|
@@ -43,7 +43,7 @@ Electron 根据应用 locale 选择类型化的中英文字典，并以英文作
 启动过程把 seed 安装或校准为一个串行事务：
 
 1. 恢复中断的激活事务日志，验证完整 seed 清单与本地包集，并要求 seed 版本等于 Electron 应用版本。
-2. 如果活跃 profile 已包含该发布及匹配的 dsh 与 Desktop Host 版本，则验证其中的本地包集并直接复用，不重新安装。
+2. 如果活跃 profile 已包含该发布及匹配的 dsh 与 Desktop Host 版本，则确认其中完整本地包集与 seed 一致且每个已安装包版本匹配后才直接复用。
 3. 否则验证每个归档条目，把全部 store 分片解包到 Desktop 拥有的临时 staging 目录，将包文件与 SQLite 包索引记录合并进私有 store，再创建 staging profile，并通过内置 Node.js 与 pnpm 执行 `pnpm install --offline --frozen-lockfile --trust-lockfile`。Seed 记录替换匹配的索引键，插件专属记录继续保留。
 4. Electron 升级时，从旧活跃 profile 读取每个插件的名称和精确版本，再通过现有 Desktop pnpm 状态以 `--offline` 把这些版本加入 staging。首次安装不执行插件恢复。
 5. 停止活跃后端，启动并停止完整的 staging 后端执行健康检查，再在激活前重新启动活跃后端。这种串行方式避免两个桌面后端共享 `$DSH_HOME`；安装错误或插件不兼容会删除 staging，并保持活跃 profile 不变。
@@ -53,9 +53,23 @@ GUI 插件修改会在把 registry 包安装到共享 Desktop pnpm store 后，�
 
 进程生命周期 Electron 锁是桌面端的主要 owner。事务锁用于纵深防御：准备本地状态时记录 Electron，在 pnpm worker 仍可能写入时记录该 worker，worker 退出后再把 owner 交还 Electron。后续进程不会把仍然存活的孤儿 worker 误判为陈旧事务。
 
+## 科学环境与恢复
+
+产品版本由 [product.ts](src/product.ts) 的 `PAPER_MACHINE_VERSION` 定义；内部 Electron 包、dsh 包与 seed 保持 harness 发布版本。关于页、首次设置页和安装包文件名使用产品版本，应用仍作为一个经过验证的壳、Host 与客户端组合运行。
+
+PaperMachine 在创建 Electron 浏览器数据、取得单实例锁和解析桌面安装目录前解析规范化数据主目录。路径不可包含 ASCII 空格，因为 R 的临时目录不支持空格。壳允许选择新位置或重置位置指针；确认对话框明确说明现有数据保留原处，新位置需重新安装运行时和环境。应用不移动 Session 文件。共享主目录选择与官方 DSH 隔离遵循 [home-paths 解析器](../../packages/util/home-paths/README.zh.md)。
+
+首次运行时，隔离的设置页在 seed 解包和软件包安装前显示。主进程验证按 locale 默认选择的来源及可选自定义软件包清单。用户确认安装后，应用准备离线运行时，供应并验证 Conda 环境，写入持久绑定，再启动工作区。取消会等待安装器进程树退出；安装失败后设置页仍可重试。更改环境会在供应修改已有 prefix 前停止 Host。软件包事务、环境变更、位置变更和退出不能重叠。
+
+主进程在每个 staging 或活跃 profile 的 Host 启动前重写机器专属 Science 配置，产品组合保留在 Science bundle 中。插件 staging 复制 `cordis.patch.yml`；发布健康检查与激活会重新生成 prefix、安装来源、超时和内置 skills 路径。协调过程比较完整本地软件包描述文件并检查每个已安装包版本，因此缺失客户端包或同版本包集变化会触发离线修复。Session 兼容性由持久化读取器负责，桌面修复不重写 Session 文件。
+
+设置页和启动恢复页作为打包资源通过 `dsh-app://shell/` 提供，各使用独立 sandboxed preload。它们的 IPC 仅接受所属窗口主 frame 的精确页面，工作区只获得桌面协议标记。启动失败可更改安装位置、重启或退出；Host 意外退出会返回设置页。Electron 浏览器数据保存在所选主目录，因此稳定的 `dsh-app://app` origin 可跨启动保留客户端状态。
+
+在 POSIX 系统上，内置 Node Host 独占进程组。独立的内置 Node watchdog 在 Electron 消失后回收该进程组；正常退出等待 Host 后代与 watchdog 结束。Host 字节管道流独占其文件描述符；关闭时先排空响应，再等待流的 close 事件。watchdog 不删除软件包事务锁，锁中记录的 pnpm worker 在退出前仍是有效所有者。Host stderr 在持久化前脱敏，按 `resources/host.json` 限制大小和轮转，窗口显示前读取主题偏好。
+
 ## 开发
 
-`dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不下载安装包内的 Node.js，也不从 npm 解析 dsh：
+`dev:desktop` 选择 `papermachine` 客户端构建配置并构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不下载安装包内的 Node.js，也不从 npm 解析 dsh：
 
 ```sh
 pnpm run dev:desktop
@@ -63,11 +77,13 @@ pnpm run dev:desktop
 
 开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/home/desktop/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `PAPERMACHINE_HOME` 会替换开发主目录及其浏览器数据目录；开发启动忽略继承的 `DSH_HOME`。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
 
-显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
+运行 `pnpm run build --profile papermachine` 和 `pnpm run build:desktop` 后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
 ```sh
 pnpm run start:desktop
 ```
+
+两种启动模式都要求完整构建记录：PaperMachine 配置、`PaperMachine` 文档标题、当前提交与内部包版本，以及匹配的客户端产物摘要。`--skip-build` 在资源准备或 Electron 启动前拒绝官方、缺失或后续被修改的客户端产物。该配置启用 PaperMachine 侧栏和首页品牌组件；构建元数据只出现在默认品牌回退内容中。若共享客户端输出被其他配置重建，Desktop 再次启动前必须重建 PaperMachine 产物。
 
 Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop Host 包，并禁用桌面包修改；只有该模式明确链接的一次性 profile 可以从自身目录外解析 bundle。需要验证内置 Node.js、内置 pnpm、发布 seed、插件安装、staging 和 rollback 时，应运行未封装安装器的应用目录。
 
@@ -158,17 +174,34 @@ pnpm run package:desktop:mac:arm64:dir
 pnpm run prepare:desktop
 ```
 
-这条诊断命令是另一种停止位置，并非两条命令构建流程的前半段。之后执行 `package:desktop*` 时仍会重新完成正式构建与准备，避免使用陈旧的 dsh 包、运行时文件或 seed 内容。
+这条诊断命令是另一种停止位置，并非两条命令构建流程的前半段。之后执行 `package:desktop*` 时仍会重新完成 PaperMachine 构建与准备，避免使用陈旧的 dsh 包、运行时文件或 seed 内容。
 
-每条打包命令都会先执行仓库的正式构建，打包 dsh 与 vendored 包族，在本地打包私有 Desktop Host 包，并打包 Landlock 入口，然后再准备发布资源。`prepare:packages` 选择分别以 `@deepseek-ai/dsh` 和 `@deepseek-ai/dsh-desktop-host` 为根的第一方生产依赖闭包之并集，验证私有 Host tarball 同时包含 `lib/index.js` 与 `config/desktop.cordis.patch.yml`，把选中的 tarball 复制到 seed 输入，并记录其大小与 SHA-512 完整性。Host 包不会发布到 npm；它的 `files` manifest 只包含该运行入口与 overlay。公共包 tarball 仍是由各包发布 manifest 控制的正式 `pnpm pack` 输出，因此 Desktop 不增加第二套过滤规则，会保留 `lib/types` 等已发布声明，也不会独立删除或增加 source map。Registry 包同样在 pnpm 内容寻址 store 中保留其发布的包字节。dsh 发布版本更新会同步更新两个私有 Desktop manifest、仓库根与可发布 workspace；打包还会要求根 dsh 包、Desktop Host 包与 Electron 包使用同一版本。构建 Desktop 应用前不要求 dsh 或私有 Host 已发布到 npm。`prepare:runtime` 从 Node.js 官方发行服务下载 Node.js 24.17.0，在解压前验证其 SHA-256 条目，并在兼容的构建宿主上执行准备完成的目标二进制文件以验证其报告版本。它复制桌面包声明的 pnpm 版本，并把两个运行时版本记录进发布 seed。`prepare:seed` 运行该目标 Node.js 与内置 pnpm，因此按平台和 CPU 过滤的可选依赖会使 pnpm store 与 seed 成为目标专用内容。它生成本地核心包映射、禁用全局 virtual store、从 npm 物化外部生产依赖并禁用生命周期脚本、删除 `node_modules` 以及所有临时 pnpm cache、config 和 state，证明完整依赖图可以离线安装并包含私有 Host 的入口与 overlay，在适用时执行 macOS 重写，再通过一次离线安装证明重写后的 store，删除临时 pnpm 项目注册，然后把松散 store 替换为 16 个确定性的未压缩 tar 分片。它会解包这些最终分片，并在生成清单前验证每个内嵌 macOS 签名。后续 GUI 插件操作保留本地核心包映射，同时从固定的 Desktop npm registry 解析插件包及其外部依赖。`electron-builder` 把各目标的平台产物写到 `apps/desktop/.desktop-build/targets/<target>/artifacts`；后续版本会保留不同名称的不可变安装包与 blockmap，但会替换该目标的未打包应用、诊断文件、完成记录与频道元数据。
+每条打包命令都会先执行完整 `papermachine` 仓库构建并校验客户端产物记录，通过 Desktop 本地准备入口打包 dsh 包族，通过发布工具打包 vendored 包族，在本地打包私有 Desktop Host 包，并打包 Landlock 入口，然后再准备发布资源。`prepare:packages` 选择分别以 `@deepseek-ai/dsh` 和 `@deepseek-ai/dsh-desktop-host` 为根的第一方生产依赖闭包之并集，验证私有 Host tarball 同时包含 `lib/index.js` 与 `config/desktop.cordis.patch.yml`，把选中的 tarball 复制到 seed 输入，并记录其大小与 SHA-512 完整性。Host 包不会发布到 npm；它的 `files` manifest 只包含该运行入口与 overlay。包 tarball 仍是由各包发布 manifest 控制的 `pnpm pack` 输出，因此 Desktop 不增加第二套过滤规则，会保留 `lib/types` 等已发布声明，也不会独立删除或增加 source map。Desktop 本地准备入口验证产品构建记录，复用包族版本与 tarball 内容校验，但不写入 npm 发布顺序清单。官方 `release:pack --family dsh` 保持精确的 official 配置校验，并拒绝 PaperMachine 产物。Registry 包同样在 pnpm 内容寻址 store 中保留其发布的包字节。dsh 发布版本更新会同步更新两个私有 Desktop manifest、仓库根与可发布 workspace；打包还会要求根 dsh 包、Desktop Host 包与 Electron 包使用同一版本。构建 Desktop 应用前不要求 dsh 或私有 Host 已发布到 npm。`prepare:runtime` 从 Node.js 官方发行服务下载 Node.js 24.17.0，在解压前验证其 SHA-256 条目，并在兼容的构建宿主上执行准备完成的目标二进制文件以验证其报告版本。它复制桌面包声明的 pnpm 版本，并把两个运行时版本记录进发布 seed。`prepare:seed` 运行该目标 Node.js 与内置 pnpm，因此按平台和 CPU 过滤的可选依赖会使 pnpm store 与 seed 成为目标专用内容。它生成本地核心包映射、禁用全局 virtual store、从 npm 物化外部生产依赖并禁用生命周期脚本、删除 `node_modules` 以及所有临时 pnpm cache、config 和 state，证明完整依赖图可以离线安装并包含私有 Host 的入口与 overlay，在适用时执行 macOS 重写，再通过一次离线安装证明重写后的 store，删除临时 pnpm 项目注册，然后把松散 store 替换为 16 个确定性的未压缩 tar 分片。它会解包这些最终分片，并在生成清单前验证每个内嵌 macOS 签名。后续 GUI 插件操作保留本地核心包映射，同时从固定的 Desktop npm registry 解析插件包及其外部依赖。`electron-builder` 把各目标的平台产物写到 `apps/desktop/.desktop-build/targets/<target>/artifacts`；后续版本会保留不同名称的不可变安装包与 blockmap，但会替换该目标的未打包应用、诊断文件、完成记录与频道元数据。
 
 未压缩产物包含四块相互独立的体积：Electron、离线 seed store 分片与本地 dsh tarball、上游 Node.js 与 pnpm 运行时，以及很小的桌面壳应用。分片不压缩，使外层 DMG、ZIP 或 NSIS 压缩器与差分更新器可以处理稳定的数据区间。文件系统占用不等于安装包下载大小，因此必须分别测量。打包应用首次启动时还会先把 seed store 解包到 `$DSH_HOME/desktop/pnpm/store`，再安装可写 profile，因此发布验证必须同时测量应用与 Harness home 的磁盘占用。
 
 ## 更新
 
-打包应用会在主窗口打开十秒后检查目标专用的发布流；本地化的 **检查更新…** 菜单项会手动触发同一检查。发现可用版本时，应用打开一个原生确认弹窗。用户确认后，应用等待正在进行的检查完成，下载并验证已签名的 Desktop 发布、停止 dsh 子进程，并把安装与重启交给 electron-updater。下次启动会先校准版本绑定的 seed，再重新打开产品窗口。每次交付 seed 变更都必须使用新的发布版本：重新构建同一版本不会替换已经安装的 profile。
+打包应用会在主窗口打开十秒后检查目标专用的发布流；本地化的 **检查更新…** 菜单项会手动触发同一检查。发现可用版本时，应用打开一个原生确认弹窗。用户确认后，应用等待正在进行的检查完成，下载并验证已签名的 Desktop 发布、停止 dsh 子进程，并把安装与重启交给 electron-updater。下次启动会先校准版本绑定的 seed，再重新打开产品窗口。启动时即使内部发布版本未变化，也会比较 seed 包描述与已安装包版本；依赖集合变化或客户端包缺失会触发暂存修复。
 
 Electron-builder 始终为 `DSH_DESKTOP_AUTO_UPDATE_ENV` 选择的部署生成 generic-provider 频道元数据。NSIS 差分包与 macOS ZIP 目标让 electron-updater 可以复用未变化的数据块；供手动安装的 DMG 经过公证，但不生成 blockmap，因为它不是 macOS updater 的载荷。Seed 与桌面壳仍属于同一个签名 Desktop 发布。macOS 签名与公证凭据使用 electron-builder 的标准环境变量；Windows EV 签名使用上文所述的公开证书、已验证 SignTool、SafeNet 容器和 runner PIN。必填 Desktop 发布环境选择构建所验证的应用身份与平台签名身份。
+
+## 产品资源准备
+
+`src/product-version.json` 是 `PAPER_MACHINE_VERSION` 与 electron-builder 安装包名的共同来源：`papermachine-0.1.3-${os}-${arch}.${ext}`。更新元数据与 seed 校验保持内部包版本。`extraResources` 在 `product/` 下包含产品环境声明、内置技能、Host 与遥测配置，以及准备好的可执行文件。遥测配置已存在，但桌面主进程目前不发送遥测。
+
+开发启动器和目标打包入口都会先准备 micromamba。资源准备脚本根据 `resources/micromamba.json` 校验缓存字节，从其中既有的官方发布 URL 下载缺失或摘要不符的资源，并且只在 SHA-256 校验成功后发布文件。Windows 资源准备还会提取固定的应用本地 CRT；Windows 执行与安装包验收是独立检查。`resources/bin/` 中生成的可执行文件由 Git 忽略。
+
+仓库及 Desktop 构建完成后，在仓库根目录运行以下命令，无需触发安装或再次构建：
+
+```sh
+node --import tsx/esm apps/desktop/scripts/prepare-product-resources.ts
+PAPERMACHINE_HOME=/private/tmp/papermachine-desktop-acceptance DSH_TELEMETRY_DISABLED=1 node --import tsx/esm apps/desktop/scripts/dev.ts --skip-build
+```
+
+首跑验收请选择新的无空格主目录。启动器打开首次设置页；安装科学环境需要访问所选 Conda 包源。关闭后以同一主目录重开会保留浏览器存储。若要明确准备其他打包目标的可执行文件，可向资源准备脚本传入 `darwin-arm64`、`darwin-x64` 或 `win32-x64`。
+
+开发启动器使用工作区依赖链接生成项目，并跳过 `DesktopProjectManager.applyRelease()`。它可以验证首次设置、环境准备、Host 启动和 UI 行为，但不能证明 seed 解包、离线安装、暂存激活或已安装 profile 升级。macOS seed 准备入口要求 Developer ID 签名身份与 Team ID，使用 `--prepare-only` 打包时也不例外；目前没有受支持的免签名 macOS seed 准备模式。
 
 ## 底层开发覆盖项
 

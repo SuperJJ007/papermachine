@@ -1,0 +1,17 @@
+- region "Science process view":
+  - text: "Turns 2 · Steps 8 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 2"
+  - article:
+    - paragraph: Draw after the failed startup.
+    - group "Step strip":
+      - button "Read session state"
+      - button "Python run"
+      - button "Read file input.csv"
+      - button "Read file schema.json"
+      - button "Read file notes.md"
+      - button "Python run"
+      - button "R run"
+      - button "Annotate scatter_plot.png “Scatter plot”"
+    - button "Expand steps · Steps 8 · Runs 3 · 1 failed · {{duration}}": Steps 8 · Runs 3 · 1 failed · {{duration}}
+    - button "scatter_plot.png v1":
+      - img
+      - code: scatter_plot.png v1

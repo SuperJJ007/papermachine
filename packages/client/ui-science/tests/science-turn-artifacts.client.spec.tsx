@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Turn-end Science artifacts deduplicate by logical id and open exact final versions. */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -222,4 +222,19 @@ describe('ScienceTurnArtifacts turn-tail overflow', () => {
     // The title's count is the total produced this Turn, never the visible slice.
     expect(screen.getByText('本轮产出 7 个成果')).toBeTruthy()
   })
+})
+
+it('does not show a previous version thumbnail after the tray receives a newer version', async () => {
+  let resolve!: (url: string) => void
+  const pending = new Promise<string>((accept) => { resolve = accept })
+  const loadImage = vi.fn<ScienceImageLoader>().mockReturnValueOnce(pending).mockResolvedValueOnce('data:image/png;base64,new')
+  const store = testScienceSelectionStore()
+  const image = { ...v1, content: { ...v1.content, mediaType: 'image/png' } }
+  const input = { matched: { artifacts: [image] }, actions: store.actions, useStore: store.useStore,
+    loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1' } as unknown as ScienceTurnArtifactsProps
+  const view = render(<ScienceTurnArtifacts {...input} />)
+  view.rerender(<ScienceTurnArtifacts {...input} matched={{ artifacts: [{ ...image, version: 2, content: { ...image.content, versionId: 'new' } }] } as never} />)
+  await waitFor(() => { expect(view.container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,new') })
+  await act(async () => { resolve('data:image/png;base64,old'); await pending })
+  expect(view.container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,new')
 })

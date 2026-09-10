@@ -651,6 +651,38 @@ describe('SessionProjectionCache cold-read seeding', () => {
     })
   })
 
+  it('rebuilds prepared cells from the log when a cached state cannot produce a valid wire view', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+    roots.push(root)
+    await seedRecord(root, 'prepared-invalid-view', {
+      'cache-test/secondary-marks': { ver: 1, seq: SessionSeq(1), val: { marks: [] } },
+    })
+    const { ctx, cache } = await harness({ root })
+    // The stored state is structurally readable, but the current wire schema requires a mark.
+    // This reaches restoration beyond row parsing; the complete log satisfies the current schema.
+    ctx.sessionProjections.register({
+      ...secondaryMarksUnit,
+      wire: { ...secondaryMarksUnit.wire, viewSchema: z.object({ marks: z.array(z.string()).min(1) }) },
+    })
+    const header = headerOf(SessionId('prepared-invalid-view'))
+    const events = storedLog([['from-log']])
+    const session = Session.create(header.id, events, header)
+    const expected = {
+      asOfSeq: 2,
+      values: {
+        'cache-test/marks': { marks: ['from-log'] },
+        'cache-test/secondary-marks': { marks: ['from-log'] },
+      },
+    }
+    const rows = await storedRows(root, session.id)
+    expect(() => ctx.sessionProjections.hydrate(
+      Session.create(header.id, events, header), rows!, events, SessionLogOffset(0),
+    )).toThrow()
+    expect(cache.hydratePrepared(session, events)).toEqual(expected)
+    expect(ctx.sessionProjections.snapshot(session).values).toEqual(expected.values)
+    expect((await storedRows(root, session.id))?.['cache-test/secondary-marks']?.val).toEqual({ marks: [] })
+  })
+
   it('coldSnapshot traverses the full log but applies only the events after each cached watermark', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)

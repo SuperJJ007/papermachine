@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { pnpmInvocation } from '../pnpm-invocation.ts'
 import { releaseFamily, tarballName, type ReleaseFamily, type ReleaseMember } from './families.ts'
-import { isEntry, runConcurrent } from './process.ts'
+import { isEntry, runConcurrent, type RunOptions } from './process.ts'
 import { PUBLISH_ORDER_FILE, tarballFiles } from './tarball.ts'
 
 /** Where pack output lands when `--out` is omitted. */
@@ -23,11 +23,17 @@ const DEFAULT_OUTPUT = 'dist/npm'
  * @param family - the release family being packed.
  * @param member - the member to pack.
  * @param destination - absolute output directory.
+ * @param options - Working directory and scrubbed environment for the pack subprocess.
  * @returns The tarball filename.
  */
-async function packMember(family: ReleaseFamily, member: ReleaseMember, destination: string): Promise<string> {
-  const invocation = pnpmInvocation(['--dir', member.directory, 'pack', '--pack-destination', destination])
-  await runConcurrent(invocation.command, invocation.args)
+export async function packReleaseMember(
+  family: ReleaseFamily,
+  member: ReleaseMember,
+  destination: string,
+  options: RunOptions = {},
+): Promise<string> {
+  const invocation = pnpmInvocation(['--dir', member.directory, 'pack', '--pack-destination', destination], options.env)
+  await runConcurrent(invocation.command, invocation.args, options)
 
   const filename = tarballName(member)
   const tarball = join(destination, filename)
@@ -79,7 +85,7 @@ async function main(): Promise<void> {
       cursor += 1
       const member = members[index]
       if (member === undefined) break
-      order[index] = await packMember(family, member, destination)
+      order[index] = await packReleaseMember(family, member, destination)
     }
   }))
   writeFileSync(join(destination, PUBLISH_ORDER_FILE), `${order.join('\n')}\n`)

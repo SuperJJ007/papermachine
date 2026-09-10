@@ -15,19 +15,25 @@ import {
 } from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/process.expected.md', import.meta.url))
-const HISTORY_EXPECTED = fileURLToPath(new URL('./snapshots/science-trace-process/history.expected.md', import.meta.url))
+const EXPECTED = fileURLToPath(new URL('./expected/science-trace-process/process.expected.md', import.meta.url))
+const HISTORY_EXPECTED = fileURLToPath(new URL('./expected/science-trace-process/history.expected.md', import.meta.url))
+const FAILED_START_EXPECTED = fileURLToPath(new URL('./expected/science-trace-process/failed-start.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-process-web-e2e'
 const FINGERPRINT = 'e'.repeat(64)
 const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
 type Stored = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
-function processFixture(projectId: ProjectId, stored: Stored, historyTail = false): string {
+function processFixture(projectId: ProjectId, stored: Stored, historyTail = false, failedFirstTurn = false): string {
   const session = Session.create(SessionId(historyTail ? `${SEED_ID}-history` : SEED_ID))
   const origin = Date.now() - 120_000 - 500
   const eventTime = (seq: number): number => origin + seq * 1_000
-  session.append('turn/start', { turn: 1 })
+  const turn = failedFirstTurn ? 2 : 1
+  if (failedFirstTurn) {
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'Fixture startup failed before message admission' } } })
+  }
+  session.append('turn/start', { turn })
   session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'process-browser' } })
   session.append('science/environment-bound', { version: 1, environment: {
     revision: 1, profileId: ScienceEnvironmentProfileId('science'), configuredAt: eventTime(1), validatedAt: eventTime(2),
@@ -45,7 +51,7 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
   } })
   const kernel = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprint: FINGERPRINT }
   session.append('science/kernel-state', { version: 1, kernel: { ...kernel, state: 'started', at: eventTime(3) } })
-  const user = session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Draw a scatter plot.' }],
+  const user = session.append('user/message', createUserMessage({ content: [{ type: 'text', text: failedFirstTurn ? 'Draw after the failed startup.' : 'Draw a scatter plot.' }],
     source: { kind: 'user' } }), { surfaceOp: 'append' })
   session.append('session/title', { title: historyTail ? 'Science process history' : 'Science process', messageSeqs: [user.seq], source: { kind: 'fallback' } })
   const artifact = {
@@ -66,13 +72,13 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
   calls.forEach(([name, args], index) => {
     const step = index + 1
     const callId = ToolCallId(`process-call-${String(index === 5 ? 2 : index === 1 ? 1 : step + 10)}`)
-    session.append('step/start', { turn: 1, step })
+    session.append('step/start', { turn, step })
     const request = session.append('request/header', { header: { config: { provider: 'fixture', model: 'fixture' } }, reason: 'initial' })
-    session.append('assistant/message', { stream: [], turn: 1, step, message: createAssistantMessage({
+    session.append('assistant/message', { stream: [], turn, step, message: createAssistantMessage({
       content: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }],
       source: { provider: 'fixture', model: 'fixture' },
     }) }, { surfaceOp: 'append' })
-    const call = session.append('tool/call', { turn: 1, step, callId, name, arguments: JSON.stringify(args) })
+    const call = session.append('tool/call', { turn, step, callId, name, arguments: JSON.stringify(args) })
     const stdout = index === 1 ? '' : name === 'run_r' ? '[1] 0.84' : 'Saved scatter_plot.png'
     const stderr = index === 1 ? 'ValueError: fixture failure' : ''
     if (name === 'run_r') session.append('science/kernel-state', { version: 1, kernel: {
@@ -101,10 +107,10 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
       : name === 'get_science_state' ? '{"profile":"science","artifacts":[]}'
         : name === 'annotate_artifact' ? 'Annotated scatter_plot.png: Scatter plot'
           : ['x,y\n1,2\n2,4', '{"columns":["x","y"]}', '120 observations; remove missing pairs.'][index - 2]!
-    session.append('tool/result', { turn: 1, step, message: createToolResultMessage({
+    session.append('tool/result', { turn, step, message: createToolResultMessage({
       callId, content: [{ type: 'text', text: output }], isError: index === 1,
     }) }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    session.append('step/end', { turn: 1, step })
+    session.append('step/end', { turn, step })
   })
   for (const event of session.snapshotEvents().filter(event => event.type === 'science/kernel-state')) {
     const started = event.data.kernel
@@ -116,14 +122,14 @@ function processFixture(projectId: ProjectId, stored: Stored, historyTail = fals
   if (historyTail) {
     // More than one real history page separates the producing calls from the latest request.
     for (let step = 9; step < 64; step++) {
-      session.append('step/start', { turn: 1, step })
-      session.append('assistant/message', { stream: [], turn: 1, step, message: createAssistantMessage({
+      session.append('step/start', { turn, step })
+      session.append('assistant/message', { stream: [], turn, step, message: createAssistantMessage({
         content: [{ type: 'text', text: `Analysis note ${step}` }], source: { provider: 'fixture', model: 'fixture' },
       }) }, { surfaceOp: 'append' })
-      session.append('step/end', { turn: 1, step })
+      session.append('step/end', { turn, step })
     }
   }
-  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  session.append('turn/end', { turn, reason: { kind: 'completed' } })
   if (historyTail) {
     session.append('turn/start', { turn: 2 })
     session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Inspect the latest state.' }],
@@ -178,6 +184,11 @@ describe('web e2e: Science process view', () => {
     await scaffold.ctx.scienceArtifactStore.annotateVersion(projectId, historyVersion.versionId, { actor: 'capture', title: 'Scatter plot' })
     const historyStored: Stored = { artifact: stored.artifact, version: historyVersion }
     await seedSession(scaffold, processFixture(projectId, historyStored, true), `${SEED_ID}-history`, 'science')
+    const recoveryId = `${SEED_ID}-failed-start`
+    const recoveryVersion = await scaffold.ctx.scienceArtifactStore.appendVersion(projectId, stored.artifact.artifactId, {
+      data: PNG, mediaType: 'image/png', contentOrigin: 'run-auto', producerSessionId: SessionId(recoveryId),
+    })
+    await seedSession(scaffold, processFixture(projectId, { artifact: stored.artifact, version: recoveryVersion }, false, true), recoveryId, 'science')
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 960)
     tripwire = watchConsole(page)
@@ -362,4 +373,16 @@ describe('web e2e: Science process view', () => {
     expect(await current.innerText()).toContain('Runs 0')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
+  it('shows the recorded request on its turn after startup failed before message admission', async () => {
+    await openScienceSeed(page, 'Draw after the failed startup.')
+    await page.getByRole('tab', { name: 'Process', exact: true }).click()
+    const process = page.getByRole('region', { name: 'Science process view' })
+    const current = process.locator('article[data-anchor="turn:2"]')
+    await expect.poll(() => current.innerText()).toContain('Draw after the failed startup.')
+    expect(await current.innerText()).not.toContain('Request unavailable for this turn')
+    await compareOrRefreshGolden(FAILED_START_EXPECTED,
+      await captureStableAria(page, '[aria-label="Science process view"]', scaffold.workspaceCwd), MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
 })

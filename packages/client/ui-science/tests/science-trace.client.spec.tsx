@@ -186,6 +186,27 @@ const tools = [
 ] as const
 
 describe('Science process model', () => {
+  it('assigns requests by recorded turn sequences after failed turns and partial history', () => {
+    const user = (seq: number, text: string): Extract<ConversationNode, { kind: 'user' }> => ({
+      kind: 'user', seq, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text }],
+    })
+    const nodes: ConversationNode[] = [
+      user(5, 'Outside retained turns'), user(11, 'First request'), { ...user(12, 'Recorded edit'), source: { kind: 'science-edit' } },
+      { kind: 'steering', seq: 13, time: 1, messageId: 'steer' as never, source: { kind: 'user' },
+        content: [{ type: 'text', text: 'Steer this turn' }] },
+      user(25, 'Between closed turns'), user(31, 'Later request'),
+    ]
+    const science = projection({ trace: { turns: [
+      { turn: 2, startSeq: 10, startTime: 1, endSeq: 20, endTime: 1 },
+      { turn: 4, startSeq: 30, startTime: 1 },
+    ], calls: [] } })
+    const model = buildScienceTraceModel(nodes, science, new Map(), new Map())
+    expect(model.dialogues.map(({ turn, text }) => ({ turn, text }))).toEqual([
+      { turn: 2, text: 'First request' }, { turn: 2, text: 'Recorded edit' },
+      { turn: 2, text: 'Steer this turn' }, { turn: 4, text: 'Later request' },
+    ])
+  })
+
   it('uses projection trace coordinates when the loaded conversation is only a cold tail', () => {
     const early = { ...run('early', 1), turn: 1, step: 1 }
     const current = { ...run('current', 2), turn: 2, step: 1 }

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { PAPER_MACHINE_VERSION } from '../src/product.ts'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
   resolveDesktopAppId,
@@ -40,15 +41,15 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
-    expect(config.extraResources).toHaveLength(2)
-    expect(config.extraResources[0]?.to).toBe('runtime')
-    expect(config.extraResources[1]?.to).toBe('seed')
+    expect(PAPER_MACHINE_VERSION).toBe('0.1.3')
+    expect(config.extraResources.map(resource => resource.to)).toEqual(['runtime', 'seed', 'product'])
+    expect(config.extraResources[2]).toEqual({ from: 'resources', to: 'product' })
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
     expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/seed')
     expect(config).toMatchObject({
       appId: RELEASE_ENVIRONMENT.PAPERMACHINE_DESKTOP_APP_ID,
       productName: 'PaperMachine',
-      artifactName: 'papermachine-${version}-${os}-${arch}.${ext}',
+      artifactName: `papermachine-${PAPER_MACHINE_VERSION}-\${os}-\${arch}.\${ext}`,
       mac: {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,

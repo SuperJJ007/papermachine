@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-09-replant-upstream-patch-ledger.md
-2026-09-09-replant-upstream-patch-ledger.md: e5fb15d70819fa77bd407113540e3a2358a3cf81
-2026-09-09-replant-upstream-patch-ledger.zh.md: 3795b0e678cf488d19129d8ac2a1a706da9bf82d
+2026-09-09-replant-upstream-patch-ledger.md: 28740d0d1f6829c7c0d3ea9b146d3a23cbf80f98
+2026-09-09-replant-upstream-patch-ledger.zh.md: 0b982e5fdce3ffe81168c5c1209e59ea2f2fb300

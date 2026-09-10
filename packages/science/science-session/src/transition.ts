@@ -239,7 +239,7 @@ function applyRunFinished(state: ScienceFoldState, event: Extract<DecodedScience
  * only maintains the session-local facts a replaying reader can still prove
  * from the log alone. Every check this function no longer performs moved to
  * the store write transaction that commits before this event does (see
- * `.agents/notes/implemented/architecture/2026-09-02-science-artifact-event-slimming.md`
+ * [artifact provenance](../../science-artifact-store/README.md#artifact-version-and-side-table-records)
  * for the complete list and each check's new home).
  * @param state - fold accumulator to validate and update in place.
  * @param event - decoded `science/artifact-saved` event.

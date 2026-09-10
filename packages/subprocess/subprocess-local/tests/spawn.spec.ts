@@ -663,6 +663,28 @@ describe('stdio dispositions', () => {
 })
 
 describe('windows tree semantics (injected platform)', () => {
+  it('ignores cooperative interruption while continuing to serve stdin requests', async () => {
+    const taskkill = vi.fn((pid: number) => { process.kill(pid, 'SIGKILL') })
+    const handle = spawnSubprocess(spec('unused', {
+      argv: [process.execPath, '-e', 'process.stdin.on(\'data\', () => console.log(\'continued\')); console.log(\'ready\')'],
+      stdio: { stdin: 'pipe', stdout: { maxBytes: 64000 }, stderr: { maxBytes: 64000 } },
+      graceMs: 100,
+    }), { spillDir, platform: 'win32', taskkill })
+    try {
+      await vi.waitFor(() => { expect(handle.collected.stdout?.readFrom(0).text).toContain('ready') })
+      handle.interrupt()
+      expect(taskkill).not.toHaveBeenCalled()
+      handle.stdin?.write('next\n')
+      await vi.waitFor(() => { expect(handle.collected.stdout?.readFrom(0).text).toContain('continued') })
+      expect(taskkill).not.toHaveBeenCalled()
+    } finally {
+      handle.terminate()
+      await handle.done
+      await expect(handle.waitForExit()).resolves.toBe(true)
+    }
+    expect(taskkill).toHaveBeenCalledOnce()
+  })
+
   it('hides the child window without changing output, exit, stdio, or tree-root options', async () => {
     let options: Parameters<typeof nodeSpawn>[2]
     const result = await finish(spawnSubprocess(spec('echo hello'), {

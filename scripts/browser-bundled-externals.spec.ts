@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +12,7 @@ afterEach(() => {
 })
 
 function fixture(): string {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-browser-notices-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-browser-notices-')))
   roots.push(root)
   write(root, 'package.json', '{"type":"module"}')
   write(root, 'tsconfig.base.json', JSON.stringify({

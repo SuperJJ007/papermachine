@@ -47,6 +47,13 @@ Set `expectedExitCode` when the scenario pins a designed failure surface — a o
 
 Profile integration drivers use the repository-only `tests/fixtures/production-profile.ts` helper. It loads the named shipped profile and its bundle patches through `loadProfile`, reconciles the profile's module fallback, and passes the bundle patches followed by the test's `*.patch.yml` files to the root `cordis:include` mounted by `boot`. Those patches should contain only the test provider or model, isolated persistence paths, and subject-specific changes. Package-level unit tests that need an agent loop without profile integration mount `dsh-agent-loop-testkit` locally instead.
 
+<a id="overlay-package-provenance"></a>
+### Overlay package provenance
+
+`installProfilePackages(cwd, home, packages)` exposes the same validation and linking for protocol-specific harnesses. The caller owns the isolated workspace and its cleanup; package names and versions remain authoritative in the real manifests.
+
+Pass `profilePackages` to `runLoaderSmoke` as a map of overlay-only npm package names to their real package directories. The harness validates each directory's matching name and non-empty version, then links it into the isolated home's `profiles/node_modules` before startup. This lets Loader package inventory and ordinary Node resolution find the same package that a source-mode workspace import loads. Missing packages, mismatched manifests and conflicting links fail; the harness never substitutes a manifest or skips an unresolved referent. `DSH_HOME` must stay inside the generated cwd, whose cleanup removes all fixture links. Product installation dependencies remain unchanged. See the [overlay provenance decision](../../../.agents/notes/implemented/testing/2026-09-10-smoke-overlay-package-provenance.md).
+
 ### Driving a fixture turn
 
 `runFixtureTurn(ctx, options)` drives one task through exactly one configured root agent: it waits for the task to reach the durable inbox, forwards canonical events to your observer, flushes the session, and returns the final assistant text plus accumulated usage. Example-local drivers keep configuration, rendering, and assertion ownership.

@@ -32,7 +32,7 @@ Three artifacts from one tsdown pipeline:
 
 Acceptance lives in `apps/web/tests/preview-boot.e2e.ts`, which serves the real built pages and drives the pre-boot chooser plus Worker activation in headless Chromium. The empty selection exercises first-run startup. The `vfs-example` overlay supplies ordinary workspace files and plaintext persistence artifacts for cold Workspace/Session discovery, tool presentation, subagent navigation, and history paging without a model request. The fixture generator owns current-generation logs and the projection cache; committed predecessor logs remain byte-identical alongside them. The chooser reserves WebFS as a separate user-authorized source; that provider does not read the built-in fixture.
 
-The [built-bundle import sweep](tests/compile/transform-corpus-check.ts) checks bare Node imports after the library build. Its Dockkit exception accepts only Node’s unknown-extension error for the expected stylesheet; other failures and unexpectedly successful exempt imports remain errors. See the [CI observation decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
+The [built-bundle import sweep](tests/compile/transform-corpus-check.ts) uses an artifact-only TypeScript configuration so workspace imports resolve published JavaScript rather than source aliases. Its Dockkit exception accepts only Node’s unknown-extension error for the exact built Dockkit or StateDot stylesheet; source paths, other failures and unexpectedly successful exempt imports remain errors. See the [CI observation decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
 
 -----
 

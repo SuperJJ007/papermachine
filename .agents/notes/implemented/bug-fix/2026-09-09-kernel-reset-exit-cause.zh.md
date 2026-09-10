@@ -1,0 +1,31 @@
+# Agent Note: 内核 reset 分类以进程退出为依据
+
+Status: implemented
+
+[English](2026-09-09-kernel-reset-exit-cause.md) | 中文
+
+## 问题
+
+Windows 可能在进程退出通知之前，将正在退出的内核 TCP 通道报告为 `ECONNRESET`。把所有流错误都归类为协议违规，会错误标记普通崩溃和主动关闭。
+
+## 决策
+
+响应通道 reset 沿用现有 EOF 路径：通过有界的进程退出观测，区分已退出的解释器与仍存活却放弃通道的解释器。主动关闭会忽略随后的流错误，而关闭前已记录的协议故障仍具有优先级。其他存活期间的流错误仍立即失败。
+
+[Windows 传输决策](../feature/2026-09-05-win32-kernel-response-transport.zh.md) 继续负责传输选择和认证；本记录规定退出分类。
+
+## 考虑过的替代方案
+
+把所有 reset 都当作崩溃会接受仍存活但已损坏的驱动。把所有 reset 都当作协议违规会丢失权威的进程结果。修改测试预期则会保留错误的运行时诊断。
+
+## 后果
+
+Reset 分类可能等待现有的后代进程退出宽限期。不引入额外超时或配置，进程继续存活时仍会失败关闭。
+
+## 验证
+
+内核测试覆盖随后退出进程的 reset，以及进程保持存活时的 reset。TCP 生命周期测试保留 commanded/crash 预期，关闭期间尚未完成的图表提取根据进程退出证据拒绝。
+
+## 相关决策
+
+相关 owner：[win32-kernel-response-transport](../feature/2026-09-05-win32-kernel-response-transport.zh.md).

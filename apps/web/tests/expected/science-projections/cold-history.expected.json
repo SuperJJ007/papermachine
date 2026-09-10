@@ -1,0 +1,24 @@
+{
+  "liveKernelStates": [
+    "started"
+  ],
+  "coldKernelStates": [
+    "interrupted"
+  ],
+  "metrics": {
+    "runCount": 1,
+    "successfulRunCount": 1,
+    "artifactCount": 1,
+    "artifactVersionCount": 1,
+    "kernelCount": 1,
+    "outcomeRevision": 0
+  },
+  "runStatuses": [
+    "success"
+  ],
+  "artifactVersions": [
+    1,
+    1,
+    1
+  ]
+}

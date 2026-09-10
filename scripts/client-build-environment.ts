@@ -22,6 +22,12 @@ const OFFICIAL_CLIENT_BUILD_ENVIRONMENT = {
   DSH_CLIENT_TITLE: 'DeepSeek Harness',
 } as const
 
+/** Public client environment required by PaperMachine desktop artifacts. */
+const PAPER_MACHINE_CLIENT_BUILD_ENVIRONMENT = {
+  DSH_CLIENT_BUILD_PROFILE: 'papermachine',
+  DSH_CLIENT_TITLE: 'PaperMachine',
+} as const
+
 /** Public variable carrying the source commit embedded in client artifacts. */
 const CLIENT_COMMIT_HASH_VARIABLE = 'DSH_CLIENT_COMMIT_HASH'
 
@@ -147,6 +153,23 @@ export function officialClientBuildEnvironment(
   }
 }
 
+/**
+ * Resolve the exact public values required by a PaperMachine build at one commit.
+ * @param root - Repository root supplying package version and source identity.
+ * @param environment - Optional explicit commit source for non-Git build environments.
+ * @returns Complete PaperMachine client environment.
+ */
+export function paperMachineClientBuildEnvironment(
+  root: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Readonly<Record<`DSH_CLIENT_${string}`, string>> {
+  return {
+    DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
+    DSH_CLIENT_VERSION: repositoryVersion(root),
+    ...PAPER_MACHINE_CLIENT_BUILD_ENVIRONMENT,
+  }
+}
+
 /** Digest of every client artifact produced by the complete root build. */
 interface ClientArtifactDigest {
   /** Number of files covered by the digest. */
@@ -187,22 +210,22 @@ export function resolveClientBuildEnvironment(
   profile: string | undefined = environment[CLIENT_BUILD_PROFILE_SELECTOR],
 ): ClientBuildEnvironment {
   if (profile === undefined) return clientBuildEnvironment(environment)
-  if (profile === 'official') {
+  if (profile === 'official' || profile === 'papermachine') {
     const commitHash = environment[CLIENT_COMMIT_HASH_VARIABLE]
     const version = environment[CLIENT_VERSION_VARIABLE]
     if (commitHash === undefined) {
-      throw new Error(`${CLIENT_COMMIT_HASH_VARIABLE} is required for the official client build profile`)
+      throw new Error(`${CLIENT_COMMIT_HASH_VARIABLE} is required for the ${profile} client build profile`)
     }
     if (version === undefined) {
-      throw new Error(`${CLIENT_VERSION_VARIABLE} is required for the official client build profile`)
+      throw new Error(`${CLIENT_VERSION_VARIABLE} is required for the ${profile} client build profile`)
     }
     return {
       DSH_CLIENT_COMMIT_HASH: commitHash,
       DSH_CLIENT_VERSION: version,
-      ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT,
+      ...(profile === 'official' ? OFFICIAL_CLIENT_BUILD_ENVIRONMENT : PAPER_MACHINE_CLIENT_BUILD_ENVIRONMENT),
     }
   }
-  throw new Error(`unknown client build profile ${JSON.stringify(profile)}; expected "official"`)
+  throw new Error(`unknown client build profile ${JSON.stringify(profile)}; expected "official" or "papermachine"`)
 }
 
 /**

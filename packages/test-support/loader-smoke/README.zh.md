@@ -47,6 +47,13 @@ const result = await runLoaderSmoke({
 
 Profile 集成 driver 使用仅限仓库内部的 `tests/fixtures/production-profile.ts` helper。它通过 `loadProfile` 加载指定的已交付 profile 及其组合包 patch，修复 profile 的模块回退，然后把组合包 patch 与测试 `*.patch.yml` 文件依次交给 `boot` 挂载的根 `cordis:include`。这些 patch 应只包含测试提供方或模型、隔离持久化路径及被测对象专用变更。只需要 agent loop 而不测试 profile 集成的包级单元测试改为在本地挂载 `dsh-agent-loop-testkit`。
 
+<a id="overlay-package-provenance"></a>
+### Overlay 包来源
+
+`installProfilePackages(cwd, home, packages)` 为各协议 harness 提供相同的校验和链接能力。调用方拥有隔离 workspace 并负责清理；包名称和版本仍以真实 manifest 为准。
+
+向 `runLoaderSmoke` 传入 `profilePackages`，将仅由测试 overlay 使用的 npm 包名称映射到其真实包目录。harness 验证每个目录的 manifest 名称匹配且版本非空，然后在启动前将其链接到隔离 home 的 `profiles/node_modules`。这样，Loader 包清单和普通 Node 解析都能找到 source 模式 workspace import 加载的同一个包。包缺失、manifest 不匹配或链接冲突都会失败；harness 不伪造 manifest，也不跳过无法解析的引用。`DSH_HOME` 必须位于生成的 cwd 内，清理 cwd 时移除所有 fixture 链接。产品安装依赖保持不变。参见 [overlay 包来源决策](../../../.agents/notes/implemented/testing/2026-09-10-smoke-overlay-package-provenance.zh.md)。
+
 ### 驱动 fixture 轮次
 
 `runFixtureTurn(ctx, options)` 让一项任务通过恰好一个已配置的根 agent：它等待任务进入持久收件箱，把规范事件转发给你的观察器，刷写会话，并返回最终 assistant 文本与累计用量。示例本地的 driver 继续负责配置、渲染与断言。

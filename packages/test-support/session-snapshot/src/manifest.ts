@@ -4,7 +4,7 @@ import { isAbsolute } from 'node:path'
 import * as yaml from 'js-yaml'
 
 /** Public `dsh` profile used to control a recorded-session scenario. */
-export type SnapshotProfile = 'headless' | 'sdk' | 'acp' | 'web'
+export type SnapshotProfile = 'headless' | 'science-headless' | 'sdk' | 'acp' | 'web'
 
 /** How a canonical session may be regenerated. */
 export type SnapshotRecording = 'live' | 'authored'
@@ -142,7 +142,7 @@ export function writesCurrentSessionFixtures(
   return mode !== 'replay' && manifest.session === undefined && manifest.sessionFormat === undefined
 }
 
-const PROFILES = new Set<SnapshotProfile>(['headless', 'sdk', 'acp', 'web'])
+const PROFILES = new Set<SnapshotProfile>(['headless', 'science-headless', 'sdk', 'acp', 'web'])
 const RECORDINGS = new Set<SnapshotRecording>(['live', 'authored'])
 const PLATFORMS = new Set<SnapshotPlatform>(['posix', 'pwsh'])
 const PERMISSIONS = new Set<SnapshotPermission>(['read-only', 'workspace-write', 'danger-full-access'])

@@ -31,6 +31,7 @@ import {
   kernelExited,
   kernelStarted,
   legalEvents,
+  mode,
   outcome,
   runStarted,
   runTerminal,
@@ -97,6 +98,25 @@ describe('Science private projection checkpoint', () => {
       runs: [{ turn: 1, step: 1 }],
       artifacts: [{ turn: 1, step: 1 }],
     })
+  })
+
+  it('retains a failed turn end before Science binding through checkpoint replay', () => {
+    const session = Session.create(SessionId('science-failed-before-binding'))
+    session.append('turn/start', { turn: 1 })
+    const failed = session.append('turn/end', {
+      turn: 1, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'Startup failed' } },
+    })
+    session.append('turn/start', { turn: 2 })
+    session.append('science/mode-bound', { version: 1, mode: mode() })
+    const state = projectState(session.snapshotEvents())
+    const expected = [
+      { turn: 1, startSeq: 0, startTime: session.snapshotEvents()[0]!.time, endSeq: failed.seq, endTime: failed.time },
+      { turn: 2, startSeq: 2, startTime: session.snapshotEvents()[2]!.time },
+    ]
+    expect(viewScienceProjectionState(state)?.trace.turns).toEqual(expected)
+    expect(state.witness).toContainEqual({ seq: failed.seq, time: failed.time, type: 'turn/end', data: { turn: 1 } })
+    const restored = scienceProjectionStateSchema.parse(JSON.parse(JSON.stringify(state)))
+    expect(viewScienceProjectionState(restored)?.trace.turns).toEqual(expected)
   })
 
   it('leaves an artifact fact without owner coordinates when no run or annotate call is open at save time', () => {

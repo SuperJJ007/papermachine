@@ -33,7 +33,6 @@ import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartState, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
-import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
 import { ScienceEditService } from '../src/edit-message.ts'
 import { closedKernelFacts, isScienceSession, renderScienceProjection } from '../src/context.ts'
@@ -441,18 +440,6 @@ describe('registration and disposal', () => {
     expect(names).not.toContain('run_r')
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.contexts.some(entry => entry.name === 'science:environment')).toBe(false)
-  })
-})
-
-describe('invariant companion', () => {
-  it('registers its explained empty runtime invariant', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = await ctx.plugin(ToolScienceInvariant)
-    expect(() => {
-      ctx.invariants.register('@deepseek-ai/dsh-tool-science', () => {})
-    }).toThrow(/already registered/)
-    await fiber.dispose()
   })
 })
 

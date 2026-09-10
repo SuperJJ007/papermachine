@@ -1862,3 +1862,64 @@ it('delivers cooperative interruption only while a remote target group is runnin
   expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toHaveLength(signals)
   await expect(handle.waitForExit()).resolves.toBe(true)
 })
+
+
+it.each(['completed', 'terminating'] as const)('drops a pending interrupt after the command is %s', async (state) => {
+  const fake = new FakeSandbox()
+  const getSandbox = vi.fn(async () => fake.sandbox)
+  const pending = Promise.withResolvers<Sandbox>()
+  const handle = testHandle(runtime(fake, getSandbox), spec({ stdio: { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' } }), '/runtime/pending-interrupt')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      handle.stdin!.write('ready', (error) => {
+        if (error === null || error === undefined) resolve()
+        else reject(error)
+      })
+    })
+    getSandbox.mockImplementationOnce(() => pending.promise)
+    handle.interrupt()
+    expect(getSandbox.mock.results.at(-1)?.value).toBe(pending.promise)
+    if (state === 'completed') {
+      fake.finish()
+      await handle.done
+    } else {
+      handle.terminate()
+    }
+    pending.resolve(fake.sandbox)
+    await pending.promise
+    await handle.done
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toEqual([])
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  } finally {
+    pending.resolve(fake.sandbox)
+    handle.terminate()
+    await handle.done
+  }
+})
+
+it('keeps command completion usable when cooperative sandbox acquisition fails', async () => {
+  const fake = new FakeSandbox()
+  const getSandbox = vi.fn(async () => fake.sandbox)
+  const pending = Promise.withResolvers<Sandbox>()
+  const handle = testHandle(runtime(fake, getSandbox), spec({ stdio: { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' } }), '/runtime/failed-interrupt')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      handle.stdin!.write('ready', (error) => {
+        if (error === null || error === undefined) resolve()
+        else reject(error)
+      })
+    })
+    getSandbox.mockImplementationOnce(() => pending.promise)
+    handle.interrupt()
+    expect(getSandbox.mock.results.at(-1)?.value).toBe(pending.promise)
+    pending.reject(new Error('sandbox connection lost during interrupt'))
+    fake.finish()
+    await expect(handle.done).resolves.toMatchObject({ exitCode: 0 })
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toEqual([])
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  } finally {
+    pending.resolve(fake.sandbox)
+    handle.terminate()
+    await handle.done
+  }
+})

@@ -1,6 +1,7 @@
 /** Build the release seed through the same embedded pnpm used on first launch. */
 
 import { spawn } from 'node:child_process'
+import { verifyDesktopSeedRuntime } from './verify-seed-runtime.ts'
 import { createHash } from 'node:crypto'
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -135,6 +136,7 @@ async function verifyOfflineInstallation(release: DesktopRelease): Promise<void>
         throw new Error(`desktop seed: local ${DESKTOP_HOST_PACKAGE}@${release.version} does not contain ${file}`)
       }
     }
+    await verifyDesktopSeedRuntime(NODE, SEED_ROOT, release.version)
   } finally {
     rmSync(installedModules, { recursive: true, force: true })
   }

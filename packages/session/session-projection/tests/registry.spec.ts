@@ -563,6 +563,60 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.checkpoint(session)['test/marks']?.val).toEqual({ marks: ['a'] })
   })
 
+  it.each([
+    { kind: 'schema-invalid', state: { revision: 3, value: { marks: [42] } } },
+    { kind: 'internally stale', state: { revision: 1, value: { marks: ['poisoned cache'] } } },
+  ])('refuses $kind current-version state across cached views, cold restore, and hydration', async ({ state: invalidState }) => {
+    const { ctx, session } = await harness()
+    const definition = {
+      ...stableViewUnit(state => state.value),
+      checkpointStateSeq: state => state.revision - 1,
+      apply: (state, event) => ({
+        revision: state.revision + 1,
+        value: event.type === 'test/mark' ? event.data : state.value,
+      }),
+    } satisfies ProjectionDefinition<'test/stable-view', StableViewState>
+    ctx.sessionProjections.register(definition)
+    mark(session, ['first'])
+    mark(session, ['durable'])
+    // A retained resume marker keeps detached construction at this same cut.
+    session.append('session/end-seed', {})
+    const events = session.snapshotEvents()
+    const checkpoint = ctx.sessionProjections.checkpoint(session)
+    const expected = ctx.sessionProjections.snapshot(session)
+    const row = checkpoint['test/stable-view']!
+    const malformed = {
+      ...checkpoint,
+      'test/stable-view': { ...row, val: invalidState },
+    }
+    expect(row.ver).toBe(definition.stateVersion)
+    expect(row.seq).toBe(2)
+    expect(ctx.sessionProjections.restoreFloor(checkpoint)).toBe(2)
+    expect(ctx.sessionProjections.viewCheckpoint(checkpoint)).toEqual(expected.values)
+    expect(ctx.sessionProjections.restore(
+      checkpoint, events.slice(2), SessionLogOffset(2), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
+
+    expect(ctx.sessionProjections.restoreFloor(malformed)).toBe(0)
+    expect(ctx.sessionProjections.viewCheckpoint(malformed)).not.toHaveProperty('test/stable-view')
+    expect(() => ctx.sessionProjections.restore(
+      malformed, events.slice(2), SessionLogOffset(2), session.header, session.inheritedEventCount,
+    )).toThrow(/re-read from seq 0/)
+    expect(ctx.sessionProjections.restore(
+      malformed, events, SessionLogOffset(0), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
+
+    // A separate Session has no live cells that could bypass checkpoint admission.
+    const prepared = Session.create(session.id, events, session.header, session.inheritedEventCount)
+    expect(() => ctx.sessionProjections.hydrate(
+      prepared, malformed, events.slice(2), SessionLogOffset(2),
+    )).toThrow(/re-read from seq 0/)
+    expect(ctx.sessionProjections.hydrate(prepared, malformed, events, SessionLogOffset(0))).toEqual(expected)
+    expect(ctx.sessionProjections.checkpoint(prepared)).toEqual(checkpoint)
+    expect(ctx.sessionProjections.stateOf(prepared, 'test/stable-view')).toEqual({ revision: 3, value: { marks: ['durable'] } })
+    await ctx.fiber.dispose()
+  })
+
   it('restoreFloor anchors one below the lowest usable watermark and at 0 for missing or mismatched rows', async () => {
     const { ctx } = await harness()
     expect(ctx.sessionProjections.restoreFloor({})).toBeUndefined() // no unit registered

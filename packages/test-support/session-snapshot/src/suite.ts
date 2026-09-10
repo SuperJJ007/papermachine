@@ -262,6 +262,8 @@ export function stdoutExpectedVariants(
 export interface SnapshotSuiteOptions {
   /** The agent composition every scenario boots. */
   agent: AgentUnderTest
+  /** Overlay-only package directories supplied to each isolated ACP scenario. */
+  profilePackages?: Readonly<Record<string, string>>
   /** Absolute path of the suite's `snapshots/` directory (one subdir per scenario). */
   snapshotsDir: string
   /** The scenario table; exactly one entry per header class must set `pinsHeader`. */
@@ -1293,6 +1295,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           && manifest.sessionFormat === undefined)
         const result = await runScenario(input, {
           agent,
+          ...options.profilePackages === undefined ? {} : { profilePackages: options.profilePackages },
           mode: childMode,
           fixtureFile: join(dir, primaryFixtureFile),
           ...scenario.env !== undefined ? { env: scenario.env } : {},

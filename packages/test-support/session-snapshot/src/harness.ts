@@ -35,6 +35,7 @@ import {
   type AgentUnderTest,
   type LaunchedAcpTestAgent,
 } from './launcher.ts'
+import { installProfilePackages } from '@deepseek-ai/dsh-loader-smoke'
 import { clearedProxyEnv } from '@deepseek-ai/dsh-http-proxy'
 import {
   assertPersistedSessionVersion,
@@ -164,6 +165,8 @@ export interface RunResult {
 export interface RunOptions {
   /** The agent composition to boot. */
   agent: AgentUnderTest
+  /** Overlay-only npm names mapped to real package directories inside the isolated profile fallback. */
+  profilePackages?: Readonly<Record<string, string>>
   /** `replay` (default, keyless) or `record` (real API, harvests the log). */
   mode: 'replay' | 'record'
   /** Scenario-specific deployment environment layered into the subprocess. */
@@ -255,6 +258,9 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
       await cp(opts.workspaceDir, cwd, { recursive: true })
     }
     await opts.prepareWorkspace?.(cwd)
+    if (opts.profilePackages !== undefined) {
+      await installProfilePackages(cwd, join(cwd, '.dsh'), opts.profilePackages)
+    }
     const initialWorkspace = await captureWorkspaceSnapshot(cwd, {
       ignoredRootEntries: ['.agents', '.dsh', '.dsh-profile-patches', '.dsh-snapshot-stream-ready'],
     })

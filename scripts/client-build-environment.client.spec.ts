@@ -9,6 +9,7 @@ import {
   clientBuildEnvironmentDefines,
   clientBuildProcessEnvironment,
   officialClientBuildEnvironment,
+  paperMachineClientBuildEnvironment,
   readClientBuildRecord,
   repositoryClientBuildEnvironment,
   repositoryCommitHash,
@@ -287,5 +288,24 @@ describe('client build environment', () => {
       }
       expect(JSON.stringify(document), path).not.toContain('DSH_CLIENT_')
     }
+  })
+})
+
+
+describe('PaperMachine client build selection', () => {
+  it('selects exact product values without inheriting an official title or arbitrary public extensions', () => {
+    const environment = {
+      DSH_CLIENT_COMMIT_HASH: '0123456', DSH_CLIENT_VERSION: '0.1.5-rc.1',
+      DSH_CLIENT_TITLE: 'DeepSeek Harness', DSH_CLIENT_EXTRA: 'unreviewed',
+    }
+    expect(resolveClientBuildEnvironment(environment, 'papermachine')).toEqual({
+      DSH_CLIENT_COMMIT_HASH: '0123456', DSH_CLIENT_VERSION: '0.1.5-rc.1',
+      DSH_CLIENT_BUILD_PROFILE: 'papermachine', DSH_CLIENT_TITLE: 'PaperMachine',
+    })
+    const repository = repositoryFixture('0.1.5-rc.1')
+    expect(paperMachineClientBuildEnvironment(repository, { DSH_CLIENT_COMMIT_HASH: COMMIT_HASH }))
+      .toEqual(resolveClientBuildEnvironment(environment, 'papermachine'))
+    expect(() => resolveClientBuildEnvironment({}, 'papermachine')).toThrow('COMMIT_HASH')
+    expect(() => resolveClientBuildEnvironment({ DSH_CLIENT_COMMIT_HASH: '0123456' }, 'papermachine')).toThrow('VERSION')
   })
 })

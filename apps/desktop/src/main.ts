@@ -1,18 +1,28 @@
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { extname, join, normalize, resolve, sep } from 'node:path'
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises'
+import { basename, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
   BrowserWindow,
   dialog,
+  clipboard,
   ipcMain,
   Menu,
   protocol,
+  nativeTheme,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { resolvePaperMachineHome } from '@deepseek-ai/dsh-home-paths'
+import { homedir } from 'node:os'
+import { ProductEnvironment } from './product-environment.ts'
+import { DesktopOperation } from './desktop-operation.ts'
+import { PAPER_MACHINE_VERSION } from './product.ts'
+import { writeFileAtomic } from './atomic-write.ts'
+import { parseDesktopHostConfig } from './host-config.ts'
+import { resolveWindowThemePreference, windowBackgroundColor } from './window-theme.ts'
+import { resolveDefaultSourceId } from './source-selection.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
@@ -22,6 +32,7 @@ import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 
 const SCHEME = 'dsh-app'
+let windowBackground: string | undefined
 let focusPrimaryWindow = (): void => {}
 
 function errorOf(reason: unknown, fallback: string): Error {
@@ -82,6 +93,7 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
 
 function createWindow(preload: string): BrowserWindow {
   const window = new BrowserWindow({
+    ...(windowBackground === undefined ? {} : { backgroundColor: windowBackground }),
     width: 1280,
     height: 840,
     minWidth: 880,
@@ -97,14 +109,16 @@ function createWindow(preload: string): BrowserWindow {
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).protocol !== `${SCHEME}:`) event.preventDefault()
+    const target = new URL(url)
+    const current = new URL(window.webContents.getURL())
+    if (target.protocol !== current.protocol || target.hostname !== current.hostname) event.preventDefault()
   })
   return window
 }
 
 function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
   const senderFrame = event.senderFrame
-  if (senderFrame === null) throw new Error('dsh desktop: rejected IPC without a sender frame')
+  if (senderFrame === null || senderFrame !== event.sender.mainFrame) throw new Error('dsh desktop: rejected IPC without a sender frame')
   const url = new URL(senderFrame.url)
   if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
     throw new Error('dsh desktop: rejected IPC from an unowned renderer')
@@ -138,6 +152,14 @@ async function main(home: string): Promise<void> {
   const activeProject = development ?? paths.profile
   const hostInspectPort = developmentHostInspectPort(development !== undefined)
   const manager = new DesktopProjectManager(paths, resources)
+  const operations = new DesktopOperation()
+  const productResources = app.isPackaged ? join(process.resourcesPath, 'product') : join(app.getAppPath(), 'resources')
+  const environment = new ProductEnvironment(home, productResources)
+  windowBackground = windowBackgroundColor(await resolveWindowThemePreference(home), nativeTheme.shouldUseDarkColors)
+  app.setAboutPanelOptions({ applicationName: 'PaperMachine', applicationVersion: PAPER_MACHINE_VERSION, version: `dsh ${app.getVersion()}` })
+  let setupWindow: BrowserWindow | undefined
+  let quitComplete = false
+  let quitting = false
   if (development === undefined) manager.recover()
   let host: DesktopHostProcess | undefined
   let mainWindow: BrowserWindow | undefined
@@ -157,10 +179,25 @@ async function main(home: string): Promise<void> {
     return state
   }
 
-  const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
-    const next = new DesktopHostProcess(resources.node, projectDir, home, hostInspectPort)
-    await next.start()
-    return next
+  const hostConfig = parseDesktopHostConfig(JSON.parse(await readFile(join(productResources, 'host.json'), 'utf8')))
+  const startHost = async (projectDir = activeProject, allowUnbound = false): Promise<DesktopHostProcess> => {
+    await environment.writeOverlay(projectDir, allowUnbound)
+    const next = new DesktopHostProcess(resources.node, projectDir, home, hostInspectPort, {
+      log: { path: join(home, 'logs/host.log'), maxBytes: hostConfig.logMaxBytes, maxRotatedFiles: hostConfig.logMaxRotatedFiles },
+      watchdogEntry: fileURLToPath(new URL('./watchdog.js', import.meta.url)),
+      onExit: (error) => {
+        if (host !== next) return
+        host = undefined
+        void next.stop().then(openSetup).then(() => { setupWindow?.webContents.send('papermachine:setup-progress', error.message) }).catch(reportStartupFailure)
+      },
+    })
+    try {
+      await next.start()
+      return next
+    } catch (error) {
+      await next.stop()
+      throw error
+    }
   }
   const hooks: DesktopProjectHooks = {
     healthCheck: async (projectDir) => {
@@ -170,7 +207,7 @@ async function main(home: string): Promise<void> {
       let healthFailure: unknown
       let probe: DesktopHostProcess | undefined
       try {
-        probe = await startHost(projectDir)
+        probe = await startHost(projectDir, true)
         await probe.stop()
       } catch (error) {
         healthFailure = error
@@ -203,14 +240,19 @@ async function main(home: string): Promise<void> {
     },
   }
 
-  if (development === undefined) {
-    await manager.applyRelease(resources.seed, app.getVersion(), {
-      ...hooks,
-      beforeActivate: async () => {},
-      afterActivate: async () => {},
-    })
+  let runtimeReady = false
+  const ensureRuntime = async (): Promise<void> => {
+    if (runtimeReady) return
+    setupWindow?.webContents.send('papermachine:setup-progress', messages.setupRuntime)
+    if (development === undefined) {
+      await manager.applyRelease(resources.seed, app.getVersion(), {
+        ...hooks,
+        beforeActivate: async () => {},
+        afterActivate: async () => {},
+      })
+    }
+    runtimeReady = true
   }
-  host = await startHost()
 
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
@@ -221,6 +263,11 @@ async function main(home: string): Promise<void> {
       await active?.stop()
     },
   )
+  const installUpdate = async (): Promise<DesktopUpdateState> => operations.run(async () => {
+    const state = await updates.install()
+    if (state.phase === 'error') shellInstallerOwnsQuit = false
+    return state
+  })
 
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url)
@@ -236,7 +283,7 @@ async function main(home: string): Promise<void> {
     if (development !== undefined) {
       throw new Error('dsh desktop: plugin package changes require a packaged application')
     }
-    await manager.mutate(mutation, hooks)
+    await operations.run(async () => { await manager.mutate(mutation, hooks) })
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
   }
   ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
@@ -268,7 +315,8 @@ async function main(home: string): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.updatesInstall, async (event) => {
     assertDesktopSender(event, ['shell'])
-    await updates.install()
+    if (operations.busy) throw new Error('desktop: another operation is running')
+    await installUpdate()
   })
 
   const checkAndPrompt = async (manual: boolean): Promise<void> => {
@@ -303,7 +351,8 @@ async function main(home: string): Promise<void> {
       cancelId: 1,
     })
     if (result.response !== 0) return
-    const installed = await updates.install()
+    if (operations.busy) return
+    const installed = await installUpdate()
     if (installed.phase === 'error') {
       await dialog.showMessageBox({
         type: 'error',
@@ -335,8 +384,10 @@ async function main(home: string): Promise<void> {
         enabled: development === undefined,
         click: openPluginWindow,
       },
+      { label: messages.changeEnvironment, click: () => { if (!operations.busy) void openSetup() } },
       { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
       { type: 'separator' },
+      { role: 'about' },
       { role: 'quit' },
     ],
   }]))
@@ -345,7 +396,14 @@ async function main(home: string): Promise<void> {
     const window = createWindow(appPreload)
     mainWindow = window
     window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
-    window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
+    const updateCheck = setTimeout(() => {
+      if (!quitting && !operations.busy) void checkAndPrompt(false).catch(reportStartupFailure)
+    }, 10_000)
+    updateCheck.unref()
+    window.on('closed', () => {
+      clearTimeout(updateCheck)
+      if (mainWindow === window) mainWindow = undefined
+    })
     return window
   }
   focusPrimaryWindow = () => {
@@ -360,13 +418,94 @@ async function main(home: string): Promise<void> {
     window.focus()
   }
 
-  mainWindow = createMainWindow()
-  await mainWindow.loadURL(`${SCHEME}://app/index.html`)
-  if (development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  const openWorkspace = async (signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted()
+    await ensureRuntime()
+    signal.throwIfAborted()
+    host = await startHost()
+    signal.throwIfAborted()
+    if (mainWindow === undefined || mainWindow.isDestroyed()) mainWindow = createMainWindow()
+    await mainWindow.loadURL(`${SCHEME}://app/index.html`)
+    setupWindow?.close()
+    if (development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
+    publishUpdate(updateState)
   }
-  publishUpdate(updateState)
-  setTimeout(() => { void checkAndPrompt(false) }, 10_000)
+
+  const openSetup = async (): Promise<void> => {
+    if (setupWindow !== undefined && !setupWindow.isDestroyed()) { setupWindow.show(); setupWindow.focus(); return }
+    const window = createWindow(fileURLToPath(new URL('./preload-onboarding.cjs', import.meta.url)))
+    setupWindow = window
+    window.once('closed', () => { setupWindow = undefined })
+    await window.loadURL(`${SCHEME}://shell/onboarding.html`)
+    window.show()
+  }
+  const assertSetupSender = (event: IpcMainInvokeEvent): void => {
+    assertDesktopSender(event, ['shell'])
+    if (event.sender !== setupWindow?.webContents || new URL(event.senderFrame?.url ?? 'about:blank').pathname !== '/onboarding.html') {
+      throw new Error('desktop: rejected setup IPC from another renderer')
+    }
+  }
+  ipcMain.handle('papermachine:setup-state', async (event) => {
+    assertSetupSender(event)
+    const declaration = await environment.declaration()
+    return {
+      locale, home, version: PAPER_MACHINE_VERSION, declaration, status: await environment.status(),
+      defaultSource: resolveDefaultSourceId(declaration.sources, {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, languages: app.getPreferredSystemLanguages(),
+      }),
+    }
+  })
+  ipcMain.handle('papermachine:setup-install', async (event, source: unknown, packages: unknown) => {
+    assertSetupSender(event)
+    if (typeof source !== 'string' || (packages !== undefined && (!Array.isArray(packages) || !packages.every(value => typeof value === 'string')))) {
+      throw new Error('desktop: invalid environment install request')
+    }
+    await operations.run(async (signal) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      signal.throwIfAborted()
+      await ensureRuntime()
+      signal.throwIfAborted()
+      await environment.install(source, packages, signal, (progress) => {
+        if (!setupWindow?.isDestroyed()) setupWindow?.webContents.send('papermachine:setup-progress', progress.message)
+      })
+      await openWorkspace(signal)
+    })
+  })
+  ipcMain.handle('papermachine:setup-cancel', (event) => { assertSetupSender(event); operations.cancel() })
+  ipcMain.handle('papermachine:setup-continue', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      await openWorkspace(signal)
+    })
+  })
+  ipcMain.handle('papermachine:setup-home', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => { await changeInstallLocation(signal) })
+  })
+  ipcMain.handle('papermachine:setup-reset-home', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => { await resetInstallLocation(signal) })
+  })
+  focusPrimaryWindow = () => {
+    const window = setupWindow ?? mainWindow
+    if (window === undefined || window.isDestroyed()) {
+      if (host !== undefined) {
+        const replacement = createMainWindow()
+        void replacement.loadURL(`${SCHEME}://app/index.html`)
+      } else { void openSetup() }
+      return
+    }
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
@@ -375,17 +514,32 @@ async function main(home: string): Promise<void> {
     if (process.platform !== 'darwin') app.quit()
   })
   app.on('before-quit', (event) => {
-    if (shellInstallerOwnsQuit) return
-    if (host === undefined) return
+    if (shellInstallerOwnsQuit || quitComplete) return
     event.preventDefault()
-    const active = host
-    host = undefined
-    void active.stop().finally(() => { app.quit() })
+    if (quitting) return
+    quitting = true
+    void operations.shutdown().then(async () => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      quitComplete = true
+      app.quit()
+    }).catch(reportStartupFailure)
   })
+
+  // The shell page becomes visible before any seed extraction or package process.
+  await openSetup()
+  if ((await environment.status()).kind === 'bound') {
+    await operations.run(openWorkspace).catch((error: unknown) => {
+      setupWindow?.webContents.send('papermachine:setup-progress', String(error))
+    })
+  }
+
 }
 
 async function prepareApplication(): Promise<string | undefined> {
   const home = await resolvePaperMachineHome()
+  if (home.includes(' ')) throw new Error('PaperMachine: R requires an install path without spaces')
   process.env.PAPERMACHINE_HOME = home
   process.env.DSH_HOME = home
   const userData = join(home, 'desktop', 'electron-user-data')
@@ -397,6 +551,84 @@ async function prepareApplication(): Promise<string | undefined> {
   return home
 }
 
+async function relaunchAtHome(selected: string): Promise<void> {
+  await writeFileAtomic(join(homedir(), '.papermachine-home'), `${selected}\n`, { mode: 0o600 })
+  delete process.env.PAPERMACHINE_HOME
+  delete process.env.DSH_HOME
+  app.relaunch()
+  app.quit()
+}
+
+async function changeInstallLocation(signal: AbortSignal): Promise<void> {
+  const messages = resolveDesktopLocale(app.getLocale()).messages
+  const choice = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+  const directory = choice.filePaths[0]
+  if (choice.canceled || directory === undefined) return
+  const path = basename(directory).toLowerCase() === 'papermachine' ? directory : join(directory, 'PaperMachine')
+  const selected = await resolvePaperMachineHome(path)
+  if (selected.includes(' ')) throw new Error(messages.homeSpaceError)
+  const confirmed = await dialog.showMessageBox({
+    type: 'question', message: messages.chooseHome,
+    detail: formatDesktopMessage(messages.homeChangeDetail, { path: selected }),
+    buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1,
+  })
+  if (confirmed.response !== 0) return
+  if (/[^\x00-\x7f]/u.test(selected)) {
+    const warning = await dialog.showMessageBox({ type: 'warning', message: messages.homeNonAscii,
+      buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1 })
+    if (warning.response !== 0) return
+  }
+  signal.throwIfAborted()
+  await relaunchAtHome(selected)
+}
+
+async function resetInstallLocation(signal: AbortSignal): Promise<void> {
+  const messages = resolveDesktopLocale(app.getLocale()).messages
+  const choice = await dialog.showMessageBox({ type: 'question', message: messages.resetHome,
+    detail: messages.resetHomeDetail, buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1 })
+  if (choice.response !== 0) return
+  signal.throwIfAborted()
+  try { await unlink(join(homedir(), '.papermachine-home')) } catch (error) {
+    // Only an absent pointer already selects the default home.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  delete process.env.PAPERMACHINE_HOME
+  delete process.env.DSH_HOME
+  app.relaunch()
+  app.quit()
+}
+
+async function showStartupRecovery(message: string): Promise<void> {
+  const locale = resolveDesktopLocale(app.getLocale())
+  if (!(protocol.isProtocolHandled(SCHEME))) {
+    protocol.handle(SCHEME, request => new URL(request.url).hostname === 'shell' ? serveShellAsset(request) : Promise.resolve(new Response(null, { status: 503 })))
+  }
+  const window = createWindow(fileURLToPath(new URL('./preload-recovery.cjs', import.meta.url)))
+  const assertRecovery = (event: IpcMainInvokeEvent): void => {
+    assertDesktopSender(event, ['shell'])
+    if (event.sender !== window.webContents || new URL(event.senderFrame?.url ?? 'about:blank').pathname !== '/recovery.html') throw new Error('desktop: rejected recovery IPC')
+  }
+  const operations = new DesktopOperation()
+  const handlers = {
+    state: (event: IpcMainInvokeEvent) => { assertRecovery(event); return { locale, message } },
+    choose: async (event: IpcMainInvokeEvent) => { assertRecovery(event); await operations.run(changeInstallLocation) },
+    reset: async (event: IpcMainInvokeEvent) => { assertRecovery(event); await operations.run(resetInstallLocation) },
+    restart: (event: IpcMainInvokeEvent) => { assertRecovery(event); app.relaunch(); app.quit() },
+    copy: async (event: IpcMainInvokeEvent) => {
+      assertRecovery(event)
+      await clipboard.writeText([`PaperMachine ${PAPER_MACHINE_VERSION}`, `dsh ${app.getVersion()}`, `${process.platform}-${process.arch}`,
+        process.env.PAPERMACHINE_HOME ?? locale.messages.homeUnresolved, message].join('\n'))
+    },
+    quit: (event: IpcMainInvokeEvent) => { assertRecovery(event); app.quit() },
+  }
+  for (const [name, handler] of Object.entries(handlers)) {
+    ipcMain.removeHandler(`papermachine:recovery-${name}`)
+    ipcMain.handle(`papermachine:recovery-${name}`, handler)
+  }
+  await window.loadURL(`${SCHEME}://shell/recovery.html`)
+  window.show()
+}
+
 async function reportStartupFailure(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error)
   console.error(error)
@@ -404,8 +636,11 @@ async function reportStartupFailure(error: unknown): Promise<void> {
   if (diagnosticFile !== undefined) {
     await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
   }
-  dialog.showErrorBox(resolveDesktopLocale(app.getLocale()).messages.startupFailed, message)
-  app.exit(1)
+  // Do not await Electron readiness from top-level ESM evaluation.
+  void app.whenReady().then(() => showStartupRecovery(message)).catch((failure: unknown) => {
+    dialog.showErrorBox(resolveDesktopLocale(app.getLocale()).messages.startupFailed, String(failure))
+    app.exit(1)
+  })
 }
 
 // Electron defers ready until ESM evaluation finishes; browser paths must be set first.

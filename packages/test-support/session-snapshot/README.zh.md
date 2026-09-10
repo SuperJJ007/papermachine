@@ -107,6 +107,8 @@ Spill 场景通过真实本地 provider 保存到私有临时根目录。夹具�
 
 ### 设计
 
+`runScenario` 和 `defineAcpSnapshotSuite` 接受 `profilePackages`，声明仅供 overlay 使用的 npm 包。ACP 启动前，共享[包安装器](../loader-smoke/README.zh.md#overlay-package-provenance) 校验这些包并在隔离 home 中建立链接；无论成功或失败，清理都会移除链接。Built replay 必须显式声明 replay provider，SDK 场景适配器也使用同一安装器处理 replay 包和场景专属子代理包。
+
 共享核心拥有 manifest、generation 限定角色选择、workspace 设置／比较、类型化身份映射、normalizer 与 fixture 不变式。ACP 适配器增加四个可组合层：launcher、场景 harness、normalizer 与 suite factory。`launchAcpTestAgent` 在 tsx 下启动源码 profile，或在普通 Node 下启动已构建 `lib` profile，通过原始字节 stdout tee 连接 SDK client，收集 Session update 与 stderr，默认拒绝未处理的权限请求，并负责关闭。`runScenario` 驱动 ACP JSON-RPC stdio，并收集每个 Session 目录中数值最高的持久原始 JSONL generation。纯 normalizer 把 cwd 路径与类型化身份变为稳定 token，将时间归零、展开物理来源区间，并擦除系统提示词文本与工具 schema bulk。`defineAcpSnapshotSuite` 注册比较、generation 限定 fixture 回写与实时一致性保护。
 
 ### 源码地图
@@ -173,3 +175,9 @@ Spill 场景通过真实本地 provider 保存到私有临时根目录。夹具�
 无。
 
 </details>
+
+### Science 录制会话
+
+无界面适配器接受 `science-headless`，并将独立的 `PAPERMACHINE_HOME` 放在通用沙箱临时目录授权范围外。[Science 工具](../../../snapshots/session/science-tools/snapshot.yml)与 [Web 预设](../../../snapshots/web/science-preset/snapshot.yml)录制真实模型调用，通过生产工具、运行时和产物存储回放。包内解释器 fixture 只接受录制的 Python 操作，通过真实内核协议输出独立验证过的 PNG；它不证明 Python 或 R 的实际执行。
+
+`normalizeScienceSnapshot` 仅从已知 Science 事实收集解释器前缀、可执行文件观测、环境指纹和 scratch 身份的 token。它归一化服务拥有的事件时钟及对应的结构化 `get_science_state` 结果，包括具名 `science:environment` 提示段中的短指纹。相同观测保留相同 token，不一致的引用仍可区分。源码、用户文本、产物哈希、版本、字节数、错误和未知事件载荷仍是比较依据。包内图表预览及 Web 冷历史、来源一致性的 expected 留在各自所有者目录。[决策记录](../../../.agents/notes/implemented/testing/2026-09-10-science-recorded-session-replay.zh.md)解释了其与真实内核验收的区别。

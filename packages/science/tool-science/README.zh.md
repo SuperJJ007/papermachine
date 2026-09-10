@@ -1,6 +1,29 @@
+---
+description: "让模型执行 Python 和 R、查看 Science 状态、安装软件包并标注已捕获的产物。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-science
 
 [English](README.md) | 中文
+
+## 概述
+
+让模型执行 Python 和 R、查看 Science 状态、安装软件包并标注已捕获的产物。用户可以针对精确产物版本提交编辑请求。执行需要已配置的 Science Runtime。
+
+## 目录
+
+- [包职责](#package-section-0)
+- [配置](#package-section-1)
+- [首次模型请求](#package-section-2)
+- [工具](#package-section-3)
+- [运行时断言](#package-section-4)
+- [模型体验](#package-section-5)
+- [已知限制与暂缓事项](#package-section-6)
+- [开发备注](#dev-note)
+
+<a id="package-section-0"></a>
+## 包职责
 
 **面向模型的 Science mode Consumer**：首次使用时的 mode/environment 绑定、`science:environment` 动态上下文，以及五个工具：`get_science_state`、`run_python`、`run_r`、`annotate_artifact`、`install_science_packages`。[`dsh-science-session`](../science-session) 拥有 durable vocabulary、严格 fold、projection 与 invariant；[`dsh-science-runtime`](../science-runtime) 拥有 environment 观测、私有 scratch、直接执行、终态分类、run 写出文件的自动捕获、纯元数据的 artifact 策展，以及 micromamba package 安装。本包从不 spawn 进程、写入 run source、分类终止方式或管理 Conda。Environment、run 与 artifact fact 由 Runtime 追加。结果通过普通 assistant 回复呈现，没有发布工具或独立的 Outcome 修订。
 
@@ -16,6 +39,7 @@
 
 编辑引导明确 `artifactId` 是捕获回执与 `get_science_state` 中的 UUID，不能填写文件名。
 
+<a id="package-section-1"></a>
 ## 配置
 
 三个键都是必填项，均没有默认值或从环境发现的值。本包不提供已发布的生产身份或历史返回策略。
@@ -26,12 +50,14 @@
 | `modeRevision` | 部署方拥有的 Science mode contract revision，会持久化在每个 session 的 `ScienceModeRef` 中。要求 trim 后非空且 ≤128 个字符。 |
 | `stateHistoryLimit` | 正 safe integer；分别限制最近 run、artifact version，以及每个 artifact 的直接编辑摘要。 |
 
+<a id="package-section-2"></a>
 ## 首次模型请求
 
 对于 session 当前解析结果为 `science` preset 的 Agent（`@deepseek-ai/dsh-agent-presets` 的 `resolveSessionPreset`：以 session 的创建 header 为基础，被最后一条 `agent-preset/selected` 事件覆盖——一个在 blank 状态下切换到 `science` 的 session 即使其 header 仍记录创建时的 preset，也满足条件），在其首次真正的 Science prompt assembly 时，本包会重放该 session。如果不存在 `science/mode-bound`，本包会在任何 `step/start`、`request/header` 或 `tool/call` 之前追加一条——durable 的 Science Session applicability 规则会独立强制这一顺序。已存在 mode 的 revision 必须等于配置的 `modeRevision`；不匹配会在构造请求之前拒绝 assembly。如果不存在 durable environment，本包会调用 `ctx.scienceRuntime.bindEnvironment({ session, profileId, signal })`；无论结果是 durable 的 applied 值还是 `invalid` 值，都是模型可见的值，而 Runtime 缺失、取消、超时、Host I/O 失败或 confinement 失败则会改为拒绝 assembly。"confinement 失败"是指沙箱报告的隔离级别低于 `dsh-science-runtime` 配置的 `minimumEnforcement`（默认为 `'full'`；仅当受支持的后端无法达到完全隔离时——例如 win32 的 ACL 沙箱——部署方才会将其降为 `'partial'`）——绝不是 Science 默默接受了更弱的边界。confinement 调用实际达到的级别会记录在生成的 environment binding 上（`ScienceEnvironmentBinding.sandboxEnforcement`），因此 provenance 展示的是实际被接受的级别，而不仅是所要求的级别。恢复的 session 会在首次 Science run 前重试一次持久化的非 applied 环境；当前生命周期产生新的环境观测后，后续 prompt assembly 不会反复重试。已 applied 的绑定和已有 run 记录的 session 不会在此自动重新绑定；`dsh-science-runtime` 自身的 `startRun` 会另行在每次 run 时核验共享 prefix 是否漂移，一旦发生变化就会在那时重新绑定(见该包 README)。没有发起 Agent 的诊断性 prompt assembly，或非 `science`-preset 的 session，不会执行任何 Host I/O，也永远不会追加 Science 事件。
 
 绑定完成后，本包会根据刚提交的 projection 重新渲染 `science:environment` 上下文，并在正在进行的 assembly 中替换那一个具名条目，然后精确地委托一次给 `system-prompt/assemble` waterfall。随后 agent loop 会在 `request/header` 之前把该当前上下文记录为一条 `user/message`，因此首次请求——以及同一步骤内的每次重试请求——都始终可以从 session 日志重建。
 
+<a id="package-section-3"></a>
 ## 工具
 
 | 工具 | 参数 | 行为 |
@@ -44,6 +70,12 @@
 
 `run_python`、`run_r` 与 `annotate_artifact` 要求 direct 顶层 dispatch、最新 `request/header` 与确切 tool-call ID；嵌套 Code Mode dispatch 会在 Runtime lookup 或 Session mutation 之前拒绝。`install_science_packages` 只要求 direct 顶层 dispatch——它自己不携带 `toolCallId`/`requestHeaderSeq` 溯源信息，与 `bindEnvironment` 自身的整值 environment 追加一致。Durable run 终态是包含受限 output 的结构化 canonical 值。Artifact success 值为所有客户端渲染有用文本；`run_python`/`run_r` 与 `annotate_artifact` 还会为每一个被捕获或被策展的 artifact（任意受支持媒体类型）额外保留一条带标签、带版本的 presentation 值，供专用 Web 行使用。五个工具都使用 generic render intent，不带 editor location——`install_science_packages` 也不例外，因为绝不能让任何 Host path 泄漏进只依据 `args` 渲染的 presenter。`install_science_packages` 不需要单独的用户批准：内置 `science` agent preset 没有为它配置任何 `tools/pre-execute`/`ctx.approval` 策略(这套机制本身是存在的——见 `packages/core/tools/README.md`——只是这个工具没有被注册进去)。这是一项经过深思的决定(2026-09，对应 #15)：这个工具唯一做的事就是改变一个共享 Conda prefix 的包集合，而 `dsh-science-runtime` 现在按每次 run 做的 prefix 漂移检测已经让这类改动对共享该 profile 的每一个会话都变得可见且 durable——表现为一条全新的 `science/environment-bound` revision，以及模型会在下一次 run 结果里报告的一次建模内核重启——而不只是对发起安装的那个会话可见。把这个动作挡在批准提示之后，只会打断本应连续的分析流程，去换取一个事后已经被完整记录、可审计的改动。
 
+<a id="package-section-4"></a>
+## 运行时断言
+
+本包没有 `./invariant` 入口。执行由 Science Runtime 负责，持久化事件与投影的断言由 Science Session 负责；提示词和工具注册不引入独立的可变关系。
+
+<a id="package-section-5"></a>
 ## 模型体验
 
 ### 静态工具指引
@@ -194,7 +226,14 @@ Append-only；新出现的内容跟在可复用的请求 prefix 之后，不会�
 
 ## 已知限制与暂缓事项
 
+<a id="package-section-6"></a>
+
 - **不拥有组装，无默认 Runtime** — 本包不自行组合任何 preset、CLI/Web profile 行或 Runtime 配置；随附的内置 `science` agent preset 与 Web Host 的 `./edit-service` 行是独立的应用层组装，`ctx.scienceRuntime` 仍是每个 Host 各自挂载的显式部署配置。参见 [R3](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) 与 [R4](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Note。
 - **没有发布流程** — 模型在对话中回答；没有独立的 Outcome 编辑器或发布工具。
 
 Host `/read-service` 入口提供五个 `science` Remote 读取方法，覆盖产物字节、项目库元数据、版本摘要、图表状态和已引用的 UTF-8 文件。它还通过 connection 服务注册经认证的 GET/HEAD `/api/science-artifact?sessionId=…&versionId=…`。产物读取要求会话持久化 cwd；本会话产物使用事件坐标，同项目其他版本经存储核实后可读。`textAttachmentByteLimit` 限制已引用 UTF-8 预览（默认 2 MiB）。工作区文件使用上游 `api/workspace-files` 与 `ui-sidebar-files`。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

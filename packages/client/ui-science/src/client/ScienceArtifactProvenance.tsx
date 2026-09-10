@@ -236,12 +236,13 @@ function MessagesSection({
   if (summary === undefined || producingCallId === undefined) {
     return <section className={css.section}><p className={css.notice} role="status">{t('provenance.messages.pending')}</p></section>
   }
+  const anchorKey = summary.anchorKey
   return (
     <section className={css.messagesSection}>
       <div className={css.messageSummary}><span>{t('provenance.messages.question')}</span><p>{summary.user}</p></div>
       <div className={css.messageSummary}><span>{t('provenance.messages.result')}</span><p>{summary.agent}</p></div>
       <div className={css.messageActions}>
-        <button type="button" className={css.primaryAction} disabled={summary.anchorKey === undefined} onClick={() => { if (summary.anchorKey !== undefined) returnToConversation(summary.anchorKey) }}>{t('provenance.messages.conversation')}</button>
+        <button type="button" className={css.primaryAction} disabled={anchorKey === undefined} onClick={anchorKey === undefined ? undefined : () => { returnToConversation(anchorKey) }}>{t('provenance.messages.conversation')}</button>
         <button type="button" className={css.secondaryAction} onClick={() => { inspectCall(producingCallId) }}>{t('provenance.messages.trajectory')}</button>
       </div>
     </section>

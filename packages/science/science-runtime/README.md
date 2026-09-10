@@ -1,12 +1,38 @@
+---
+description: "Run Python and R in persistent session kernels and capture their output as versioned project artifacts."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-science-runtime
 
 English | [中文](README.zh.md)
 
+## Summary
+
+Run Python and R in persistent session kernels and capture their output as versioned project artifacts. Reuse variables across calls and bind execution to configured Conda environments. The tool package owns model-facing requests and result rendering.
+
+## Table of Contents
+
+- [Package responsibilities](#package-section-0)
+- [Composition](#package-section-1)
+- [Settings-bound entry](#package-section-2)
+- [Operations](#package-section-3)
+- [Confinement and environment](#package-section-4)
+- [Verification](#package-section-5)
+- [Runtime assertions](#package-section-6)
+- [Model Experience](#package-section-7)
+- [Known Limitations and Deferred Work](#package-section-8)
+- [Dev Note](#dev-note)
+
+<a id="package-section-0"></a>
+## Package responsibilities
+
 `@deepseek-ai/dsh-science-runtime` provides the folded, host-local Conda Runtime for durable Science environment, run, and artifact facts. It owns `ctx.scienceRuntime`, private per-Session scratch, a persistent per-(session, language) Python/R kernel process, stable prefix observation, exact-Session leases, terminal result classification, auto-capture of run-written files into versioned artifacts, and metadata-only curated re-annotation of an already-captured artifact version. It registers no model-facing tool, prompt, preset, or UI.
 
+<a id="package-section-1"></a>
 ## Composition
 
-Load `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-science-session`, `@deepseek-ai/dsh-science-artifact-store`, `@deepseek-ai/dsh-subprocess-local`, `@deepseek-ai/dsh-sandbox-local`, and this package on the Host; select `@deepseek-ai/dsh-science-session/invariant` where Science Session facts are admitted. The Runtime requires the project artifact store, a `host-local` subprocess provider, and a sandbox provider reporting at least the configured `minimumEnforcement` (`'full'` by default) — no attachment provider: artifact bytes and their cross-session index live in the project artifact store, not the session-scoped attachment store. Its `./invariant` companion has no duplicate event relation because the Science Session invariant owns durable stream validation.
+Load `@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-science-session`, `@deepseek-ai/dsh-science-artifact-store`, `@deepseek-ai/dsh-subprocess-local`, `@deepseek-ai/dsh-sandbox-local`, and this package on the Host; select `@deepseek-ai/dsh-science-session/invariant` where Science Session facts are admitted. The Runtime requires the project artifact store, a `host-local` subprocess provider, and a sandbox provider reporting at least the configured `minimumEnforcement` (`'full'` by default) — no attachment provider: artifact bytes and their cross-session index live in the project artifact store, not the session-scoped attachment store.
 
 The package configuration names existing absolute Conda prefixes. It does not invoke Conda or create, clone, update, install into, repair, or delete a prefix.
 
@@ -27,6 +53,7 @@ The package configuration names existing absolute Conda prefixes. It does not in
 
 <a id="settings-bound-entry"></a>
 
+<a id="package-section-2"></a>
 ## Settings-bound entry
 
 `@deepseek-ai/dsh-science-runtime/with-settings` provides the same service over the same `Config`, and additionally resolves `profiles` through the restart-scoped `science-runtime` user-settings namespace, which holds only that map. The Cordis `profiles` map is its composition `base`. The Runtime snapshots the resolved map once at load and does not watch it, so a successful write changes only the next Host start. `pythonPrefix` and `rPrefix` are write-only secrets on every browser-facing settings descriptor.
@@ -35,6 +62,7 @@ That entry declares `settings` among its injections, which is what fixes the res
 
 Both entries provide the same `ctx.scienceRuntime` Cordis service, and that service holds exactly one provider: they are alternatives, never mounted together. The shipped Web bundle mounts `with-settings` by default under the Cordis entry id `science-runtime`; a deployment that instead owns its profile map in Cordis configuration overrides that row by id (a patch replacing the row, matching every other bundle-row override) rather than `insert`ing a second Runtime row — inserting a second row throws `service "scienceRuntime" has been registered` at load.
 
+<a id="package-section-3"></a>
 ## Operations
 
 `bindEnvironment({ session, profileId, signal })` requires the exact live Science Session object with a durable `science/mode-bound` fact, observes the selected profile, and appends one complete `science/environment-bound` value. A blank session recomposed from another preset into `science` qualifies through that durable fact even though its frozen creation header still names the original preset. Static missing or unusable interpreters become an `invalid` value; cancellation, timeout, prefix I/O failure, confinement reported below the configured `minimumEnforcement`, or an overlapping writable root rejects without an environment event. On success, the enforcement level the confinement actually reported is recorded on the appended binding as `sandboxEnforcement` — the weaker of the two declared languages' own reported levels when both ran (they confine under the same sandbox provider and the same configured minimum, so they report the same level in practice, but the recorded value stays an honest minimum rather than depending on which one happened to run first). Each available interpreter's identity also carries a package inventory: name/version pairs sorted and digested over the complete observation, then retained up to `packagesMaxEntries`/`packagesMaxBytes`; exceeding either cap truncates the retained list and sets `packagesTruncated`, while the digest still covers the complete pre-truncation inventory. A package-inventory probe that does not produce parseable output makes the whole interpreter observation `invalid`, matching the version and UTF-8 probes' honest-failure behavior. `bindEnvironment` itself rejects a second call once the session has any run (`ScienceRuntimeError('ENVIRONMENT_NOT_READY', …)`); that guard, not the durable projection, is what stands between this Runtime and representing a later environment revision against a session that has already run — the Science Session fold already admits an `applied` revision superseding an earlier one once no run is currently in flight. `bindEnvironment` itself is never called a second time in the shipped product: `installPackages` (described under Operations below) reaches a later environment revision through an entirely separate, deliberately unguarded append path instead of lifting this guard.
@@ -118,6 +146,7 @@ The Runtime rejects pre-publication misuse or capability failures with `ScienceR
 
 When the store's current head for a logical name is a direct human edit (`content_origin: 'human-edit'`), auto-capture also ignores an unclaimed file whose bytes still match the latest run-produced ancestor in that artifact's full store history. This prevents a stale pre-edit file in the private artifact directory from reverting the human version during an unrelated later run. Naming that output path in `editBaselines` makes the write intentional, so a model edit or explicit revert still commits normally. Human-edited versions themselves remain valid `artifactInputs` and `editBaselines` sources.
 
+<a id="package-section-4"></a>
 ## Confinement and environment
 
 Every probe, kernel spawn, and package install uses direct argv, an empty subprocess environment base, a fixed environment allowlist, owned cwd, and `workspace-write` confinement required to report at least the configured `minimumEnforcement` — the same confinement a one-shot process would need, held for the kernel's entire lifetime instead of freshly per run. `minimumEnforcement` defaults to `'full'`; a deployment lowers it to `'partial'` only where a supported sandbox backend cannot reach full enforcement, which today means win32's ACL restricted-token backend ([`dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/README.md), "Verified boundaries") — accepting it does not widen what that backend actually enforces; Everyone-writable external objects and NTFS hard-link aliasing stay reachable exactly as that package documents. That same lowered minimum governs `installPackages` too: a win32 desktop deployment configuring `minimumEnforcement: 'partial'` accepts the ACL backend's write-target confinement for `micromamba install` on exactly the same terms it accepts it for a probe or a kernel. Whichever level a confinement call actually reports is recorded on the resulting environment binding as `sandboxEnforcement`, so provenance always shows what was accepted, never only what was required. `confineWithEnforcement` (`execution.ts`) is the one comparison point for probe and kernel-spawn confinement; `installPackages`' own `confineInstallArgv` (`install.ts`) cannot call it directly — installing must grant the target prefix write access, the opposite of what `confineWithEnforcement`'s own `assertPrefixReadOnly` requires — so it reuses the same `meetsMinimumEnforcement` comparison instead, and reports the identical `CONFINEMENT_UNAVAILABLE` message shape. The sandbox provider itself is never asked to relax anything at any of these sites — it keeps reporting the enforcement level it actually achieves. Python probes use `-I -B -X utf8` (isolated mode: a probe never installs anything). A Python kernel drops `-I`, keeping `-B -u -X utf8`, and runs the shipped `kernel_python.py` driver; its fixed environment allowlist adds `PYTHONUSERBASE=<kernel scratch dir>/pyuser`, created at spawn. Dropping isolated mode is what makes an inline `pip install` importable within the same kernel: under sandbox confinement the Conda prefix is read-only, so pip's install falls back to a user-site install, and `-I` would otherwise exclude user site-packages from `sys.path`; `PYTHONUSERBASE` gives that fallback a kernel-owned, writable target instead of the ambient default. R version discovery uses standalone `Rscript --version`; its UTF-8 probe uses `Rscript --vanilla --encoding=UTF-8`; an R kernel runs the shipped `kernel_r.R` driver under the same flags, with `R_LIBS_USER=<kernel scratch dir>/rlibs` added to its fixed environment allowlist and created at spawn — `install.packages()` only adds a directory to `.libPaths()` when it already exists, and only R_LIBS_USER, unlike a bare additional library path, is what a non-interactive `install.packages()` targets without further arguments. Python's package-inventory probe adds `-m pip list --format=json`, reporting what the interpreter itself sees; R's evaluates `installed.packages()` and prints `Package`/`Version` as TSV using only base R, since `jsonlite` is not guaranteed present. The Runtime refuses a Conda prefix that overlaps any writable root, and never grants the project directory as its workspace. On win32, the fixed environment allowlist additionally carries `SystemRoot`, `windir`, `SystemDrive`, `ComSpec`, `PATHEXT`, `TEMP`, `TMP`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`, `NUMBER_OF_PROCESSORS`, and `PROCESSOR_ARCHITECTURE`, carried through from the Host's own ambient environment: a win32 process started with none of them cannot initialize Winsock (`WinError 10106`), which the loopback TCP response channel and the interpreter's own standard library both depend on. `PATH` on win32 joins, in the order `conda activate` uses, `<prefix>`, `<prefix>\Library\mingw-w64\bin`, `<prefix>\Library\usr\bin`, `<prefix>\Library\bin`, `<prefix>\Scripts`, and `<prefix>\bin`, instead of POSIX's `<prefix>/bin:/usr/bin:/bin`.
@@ -128,6 +157,7 @@ Kernel execution runs on darwin, linux, and win32. The response-channel transpor
 
 The private root is derived under `DSH_HOME/science/v1/` with an exclusive mode-0600 owner marker and mode-0700 directories, including a `kernels/` subtree holding each live kernel's own scratch (its response FIFO among it, on darwin and linux; win32 has no on-disk response-channel artifact — the loopback TCP listener and its one-time token exist only in Host process memory). On win32, Node's `lstat` mode bits on a directory or file are synthetic and never reflect a prior `chmod`, so privacy verification checks only directory/file/symlink kind there, not mode bits; the actual privacy guarantee comes from the user-profile ACL a Harness home inherits plus the ACL sandbox's own per-session SIDs (`dsh-sandbox-windows-acl`), not from POSIX permissions. Only the operation whose exclusive marker creation succeeds receives rollback ownership; a materialization failure removes that operation's exact marker and Session root after verifying the marker bytes, while concurrent or pre-existing ownership is retained. A live operation reserves the exact Session object; a same-ID successor remains quarantined until an older detached lifecycle proves all owned trees — including every kernel it owned — are quiescent. Accepted run directories remain for state and diagnostics, while unpublished probe directories are removed only after quiescence.
 
+<a id="package-section-5"></a>
 ## Verification
 
 Protocol fixtures run over TCP on every host and additionally over real FIFOs on POSIX. Portable ownership tests control subprocess exit evidence and filesystem failures without requiring native FIFO support; separate POSIX integration cases retain real FIFO and permission checks. Foreign-platform mode-policy tests supply recorded metadata rather than interpreting Windows synthetic mode bits as POSIX permissions.
@@ -147,6 +177,12 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 
 The command reports Python, R, and cross-language coexistence independently as `PASS`, `FAIL`, or `NOT-RUN`; absent opt-in inputs produce `NOT-RUN`. A selected language verifies canonical prefix/executable/history identity, non-ASCII direct source/output, empty-environment behavior, owned directories, full confinement, cancellation, timeout, prefix-write denial, managed-tree settlement, an unchanged prefix manifest, state persistence across two runs on the same kernel, a kernel surviving an interrupted run, a kernel replaced after a run whose timeout escalated, an environment rebind starting a fresh epoch, idle expiry — against the shortest legal `kernelIdleTimeoutMs` — starting a fresh epoch, and, for R, a bare top-level value auto-printing to stdout. A further, language-independent check binds one environment naming both interpreters and confirms the Python and R kernels coexist with independent epochs and independent in-memory state.
 
+<a id="package-section-6"></a>
+## Runtime assertions
+
+No runtime invariant companion is published: It enforces private process lifecycle ordering before appending facts; the Science Session invariant owns the independently observable event/projection relationship.
+
+<a id="package-section-7"></a>
 ## Model Experience
 
 None, as the Runtime exposes non-model-facing operations consumed by `@deepseek-ai/dsh-tool-science` and registers no prompt context.
@@ -156,6 +192,8 @@ None, as the Runtime exposes non-model-facing operations consumed by `@deepseek-
 None; the Runtime neither assembles nor sends provider requests.
 
 ## Known Limitations and Deferred Work
+
+<a id="package-section-8"></a>
 
 - **No environment management** — the Runtime consumes explicit existing prefixes; it does not discover, create, install into, update, repair, or delete Conda environments.
 - **Existing local prefixes only** — observations are fingerprints, not reproducible-environment locks, and the Runtime never manages Conda packages or environments.
@@ -178,3 +216,8 @@ None; the Runtime neither assembles nor sends provider requests.
 - **Uncopyable custom figures remain ordinary PNGs** — a snapshot failure preserves the successful save but makes the image unavailable for direct editing. Cold recovery still requires reproducible source inputs and plotting dependencies; runtime objects are not persisted.
 
 Science kernels request an empty target environment, merge backend-required entries last, and use cooperative interruption before escalation. Target process identity remains private to the subprocess provider.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

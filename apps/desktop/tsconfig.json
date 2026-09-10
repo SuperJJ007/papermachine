@@ -2,10 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "lib/types"
+    "outDir": "lib/types",
+    "resolveJsonModule": true
   },
-  "include": ["src"],
+  "include": [
+    "src",
+    "src/**/*.json"
+  ],
   "references": [
-    { "path": "../../packages/util/home-paths" }
+    {
+      "path": "../../packages/util/home-paths"
+    }
   ]
 }

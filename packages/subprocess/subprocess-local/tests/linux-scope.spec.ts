@@ -541,6 +541,39 @@ describe('Linux PTY bootstrap reuse', () => {
     graceMs: 100,
   } as const
 
+  it('ignores interruption before bootstrap consumption and forwards it after establishment', () => {
+    const spawnSync = vi.fn(() => ({ status: 0 }))
+    const directSignal = vi.fn()
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {
+      systemdRun: '/bin/systemd-run',
+      systemctl: '/bin/systemctl',
+      runnerInvocation: ['/usr/bin/node', '/runner.js'],
+      spawnSync: spawnSync as never,
+      systemctlQuery: async () => missingUnit(),
+    })
+    try {
+      const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]
+      if (requestPath === undefined) throw new Error('missing PTY request')
+      const owner = scope.bindOwner({ running: () => true, signal: directSignal })
+      owner.signal('SIGINT')
+      expect(spawnSync).not.toHaveBeenCalled()
+      expect(directSignal).not.toHaveBeenCalled()
+      expect(existsSync(requestPath)).toBe(true)
+
+      consumeLinuxLaunchRequest(requestPath)
+      owner.signal('SIGINT')
+      const unitArgument = scope.args.find(arg => arg.startsWith('--unit='))
+      if (unitArgument === undefined) throw new Error('missing scope unit')
+      expect(spawnSync).toHaveBeenCalledExactlyOnceWith('/bin/systemctl', [
+        '--user', 'kill', '--kill-whom=all', '--signal=SIGINT',
+        `${unitArgument.slice('--unit='.length)}.scope`,
+      ], expect.objectContaining({ encoding: 'utf8' }))
+      expect(directSignal).not.toHaveBeenCalled()
+    } finally {
+      scope.cleanup()
+    }
+  })
+
   it('uses the same request/bootstrap, preserves argv, and cleans after owner settlement', async () => {
     const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {
       systemdRun: '/bin/systemd-run',

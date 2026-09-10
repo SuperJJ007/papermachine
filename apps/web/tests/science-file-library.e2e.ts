@@ -23,7 +23,7 @@ import {
 } from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const EXPECTED = fileURLToPath(new URL('./snapshots/science-file-library/library.expected.md', import.meta.url))
+const EXPECTED = fileURLToPath(new URL('./expected/science-file-library/library.expected.md', import.meta.url))
 const SHOT_GRID = fileURLToPath(new URL('../../../.artifacts/s4-file-library-grid.png', import.meta.url))
 const SHOT_LIST = fileURLToPath(new URL('../../../.artifacts/s4-file-library-list-search.png', import.meta.url))
 const SHOT_FILES = fileURLToPath(new URL('../../../.artifacts/s4-file-library-project-files.png', import.meta.url))
@@ -195,7 +195,7 @@ describe('web e2e: project Science file library', () => {
     const lightbox = page.getByRole('dialog')
     await lightbox.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-file-library/lightbox.expected.md', import.meta.url)),
+      fileURLToPath(new URL('./expected/science-file-library/lightbox.expected.md', import.meta.url)),
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), MODE,
     )
     await lightbox.getByRole('button', { name: 'Close', exact: true }).click()
@@ -213,7 +213,7 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('tab', { name: 'other.csv Close', exact: true }).click()
     await details.getByText('second-file,73', { exact: false }).waitFor()
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-file-library/file-switch.expected.md', import.meta.url)),
+      fileURLToPath(new URL('./expected/science-file-library/file-switch.expected.md', import.meta.url)),
       await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
     )
     expect(tripwire.pageErrors).toEqual([])

@@ -215,3 +215,10 @@ describe('selection-store: persistence declaration', () => {
     expect(createScienceSelectionStore().spec.persist).toBe('dsh.science.selection.v1')
   })
 })
+
+it('keeps an already expanded trace turn open on repeated navigation', () => {
+  const instance = createScienceSelectionStore().create('repeat-expansion')
+  instance.actions.expandTraceTurn(4)
+  instance.actions.expandTraceTurn(4)
+  expect(instance.getSnapshot().traceExpandedTurns).toEqual([4])
+})

@@ -160,6 +160,48 @@ describe('headless runner', () => {
     await test.ctx.fiber.dispose()
   })
 
+  it('persists the selected preset and waits for its mount before submitting the task', async () => {
+    const order: string[] = []
+    const test = await bench({
+      afterPrompt(session, message, agent) {
+        expect(session.header.agentPreset).toBe('science')
+        expect(agent.ctx.get('presetReady')).toBe(true)
+        order.push('task')
+        appendTurn(session, 1, message, 'preset task completed', true)
+      },
+    })
+    test.ctx.provide('agentPresets', {
+      defaultId: 'science',
+      async mount(agentCtx: Context, presetId: string) {
+        expect(presetId).toBe('science')
+        await Promise.resolve()
+        agentCtx.provide('presetReady', true)
+        order.push('mounted')
+      },
+    })
+    try {
+      expect(await test.run()).toMatchObject({ code: 0, out: 'preset task completed\n', err: '' })
+      expect(order).toEqual(['mounted', 'task'])
+    } finally {
+      await test.ctx.fiber.dispose()
+    }
+  })
+
+  it('reports a preset mount failure without submitting an unconfigured task', async () => {
+    let submitted = false
+    const test = await bench({ afterPrompt: () => { submitted = true } })
+    test.ctx.provide('agentPresets', {
+      defaultId: 'missing-preset',
+      mount: async () => { throw new Error('preset is unavailable') },
+    })
+    try {
+      expect(await test.run()).toMatchObject({ code: 1, out: '', err: 'dsh: preset is unavailable\n' })
+      expect(submitted).toBe(false)
+    } finally {
+      await test.ctx.fiber.dispose()
+    }
+  })
+
   it('ignores durable inbox events before the first owned turn', async () => {
     const test = await bench({
       afterPrompt(session, message) {

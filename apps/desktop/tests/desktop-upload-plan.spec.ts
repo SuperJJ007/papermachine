@@ -1,3 +1,4 @@
+import { PAPER_MACHINE_VERSION } from '../src/product.ts'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -38,7 +39,7 @@ async function fixture(
   await writeFile(join(appRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
 
   const [os, arch] = target.split('-') as ['mac' | 'win', 'arm64' | 'x64']
-  const base = `papermachine-${version}-${os}-${arch}`
+  const base = `papermachine-${PAPER_MACHINE_VERSION}-${os}-${arch}`
   const origin = environment === 'test'
     ? TEST_ORIGIN
     : 'https://papermachine-updates.example.com'
@@ -109,9 +110,9 @@ describe('desktop upload plan', () => {
       bucket: TEST_BUCKET,
     })
     expect(plan.artifacts.map(artifact => artifact.filename)).toEqual([
-      'papermachine-1.2.3-mac-arm64.dmg',
-      'papermachine-1.2.3-mac-arm64.zip',
-      'papermachine-1.2.3-mac-arm64.zip.blockmap',
+      'papermachine-0.1.3-mac-arm64.dmg',
+      'papermachine-0.1.3-mac-arm64.zip',
+      'papermachine-0.1.3-mac-arm64.zip.blockmap',
       'latest-mac.yml',
     ])
     expect(plan.artifacts.at(-1)).toMatchObject({
@@ -124,9 +125,9 @@ describe('desktop upload plan', () => {
     const paths = await fixture('mac-arm64', '1.2.3-alpha.4')
     const plan = await createDesktopUploadPlan('mac-arm64', paths)
     expect(plan.artifacts.map(artifact => artifact.filename)).toEqual([
-      'papermachine-1.2.3-alpha.4-mac-arm64.dmg',
-      'papermachine-1.2.3-alpha.4-mac-arm64.zip',
-      'papermachine-1.2.3-alpha.4-mac-arm64.zip.blockmap',
+      'papermachine-0.1.3-mac-arm64.dmg',
+      'papermachine-0.1.3-mac-arm64.zip',
+      'papermachine-0.1.3-mac-arm64.zip.blockmap',
       'alpha-mac.yml',
     ])
   })
@@ -135,7 +136,7 @@ describe('desktop upload plan', () => {
     const paths = await fixture('win-x64', '2.0.0', 'production')
     const plan = await createDesktopUploadPlan('win-x64', paths)
     expect(plan.artifacts.map(artifact => artifact.filename)).toEqual([
-      'papermachine-2.0.0-win-x64.exe',
+      'papermachine-0.1.3-win-x64.exe',
       'latest.yml',
     ])
     expect(plan).toMatchObject({
@@ -150,7 +151,7 @@ describe('desktop upload plan', () => {
     await writeFile(join(paths.artifactsRoot, 'latest.yml'), `${JSON.stringify({
       version: '1.2.3',
       files: [{
-        url: 'papermachine-1.2.3-win-x64.exe',
+        url: 'papermachine-0.1.3-win-x64.exe',
         size: Buffer.byteLength(executable),
         sha512: digest(executable),
       }],
@@ -175,10 +176,19 @@ describe('desktop upload plan', () => {
     })).rejects.toThrow(/completion record.*test/u)
   })
 
+  it('rejects an internal-version filename even when release metadata versions agree', async () => {
+    const paths = await fixture('mac-arm64', '0.1.5-rc.1')
+    await writeFile(join(paths.artifactsRoot, 'rc-mac.yml'), JSON.stringify({
+      version: '0.1.5-rc.1',
+      files: [{ url: 'papermachine-0.1.5-rc.1-mac-arm64.zip', size: 1, sha512: digest('x') }],
+    }))
+    await expect(createDesktopUploadPlan('mac-arm64', paths)).rejects.toThrow('papermachine-0.1.3-mac-arm64.zip')
+  })
+
   it('rejects stale architecture metadata and modified updater bytes', async () => {
     const paths = await fixture('mac-arm64')
     const metadataPath = join(paths.artifactsRoot, 'latest-mac.yml')
-    const zipPath = join(paths.artifactsRoot, 'papermachine-1.2.3-mac-arm64.zip')
+    const zipPath = join(paths.artifactsRoot, 'papermachine-0.1.3-mac-arm64.zip')
     await writeFile(zipPath, 'modified')
     await expect(createDesktopUploadPlan('mac-arm64', paths)).rejects.toThrow(/size.*metadata/u)
 
@@ -186,7 +196,7 @@ describe('desktop upload plan', () => {
     await writeFile(metadataPath, `${JSON.stringify({
       version: '1.2.3',
       files: [{
-        url: 'papermachine-1.2.3-mac-x64.zip',
+        url: 'papermachine-0.1.3-mac-x64.zip',
         size: Buffer.byteLength(x64),
         sha512: digest(x64),
       }],

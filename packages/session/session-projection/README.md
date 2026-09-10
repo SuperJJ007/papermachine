@@ -143,4 +143,4 @@ None.
 
 </details>
 
-A projection may declare `checkpointStateSeq(state)` when its persisted state contains an event watermark. Every admitted checkpoint must pass `stateSchema` and match that watermark to the row sequence. Invalid rows are omitted from cached views and discarded during restoration; a suffix-only restore requires a full log re-read. Hydration uses the same admission rule.
+A projection may declare `checkpointStateSeq(state)` when its persisted state contains an event watermark. Every admitted checkpoint must pass `stateSchema` and match that watermark to the row sequence. Schema-invalid or internally inconsistent rows are omitted from cached views and force `restoreFloor` to zero. Restoration with the complete log discards those rows and returns freshly folded state; restoration with only a suffix throws to require a full log re-read. Hydration uses the same admission rule. A malformed cache row is not an authoritative log error.

@@ -21,8 +21,8 @@ import {
 } from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/science-transcript-chrome', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/science-transcript-chrome/ui.expected.md', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/science-transcript-chrome', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('./expected/science-transcript-chrome/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-transcript-chrome-web-e2e'
 const DONE = 'SCIENCE_CHROME_DONE'

@@ -31,10 +31,10 @@ import {
 } from './science-scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const PANEL_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/panel.expected.md', import.meta.url))
-const LIBRARY_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/library.expected.md', import.meta.url))
-const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/transcript.expected.md', import.meta.url))
-const BLANK_SESSION_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifact-types/blank-session.expected.md', import.meta.url))
+const PANEL_EXPECTED = fileURLToPath(new URL('./expected/science-artifact-types/panel.expected.md', import.meta.url))
+const LIBRARY_EXPECTED = fileURLToPath(new URL('./expected/science-artifact-types/library.expected.md', import.meta.url))
+const TRANSCRIPT_EXPECTED = fileURLToPath(new URL('./expected/science-artifact-types/transcript.expected.md', import.meta.url))
+const BLANK_SESSION_EXPECTED = fileURLToPath(new URL('./expected/science-artifact-types/blank-session.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-artifact-types-web-e2e'
 const SEED_TITLE = 'Science artifact types'

@@ -1,10 +1,4 @@
-/**
- * SessionAttachmentIndex service: registration effect discipline (duplicate
- * rejection, policy-conflict rejection, disposal), extract() dispatch across
- * every policy bucket, and the two convenience reads consumed by
- * dsh-host-apiproxy (live authorization and Session export media
- * collection).
- */
+/** Attachment authorization, extractor disposal, and strict text preview decoding. */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -12,7 +6,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import SessionAttachmentIndex, { SessionAttachmentIndexError } from '../src/index.ts'
+import SessionAttachmentIndex, { decodeReferencedText, SessionAttachmentIndexError } from '../src/index.ts'
 
 // The extractor-required paths fire only for a KNOWN event type outside the
 // static policy lists. No production domain registers an extractor today, so
@@ -211,5 +205,23 @@ describe('SessionAttachmentIndex', () => {
     )?.name).toBe('report.txt')
     await fiber.dispose()
     expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+  })
+})
+
+describe('referenced text preview', () => {
+  it.each(['report.csv', 'data.json', 'notes.md', 'notes.markdown', 'RESULT.TXT'])('decodes complete UTF-8 from %s', (name) => {
+    const text = '结果,μ\n一,1\n'
+    const bytes = new TextEncoder().encode(text)
+    expect(decodeReferencedText({ ...fileRef('sha256:text'), name, bytes: bytes.length }, bytes)).toBe(text)
+  })
+
+  it('rejects files outside the text preview policy', () => {
+    expect(() => decodeReferencedText({ ...fileRef('sha256:pdf'), name: 'report.pdf' }, new Uint8Array()))
+      .toThrow('Referenced file media type does not support text preview')
+  })
+
+  it('rejects truncated UTF-8 rather than returning replacement characters', () => {
+    expect(() => decodeReferencedText(fileRef('sha256:invalid'), new Uint8Array([0xe4, 0xb8])))
+      .toThrow()
   })
 })

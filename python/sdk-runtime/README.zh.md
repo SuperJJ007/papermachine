@@ -33,4 +33,8 @@ Wheel 会安装 `dsh` 控制台命令和 `deepseek_harness_runtime` Python 模�
 
 在仓库根目录运行 `pnpm exec tsx scripts/build-exe-for-python-sdk.ts`，会校验闭包、构建包、部署无符号链接的文件树、打包所选目标，并把可执行程序及伴随文件同步到本模块。`scripts/build-python-release.py` 按仓库根版本暂存发布形态的 wheel，并将 `deepseek-harness-sdk` 固定到完全相同的运行时版本。
 
+生产部署使用 pnpm 的共享锁文件，在 carrier 目录内创建独立的 hoisted 安装。部署保留源工作区依赖，并将完整运行时闭包解析到同一个 Cordis 实例。共享锁文件缺失或不完整时会在部署前失败；legacy 部署被显式禁用。Peer 安装遵循锁文件记录的设置。
+
+闭包不包含桌面打包工具，因此允许未使用的工作区补丁。临时 pnpm 配置 hook 将本地包的构建批准和拒绝规则转换为部署所用的 file-URL 身份；未经审查的脚本仍会失败。无论成功或失败，hook 都会被删除。构建器发起的每次 pnpm 调用都禁用自动依赖刷新，包括闭包前置检查、构建、部署和 pkg 步骤。闭包检查及显式部署仍会执行；开发工具必须预先安装。
+
 Installed-wheel smoke 会在 checkout 外创建干净虚拟环境，证明 distribution 与可执行程序来源，然后覆盖默认及自定义 SDK profile、外部插件、MCP、原生工具、直接 JSON-RPC、检入快照，以及可信运行中的真实提供方。另见 [Python 贡献者工作流](../development.zh.md)与 [installed-wheel 测试决策](../../.agents/notes/implemented/testing/2026-08-23-installed-python-wheel-black-box-ci.zh.md)。

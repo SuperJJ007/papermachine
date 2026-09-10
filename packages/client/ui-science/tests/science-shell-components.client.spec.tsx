@@ -9,6 +9,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
+import { ScienceComposerDock } from '../src/client/ScienceComposerDock.tsx'
 import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
 import { ScienceLibraryAction } from '../src/client/sidebar-entries.tsx'
@@ -132,4 +133,18 @@ describe('Science composer targets', () => {
     selections.clear(SESSION)
     expect(selections.store(SESSION).getSnapshot()).toEqual([])
   })
+})
+
+it('keeps staged references usable before the Science projection is bound', () => {
+  const selection: ScienceEditSelection = {
+    artifactId: ScienceArtifactId('chart-1'), logicalName: 'pending.png', version: 1,
+    target: { kind: 'normalized-region', x: 0, y: 0, width: 1, height: 1 },
+  }
+  const remove = vi.fn()
+  render(<ScienceComposerDock {...({
+    useProjection: () => null, useTargets: (select: (targets: readonly ScienceEditSelection[]) => unknown) => select([selection]),
+    remove, t,
+  } as Parameters<typeof ScienceComposerDock>[0])} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove pending.png v1 · region 0%,0%' }))
+  expect(remove).toHaveBeenCalledWith(0)
 })

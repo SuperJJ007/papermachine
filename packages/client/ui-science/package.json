@@ -18,10 +18,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
@@ -75,7 +71,6 @@
     "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
     "@deepseek-ai/dsh-client-ui-trajectory": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
     "@deepseek-ai/dsh-science-session": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -97,10 +92,9 @@
     "@deepseek-ai/dsh-client-ui-workspace": "workspace:^"
   },
   "files": [
-    "THIRD-PARTY-NOTICES.txt",
     "lib/index.js",
-    "lib/invariant.js",
     "lib/client.js",
+    "THIRD-PARTY-NOTICES.txt",
     "lib/types/**/*.d.ts"
   ]
 }

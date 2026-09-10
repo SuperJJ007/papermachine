@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -113,5 +114,70 @@ describe('runLoaderSmoke', () => {
       tsconfigPath,
       processTimeoutMs: 100,
     })).rejects.toThrow('hanging fixture did not exit within 0.1s.')
+  })
+})
+
+
+describe('isolated profile overlay package provenance', () => {
+  it.each([false, true])('resolves the real package manifest and removes its links (cwd home=%s)', async (cwdHome) => {
+    const packages: Record<string, string> = {}
+    const env: NodeJS.ProcessEnv = {}
+    let workspace = ''
+    await runLoaderSmoke({
+      label: 'overlay provenance', tempDirPrefix: 'loader-overlay-',
+      binScript: fixture('success'), configPath, tsconfigPath, profilePackages: packages, env,
+      prepare: async (cwd) => {
+        workspace = cwd
+        env.DSH_HOME = cwdHome ? cwd : join(cwd, 'owned-home')
+        const directory = join(cwd, 'overlay-package')
+        await mkdir(directory)
+        await writeFile(join(directory, 'package.json'), JSON.stringify({ name: '@smoke/overlay', version: '1.0.0' }))
+        packages['@smoke/overlay'] = directory
+      },
+      inspect: async () => {
+        const require = createRequire(join(env.DSH_HOME!, 'profiles', 'headless', 'cordis.yml'))
+        const manifest = require.resolve('@smoke/overlay/package.json')
+        expect(await realpath(manifest)).toBe(await realpath(join(workspace, 'overlay-package', 'package.json')))
+        expect(JSON.parse(await readFile(manifest, 'utf8'))).toEqual({ name: '@smoke/overlay', version: '1.0.0' })
+      },
+    })
+    expect(existsSync(workspace)).toBe(false)
+  })
+
+  it.each([null, 7, {}, { name: 'wrong', version: '1.0.0' }, { name: '@smoke/overlay' },
+    { name: '@smoke/overlay', version: 1 }, { name: '@smoke/overlay', version: '' }])(
+    'refuses malformed or mismatched package identity %j before launching', async (manifest) => {
+      const packages: Record<string, string> = {}
+      let workspace = ''
+      await expect(runLoaderSmoke({
+        label: 'invalid overlay', tempDirPrefix: 'loader-overlay-invalid-',
+        binScript: fixture('success'), configPath, tsconfigPath, profilePackages: packages,
+        prepare: async (cwd) => {
+          workspace = cwd
+          packages['@smoke/overlay'] = cwd
+          await writeFile(join(cwd, 'package.json'), JSON.stringify(manifest))
+        },
+      })).rejects.toThrow('requires its matching named and versioned manifest')
+      expect(existsSync(workspace)).toBe(false)
+    },
+  )
+
+  it('rejects a missing package instead of silently omitting its inventory referent', async () => {
+    const packages: Record<string, string> = {}
+    let workspace = ''
+    await expect(runLoaderSmoke({
+      label: 'missing overlay', tempDirPrefix: 'loader-overlay-missing-',
+      binScript: fixture('success'), configPath, tsconfigPath, profilePackages: packages,
+      prepare: (cwd) => { workspace = cwd; packages['@smoke/missing'] = join(cwd, 'missing') },
+    })).rejects.toThrow('ENOENT')
+    expect(existsSync(workspace)).toBe(false)
+  })
+
+  it.each([undefined, '/outside-loader-smoke-home'])('refuses to populate an unowned home %s', async (home) => {
+    await expect(runLoaderSmoke({
+      label: 'unowned overlay home', tempDirPrefix: 'loader-overlay-home-',
+      binScript: fixture('success'), configPath, tsconfigPath,
+      profilePackages: {}, env: { DSH_HOME: home },
+    })).rejects.toThrow('requires DSH_HOME inside the isolated cwd')
   })
 })

@@ -5,7 +5,9 @@ afterEach(() => {
   vi.resetModules()
 })
 
-describe.skipIf(process.platform !== 'linux')('Linux libc execve binding', () => {
+// The mocked Linux errno values use Node's verified Darwin/Linux error mappings.
+// Native libc calls are replaced; other hosts retain the platform restriction.
+describe.skipIf(process.platform !== 'linux' && process.platform !== 'darwin')('Linux libc execve binding', () => {
   it('preserves inherited stdio, null-terminates argv and envp, and reports execve errno', async () => {
     const nativeExecve = vi.fn(() => -1)
     const nativeFcntl = vi.fn((fd: number, command: number) => {

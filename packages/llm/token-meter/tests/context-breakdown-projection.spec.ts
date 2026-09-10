@@ -425,16 +425,33 @@ describe('contextBreakdown session projection', () => {
     )
     expect(replayed.snapshot.values.contextBreakdown).toEqual(projected(ctx, session))
     expect(replayed.checkpoint['contextBreakdown']?.ver).toBe(4)
-    const invalid = {
-      ...checkpoint,
-      contextBreakdown: {
-        ...row,
-        val: { nodes: [{ seq: 0, heuristicTokens: -1, system: true }], breakdown: { systemTokens: 0, toolsTokens: 0, messageTokens: 0 } },
-      },
-    }
+  })
+
+  it('discards a malformed current-version checkpoint and rebuilds context prices from the complete log', async () => {
+    const { ctx, session } = await harness()
+    appendSystem(session, 'System context')
+    appendUser(session, 'Retained user input')
+    const checkpoint = ctx.sessionProjections.checkpoint(session)
+    const expected = ctx.sessionProjections.snapshot(session)
+    const row = checkpoint.contextBreakdown!
+    expect(row.ver).toBe(contextBreakdownProjectionDefinition.stateVersion)
+    const state = contextBreakdownProjectionDefinition.stateSchema.parse(row.val)
+    const invalidState = { ...state, nodes: state.nodes.map(node => ({ ...node, heuristicTokens: -1 })) }
+    expect(contextBreakdownProjectionDefinition.stateSchema.safeParse(invalidState).success).toBe(false)
+    const malformed = { ...checkpoint, contextBreakdown: { ...row, val: invalidState } }
+    const events = session.snapshotEvents()
+
+    expect(ctx.sessionProjections.viewCheckpoint(malformed)).not.toHaveProperty('contextBreakdown')
+    expect(ctx.sessionProjections.restoreFloor(malformed)).toBe(0)
     expect(() => ctx.sessionProjections.restore(
-      invalid, session.snapshotEvents(), SessionLogOffset(0), session.header, session.inheritedEventCount,
-    )).toThrow()
+      malformed, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+    )).toThrow(/contextBreakdown.*re-read from seq 0/)
+    expect(ctx.sessionProjections.restore(
+      malformed, events, SessionLogOffset(0), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
+    expect(ctx.sessionProjections.restore(
+      checkpoint, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
   })
 
   it('discards lower-layer version-3 scalar caches and refolds the full surface', async () => {

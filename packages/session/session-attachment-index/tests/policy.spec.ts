@@ -42,6 +42,8 @@ describe('session attachment policy', () => {
   it('resolves a static policy for a built-in and an attachment-free type', () => {
     expect(staticAttachmentPolicy('user/message')).toBe('built-in')
     expect(staticAttachmentPolicy('tool/call')).toBe('attachment-free')
+    expect(staticAttachmentPolicy('deliverables/presented')).toBe('attachment-free')
+    expect(staticAttachmentPolicy('subagent/catalog')).toBe('attachment-free')
   })
 
   it('resolves no static policy for an unrecognized type', () => {

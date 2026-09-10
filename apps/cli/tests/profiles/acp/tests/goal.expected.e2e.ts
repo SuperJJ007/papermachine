@@ -76,6 +76,9 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
     const input = JSON.parse(await readFile(join(scenarioDir, 'input.json'), 'utf8')) as InputScript
     const result = await runScenario(input, {
       agent,
+      profilePackages: {
+        '@deepseek-ai/dsh-llm-replay': fileURLToPath(new URL('../../../../../../packages/test-support/llm-replay', import.meta.url)),
+      },
       mode: 'replay',
       fixtureFile,
       overrideFile,
@@ -125,6 +128,9 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
     const input = JSON.parse(await readFile(join(wrapupDir, 'input.json'), 'utf8')) as InputScript
     const result = await runScenario(input, {
       agent,
+      profilePackages: {
+        '@deepseek-ai/dsh-llm-replay': fileURLToPath(new URL('../../../../../../packages/test-support/llm-replay', import.meta.url)),
+      },
       mode: 'replay',
       fixtureFile: join(wrapupDir, 'session.jsonl'),
       overrideFile: join(wrapupDir, 'replay.override.json'),

@@ -155,6 +155,7 @@ function staleRefreshFixtures(dir: string): void {
   const plainBehaviorFile = join(dir, 'plain-turn', 'behavior.json')
   const plainBehavior = JSON.parse(readFileSync(plainBehaviorFile, 'utf8')) as Record<string, unknown>
   plainBehavior.echoEnv = true
+  plainBehavior.requiredProfilePackage = '@deepseek-ai/dsh-session-snapshot'
   writeFileSync(plainBehaviorFile, `${JSON.stringify(plainBehavior, null, 2)}\n`)
 
   writeFileSync(join(dir, 'blocked-log', 'session.jsonl'), [
@@ -180,7 +181,10 @@ describe('defineAcpSnapshotSuite: record mode', () => {
 })
 
 describe('defineAcpSnapshotSuite: refresh mode', () => {
-  defineAcpSnapshotSuite({ agent: AGENT, snapshotsDir: refreshDir, scenarios: REPLAY_SCENARIOS, mode: 'refresh' })
+  defineAcpSnapshotSuite({
+    agent: AGENT, snapshotsDir: refreshDir, scenarios: REPLAY_SCENARIOS, mode: 'refresh',
+    profilePackages: { '@deepseek-ai/dsh-session-snapshot': fileURLToPath(new URL('..', import.meta.url)) },
+  })
 })
 
 describe('defineAcpSnapshotSuite: refresh write-back', () => {

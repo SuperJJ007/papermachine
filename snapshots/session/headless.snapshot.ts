@@ -8,6 +8,7 @@ import { basename, delimiter, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
+import { prepareSciencePrefix } from '../../packages/science/science-runtime/tests/fixtures/snapshot-prefix.ts'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { releasedV0SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import type { SessionFormatEvent, SessionFormatMigrationContext } from '@deepseek-ai/dsh-session-format'
@@ -502,7 +503,7 @@ async function collectScenarios(): Promise<HeadlessScenario[]> {
     const manifestPath = join(dir, 'snapshot.yml')
     if (!existsSync(manifestPath)) continue
     const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
-    if (manifest.profile !== 'headless' || manifest.composition === undefined) continue
+    if (!['headless', 'science-headless'].includes(manifest.profile) || manifest.composition === undefined) continue
     if (manifest.recording === undefined || manifest.header === undefined) {
       throw new Error(`${entry.name}: a headless corpus manifest needs recording and header metadata`)
     }
@@ -629,6 +630,23 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
       ).toBe(childPrompts.get(logIndex) ?? prompt)
     }
   }
+}
+
+/** Packages introduced only by a scenario overlay, outside the shipped profile closure. */
+const compositionPackageDirectories: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  'pty-sandbox-backend': { '@deepseek-ai/dsh-tool-terminal': 'terminal/tool-terminal' },
+  lsp: {
+    '@deepseek-ai/dsh-lsp': 'lsp/lsp',
+    '@deepseek-ai/dsh-lsp-stdio': 'lsp/lsp-stdio',
+    '@deepseek-ai/dsh-tool-lsp': 'lsp/tool-lsp',
+  },
+  'product-subagent-codex': { '@deepseek-ai/dsh-subagent-codex': 'subagent/subagent-codex' },
+  'product-subagent-both': {
+    '@deepseek-ai/dsh-subagent-codex': 'subagent/subagent-codex',
+    '@deepseek-ai/dsh-subagent-claude-code': 'subagent/subagent-claude-code',
+  },
+  'ptc-python': { '@deepseek-ai/dsh-experimental-code-runtime-python': 'experimental/code-runtime-python' },
+  'subagent-acp-diagnostic': { '@deepseek-ai/dsh-subagent-acp': 'subagent/subagent-acp' },
 }
 
 describe('headless recorded-session snapshots', () => {
@@ -876,7 +894,7 @@ describe('headless recorded-session snapshots', () => {
       || mode === 'record' && scenario.manifest.recording === 'authored'
       || mode === 'record' && scenario.manifest.sessionFormat !== undefined
     const scenarioTest = skipped ? it.skip : mode === 'replay' ? it.concurrent : it
-    scenarioTest(`${mode}s ${scenario.name} through dsh --profile headless`, async () => {
+    scenarioTest(`${mode}s ${scenario.name} through dsh --profile ${scenario.manifest.profile}`, async () => {
       let fixtures = await fixtureSessions(scenario)
       const primaryFixture = fixtures[0]
       if (primaryFixture === undefined) throw new Error(`${scenario.name}: missing primary session fixture`)
@@ -896,7 +914,7 @@ describe('headless recorded-session snapshots', () => {
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
       const patchSources = [
-        join(baseComposition.dir, 'cordis.yml'),
+        ...(scenario.manifest.profile === 'science-headless' ? [] : [join(baseComposition.dir, 'cordis.yml')]),
         ...composition === baseComposition && !replaying ? [] : [compositionPatch],
         join(baseComposition.dir, 'model.cordis.yml'),
       ]
@@ -910,7 +928,28 @@ describe('headless recorded-session snapshots', () => {
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
       const locatorRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
+      const runtimeEnvironment: NodeJS.ProcessEnv = {}
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
+      Object.assign(runtimeEnvironment, {
+        DSH_SNAPSHOT: replaying ? 'replay' : 'record',
+        DSH_SNAPSHOT_PROVIDER: model.provider,
+        DSH_SNAPSHOT_MODEL: model.model,
+        DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
+        DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: locatorRoot,
+        DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
+        ...(replaying && fixtureFiles.length > 1
+          ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
+          : {}),
+        ...(replaying && scenario.manifest.replay?.override === true
+          ? { DSH_SNAPSHOT_OVERRIDE: join(scenario.dir, 'replay.override.json') }
+          : {}),
+        ...(scenario.manifest.permission === undefined
+          ? {}
+          : { DSH_PERMISSION_MODE: scenario.manifest.permission }),
+        ...scenario.manifest.environment,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+        DSH_TELEMETRY_DISABLED: '1',
+      })
       try {
         result = await runLoaderSmoke({
           label: `${scenario.name} headless snapshot`,
@@ -918,8 +957,16 @@ describe('headless recorded-session snapshots', () => {
           ...(scenario.manifest.workspace?.parent === 'outside-temp' ? { tempDirParent: outsideTempWorkspaceParent() } : {}),
           binScript: dshBin,
           configPath: join(baseComposition.dir, 'cordis.yml'),
+          profilePackages: {
+            ...(replaying
+              ? { '@deepseek-ai/dsh-llm-replay': fileURLToPath(new URL('../../packages/test-support/llm-replay', import.meta.url)) }
+              : {}),
+            ...Object.fromEntries(Object.entries(compositionPackageDirectories[scenario.manifest.composition] ?? {})
+              .map(([name, directory]) => [name, fileURLToPath(new URL(`../../packages/${directory}`, import.meta.url))])),
+          },
+          ...(scenario.manifest.profile === 'science-headless' ? { processTimeoutMs: 90_000 } : {}),
           binArgs: [
-            '--profile', 'headless',
+            '--profile', scenario.manifest.profile,
             ...patches.flatMap(file => ['--patch', file]),
             task,
           ],
@@ -928,27 +975,12 @@ describe('headless recorded-session snapshots', () => {
             || turnReasonFromSession(primaryFixture) === undefined && scenario.manifest.input?.task !== undefined
             ? 0
             : 1,
-          env: {
-            DSH_SNAPSHOT: replaying ? 'replay' : 'record',
-            DSH_SNAPSHOT_PROVIDER: model.provider,
-            DSH_SNAPSHOT_MODEL: model.model,
-            DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
-            DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: locatorRoot,
-            DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
-            ...(replaying && fixtureFiles.length > 1
-              ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
-              : {}),
-            ...(replaying && scenario.manifest.replay?.override === true
-              ? { DSH_SNAPSHOT_OVERRIDE: join(scenario.dir, 'replay.override.json') }
-              : {}),
-            ...(scenario.manifest.permission === undefined
-              ? {}
-              : { DSH_PERMISSION_MODE: scenario.manifest.permission }),
-            ...scenario.manifest.environment,
-            NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
-            DSH_TELEMETRY_DISABLED: '1',
-          },
+          env: runtimeEnvironment,
           prepare: async (cwd) => {
+            if (scenario.manifest.profile === 'science-headless') {
+              runtimeEnvironment.PAPERMACHINE_HOME = join(cwd, '.dsh')
+              runtimeEnvironment.DSH_SCIENCE_TEST_PYTHON_PREFIX = await prepareSciencePrefix(cwd)
+            }
             if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
@@ -1027,6 +1059,6 @@ describe('headless recorded-session snapshots', () => {
       } else {
         expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
       }
-    }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+    }, scenario.manifest.profile === 'science-headless' ? 105_000 : LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

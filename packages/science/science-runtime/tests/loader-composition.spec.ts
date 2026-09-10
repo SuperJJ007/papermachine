@@ -16,7 +16,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import * as ScienceRuntimeInvariant from '../src/invariant.ts'
 import ScienceRuntime, { SCIENCE_RUNTIME_SETTINGS_NAMESPACE } from '../src/index.ts'
 import ScienceRuntimeWithSettings from '../src/with-settings.ts'
 import {
@@ -55,7 +54,6 @@ function baseModules(): Map<string, unknown> {
     ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
     ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
     ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
-    ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ])
 }
 
@@ -121,7 +119,6 @@ async function loadRuntime(): Promise<Context> {
     '    profiles:',
     '      fake:',
     `        pythonPrefix: ${quote(prefix)}`,
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     '',
   ].join('\n'))
 
@@ -168,7 +165,6 @@ async function loadSettingsRestartRuntime(
     '  config:',
     `    dshHome: ${quote(dshHome)}`,
     '    profiles: {}',
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     '',
   ].join('\n'))
 

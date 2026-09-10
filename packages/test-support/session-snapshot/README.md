@@ -107,6 +107,8 @@ This section explains the design of the kit; the observable behavior is fully co
 
 ### Design
 
+`runScenario` and `defineAcpSnapshotSuite` accept `profilePackages` for overlay-only npm packages. Before ACP startup, the shared [package installer](../loader-smoke/README.md#overlay-package-provenance) validates and links them under the isolated home; cleanup removes the links on success and failure. Built replay must declare its replay provider explicitly, and SDK scenario adapters use the same installer for replay and scenario-specific subagent packages.
+
 The shared core owns manifests, generation-qualified role selection, workspace setup/comparison, typed identity mapping, normalizers, and fixture invariants. The ACP adapter adds four composable layers: launcher, scenario harness, normalizers, and suite factory. `launchAcpTestAgent` boots a source profile under tsx or a built `lib` profile under plain Node, connects the SDK client over a raw-byte stdout tee, collects Session updates and stderr, fails closed on unhandled permission requests, and owns shutdown. `runScenario` drives ACP JSON-RPC stdio and harvests the numerically highest persisted raw JSONL generation for every Session directory. The pure normalizers replace cwd paths and typed identities with stable tokens, zero times, expand physical provenance ranges, and scrub system-prompt text and tool-schema bulk. `defineAcpSnapshotSuite` registers comparisons, generation-qualified fixture write-back, and the live uniformity guard.
 
 ### Source map
@@ -173,3 +175,9 @@ These limits define when the kit needs special care. They are current package co
 None.
 
 </details>
+
+### Science recorded sessions
+
+The headless adapter accepts `science-headless` and isolates its `PAPERMACHINE_HOME` outside generic sandbox temporary grants. [Science tools](../../../snapshots/session/science-tools/snapshot.yml) and the [Web preset](../../../snapshots/web/science-preset/snapshot.yml) record live model calls and replay through the production tool, runtime and artifact store. Their package-owned interpreter fixture accepts only the recorded Python operation and emits the independently verified PNG through the real kernel protocol; it is not Python or R execution evidence.
+
+`normalizeScienceSnapshot` collects interpreter-prefix, executable-observation, environment-fingerprint and scratch-identity tokens only from known Science facts. It normalizes service-owned event clocks and the corresponding structured `get_science_state` result, including the short fingerprint in the named `science:environment` prompt section. Equal observations keep equal tokens; mismatched references remain distinct. Source, user text, artifact hashes, versions, byte counts, errors and unknown event payloads remain comparison evidence. Package chart-preview expectations and Web cold-history/source-agreement expectations stay owner-local. The [decision record](../../../.agents/notes/implemented/testing/2026-09-10-science-recorded-session-replay.md) explains the separation from live-kernel acceptance.

@@ -1,6 +1,6 @@
 /**
  * Build the dsh executables and development Node carrier for the Python runtime wheel. The fixed
- * `@yao-pkg/pkg --sea` route, deploy flags, and artifact layout are owned by
+ * `@yao-pkg/pkg --sea` route and artifact layout are owned by
  * .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.
  * The staged closure is symlink-free, and whole-tree assets cover Cordis's
  * runtime imports that pkg cannot discover statically.
@@ -8,8 +8,10 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
-import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { load } from 'js-yaml'
 import { parseArgs } from 'node:util'
 import { resolveLinuxNodePtyAddon, resolveWindowsNodePtyAddons } from './build-exe-for-python-sdk-native-pty.ts'
 
@@ -28,8 +30,6 @@ const OUT_DIR = 'dist-exe'
 const PYTHON_RUNTIME_DIR = 'python/sdk-runtime/src/deepseek_harness_runtime/runtime'
 /** The deployed closure doubles as the node-mode carrier. */
 const PYTHON_NODE_SUBDIR = 'node'
-/** Legacy deploy may hoist peer-specialized workspace packages back here. */
-const DEPLOY_SOURCE_NODE_MODULES = 'python/sdk-runtime/node_modules'
 /** Documentation excluded from the generated runtime directory. */
 const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
 
@@ -253,6 +253,72 @@ function formatCommand(command: string, args: string[]): string {
 }
 
 /**
+ * Deploy the locked production closure without installing into workspace packages.
+ * Missing or empty lockfiles fail before pnpm can fall back to legacy deployment.
+ * @param workspaceRoot - Repository containing the shared lockfile and runtime manifest.
+ * @param staging - Disposable destination for pnpm's standalone installation.
+ * @param runPnpm - Awaited pnpm invocation running from workspaceRoot; rejects on failure.
+ * @param dryRun - Print the invocation without creating the temporary configuration hook.
+ * @returns Completion after deployment and temporary-hook cleanup.
+ */
+export async function deployRuntimeClosure(
+  workspaceRoot: string,
+  staging: string,
+  runPnpm: (args: string[]) => Promise<void>,
+  dryRun = false,
+): Promise<void> {
+  const lockfile = load(await readFile(join(workspaceRoot, 'pnpm-lock.yaml'), 'utf8')) as {
+    lockfileVersion?: string | number
+    importers?: Record<string, unknown>
+  } | null
+  if (!lockfile?.lockfileVersion || !lockfile.importers?.['python/sdk-runtime']) {
+    throw new Error('build-exe-for-python-sdk: shared lockfile must contain python/sdk-runtime; legacy deploy is unsafe.')
+  }
+  const temporary = dryRun
+    ? join(tmpdir(), 'dsh-python-deploy-<temporary>')
+    : await mkdtemp(join(tmpdir(), 'dsh-python-deploy-'))
+  const hook = join(temporary, 'pnpmfile.mjs')
+  try {
+    if (!dryRun) await writeFile(hook, DEPLOY_CONFIG_HOOK)
+    await runPnpm([
+      '--filter', DEPLOY_ROOT_PACKAGE, 'deploy', '--prod',
+      '--config.shared-workspace-lockfile=true',
+      '--config.force-legacy-deploy=false',
+      '--config.inject-workspace-packages=true',
+      '--config.node-linker=hoisted',
+      '--config.global-pnpmfile=' + hook,
+      // Desktop-only patches are outside this production runtime closure.
+      '--config.allowUnusedPatches=true',
+      staging,
+    ])
+  } finally {
+    if (!dryRun) await rm(temporary, { recursive: true, force: true })
+  }
+}
+
+// Shared-lockfile deploy identifies local packages by file URL. Preserve each
+// reviewed allow/deny decision under that identity, without changing source config.
+const DEPLOY_CONFIG_HOOK = `
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+export const hooks = {
+  updateConfig(config) {
+    const allowBuilds = { ...config.allowBuilds }
+    for (const [selector, allowed] of Object.entries(allowBuilds)) {
+      const index = selector.indexOf('@file:')
+      if (index < 0) continue
+      const directory = selector.slice(index + 6)
+      if (directory.startsWith('//')) continue
+      const name = selector.slice(0, index)
+      const url = pathToFileURL(resolve(config.workspaceDir, directory)).href
+      allowBuilds[name + '@' + url] = allowed
+    }
+    return { ...config, allowBuilds }
+  },
+}
+`
+
+/**
  * Sequential build pipeline. Subprocesses inherit stdio and errors include
  * the command; dry runs print commands and filesystem changes.
  */
@@ -286,68 +352,12 @@ class SingleExeBuild {
     }
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${this.staging}`)
     else await rm(this.staging, { recursive: true, force: true })
-    await this.runPnpm('deploy', [
-      '--filter',
-      DEPLOY_ROOT_PACKAGE,
-      'deploy',
-      '--legacy',
-      '--prod',
-      '--config.node-linker=hoisted',
-      '--config.auto-install-peers=false',
-      '--config.link-workspace-packages=true',
-      this.staging,
-    ])
-    await this.restoreLegacyHoists()
+    await deployRuntimeClosure(root, this.staging, args => this.runPnpm('deploy', args), this.cli.dryRun)
     await this.materializeStagedLinks()
     if (this.cli.dryRun) {
       for (const name of DEPLOY_ONLY_DOCS) console.log(`build-exe-for-python-sdk: [dry-run] rm -f ${join(this.staging, name)}`)
     } else {
       await Promise.all(DEPLOY_ONLY_DOCS.map(name => rm(join(this.staging, name), { force: true })))
-    }
-  }
-
-  /**
-   * Restore direct packages that pnpm's legacy hoister places beside the deploy
-   * source instead of in the target. The runtime manifest supplies every peer,
-   * so package-local node_modules trees are omitted to preserve one flat Cordis
-   * instance and a symlink-free packaged payload.
-   */
-  private async restoreLegacyHoists(): Promise<void> {
-    if (this.cli.dryRun) {
-      console.log('build-exe-for-python-sdk: [dry-run] restore direct dependencies omitted by legacy deploy')
-      return
-    }
-    const manifestPath = join(this.staging, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
-      dependencies?: Record<string, string>
-    }
-    const sourceNodeModules = resolve(root, DEPLOY_SOURCE_NODE_MODULES)
-    const restored: string[] = []
-    for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
-      const destination = join(this.staging, 'node_modules', dependency)
-      if (existsSync(destination)) continue
-      const source = join(sourceNodeModules, dependency)
-      if (!existsSync(source)) {
-        throw new Error(
-          `build-exe-for-python-sdk: deployed dependency ${dependency} is absent from both ${destination} and ${source}.`,
-        )
-      }
-      await mkdir(dirname(destination), { recursive: true })
-      const nestedNodeModules = join(source, 'node_modules')
-      await cp(source, destination, {
-        recursive: true,
-        dereference: true,
-        filter: path => path !== nestedNodeModules && !path.startsWith(nestedNodeModules + sep),
-      })
-      restored.push(dependency)
-    }
-    const stillMissing = Object.keys(manifest.dependencies ?? {})
-      .filter(dependency => !existsSync(join(this.staging, 'node_modules', dependency)))
-    if (stillMissing.length > 0) {
-      throw new Error(`build-exe-for-python-sdk: staged dependencies remain missing: ${stillMissing.join(', ')}.`)
-    }
-    if (restored.length > 0) {
-      console.log(`build-exe-for-python-sdk: restored legacy deploy hoists: ${restored.join(', ')}`)
     }
   }
 
@@ -600,7 +610,8 @@ class SingleExeBuild {
 
   /** Run pnpm through its JavaScript entrypoint when the caller supplies one. */
   private async runPnpm(label: string, args: string[]): Promise<void> {
-    const [command, invocationArgs] = pnpmInvocation(args)
+    // Preflight run scripts and pkg must never refresh source dependencies.
+    const [command, invocationArgs] = pnpmInvocation(['--config.verifyDepsBeforeRun=false', ...args])
     await this.run(label, command, invocationArgs)
   }
 }
@@ -620,4 +631,4 @@ async function main(): Promise<void> {
   await pipeline.syncToPythonRuntime(products)
 }
 
-await main()
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) await main()

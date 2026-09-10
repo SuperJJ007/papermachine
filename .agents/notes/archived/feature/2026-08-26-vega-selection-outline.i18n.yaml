@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-vega-selection-outline.md
+2026-08-26-vega-selection-outline.md: e0620c355d6577969903755e6b9ce5efd0f3d174
+2026-08-26-vega-selection-outline.zh.md: 5db0e3c1f4b07cc9564a1884c47756ff0ce98b95

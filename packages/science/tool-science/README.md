@@ -1,6 +1,29 @@
+---
+description: "Let the model execute Python and R, inspect Science state, install packages, and annotate captured artifacts."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-science
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Let the model execute Python and R, inspect Science state, install packages, and annotate captured artifacts. Users can submit edits against an exact artifact version. Execution requires a configured Science Runtime.
+
+## Table of Contents
+
+- [Package responsibilities](#package-section-0)
+- [Config](#package-section-1)
+- [First model request](#package-section-2)
+- [Tools](#package-section-3)
+- [Runtime assertions](#package-section-4)
+- [Model Experience](#package-section-5)
+- [Known Limitations and Deferred Work](#package-section-6)
+- [Dev Note](#dev-note)
+
+<a id="package-section-0"></a>
+## Package responsibilities
 
 The **model-facing Science mode Consumer**: first-use mode/environment binding, the `science:environment` dynamic context, and five tools: `get_science_state`, `run_python`, `run_r`, `annotate_artifact`, `install_science_packages`. [`dsh-science-session`](../science-session) owns the durable vocabulary, strict fold, projection, and invariant; [`dsh-science-runtime`](../science-runtime) owns environment observation, private scratch, direct execution, terminal classification, auto-capture of run-written files, metadata-only artifact curation, and micromamba package installs. This package never spawns a process, writes run source, classifies termination, or manages Conda. Runtime appends environment, run, and artifact facts. Results are ordinary assistant replies, without a publication tool or separate Outcome revision.
 
@@ -16,6 +39,7 @@ The package also owns the `scienceEdits` Typert Remote used by the artifact view
 
 Edit guidance identifies `artifactId` as the UUID in capture receipts and `get_science_state`, never a file name.
 
+<a id="package-section-1"></a>
 ## Config
 
 All three keys are required; none has a default or an environment-discovered value. This package supplies no shipped production identity or history policy.
@@ -26,12 +50,14 @@ All three keys are required; none has a default or an environment-discovered val
 | `modeRevision` | Deployment-owned revision of the Science mode contract, persisted in every session's `ScienceModeRef`. Trimmed, non-empty, ≤128 characters. |
 | `stateHistoryLimit` | Positive safe-integer maximum applied independently to recent runs, artifact versions, and per-artifact direct-edit summaries. |
 
+<a id="package-section-2"></a>
 ## First model request
 
 On the first real Science prompt assembly for an Agent whose session currently resolves to the `science` preset (`@deepseek-ai/dsh-agent-presets`'s `resolveSessionPreset`: the session's creation header, overridden by the last `agent-preset/selected` event — a session switched to `science` while blank qualifies even though its header still names the preset it was created with), this package replays the session. If `science/mode-bound` is absent, it appends one before any `step/start`, `request/header`, or `tool/call` — the durable Science Session applicability rule enforces that ordering independently. An existing mode's revision must equal the configured `modeRevision`; a mismatch rejects assembly before a request is built. If no durable environment exists, it calls `ctx.scienceRuntime.bindEnvironment({ session, profileId, signal })`; a durably applied or `invalid` result is a model-visible value either way, while a missing Runtime, cancellation, timeout, Host I/O failure, or confinement failure rejects assembly instead. "Confinement failure" means the sandbox reported less than `dsh-science-runtime`'s configured `minimumEnforcement` (`'full'` by default; a deployment lowers it to `'partial'` only where a supported backend cannot reach full enforcement, such as win32's ACL sandbox) — never that Science silently accepted a weaker boundary. The level a confinement call actually achieved is recorded on the resulting environment binding (`ScienceEnvironmentBinding.sandboxEnforcement`), so provenance shows what was accepted, not only what was required. A resumed session retries a persisted non-applied environment once before its first Science run; a new environment observation in the current lifecycle prevents repeated retries during later prompt assemblies. Applied bindings and sessions with recorded runs are not automatically rebound here; `dsh-science-runtime`'s own `startRun` separately re-checks the shared prefix against drift on every run and re-binds then if it changed (see that package's README). Diagnostic prompt assembly with no initiating Agent, or a non-`science`-preset session, performs no Host I/O and never appends a Science event.
 
 After binding, this package re-renders the `science:environment` context from the just-committed projection and replaces that one named entry inside the assembly already in progress, before delegating exactly once through the `system-prompt/assemble` waterfall. The agent loop then records that current context as a `user/message` before `request/header`, so the first request — and every retried request within the same step — remains reconstructable from the session log.
 
+<a id="package-section-3"></a>
 ## Tools
 
 | Tool | Arguments | Behavior |
@@ -44,6 +70,12 @@ After binding, this package re-renders the `science:environment` context from th
 
 Direct top-level dispatch, the latest `request/header`, and the exact tool-call ID are required by `run_python`, `run_r`, and `annotate_artifact`; nested Code Mode dispatch rejects before Runtime lookup or Session mutation. `install_science_packages` requires only direct top-level dispatch — it carries no `toolCallId`/`requestHeaderSeq` provenance of its own, matching `bindEnvironment`'s own whole-value environment append. A durably committed run terminal state is a structured canonical value with bounded output. Artifact success values render useful text for every client; `run_python`/`run_r` and `annotate_artifact` additionally preserve one tagged, versioned presentation value per captured or curated artifact (any accepted media type) for the dedicated Web rows. All five tools use generic render intent with no editor locations — `install_science_packages` included, since no Host path may leak into an `args`-only presenter. `install_science_packages` requires no separate user approval: the built-in `science` agent preset sets no `tools/pre-execute`/`ctx.approval` policy for it (the seam exists — `packages/core/tools/README.md` — this tool simply is not registered against it). This is a deliberate decision (2026-09, #15): the tool only ever changes the package set of a shared Conda prefix, and `dsh-science-runtime`'s per-run prefix-drift detection now makes every such change visible and durable to every session sharing that profile — as a fresh `science/environment-bound` revision and a modeled kernel restart the model reports in its next run result — not only to the session that requested the install. Gating that behind an approval prompt would interrupt an otherwise uninterrupted analysis flow for a change that is already fully recorded and auditable after the fact.
 
+<a id="package-section-4"></a>
+## Runtime assertions
+
+No runtime invariant companion is published: It delegates execution to Science Runtime and durable event/projection assertions to Science Session; prompt and tool registrations introduce no independent mutable relationship.
+
+<a id="package-section-5"></a>
 ## Model Experience
 
 ### Static tool guidance
@@ -194,7 +226,14 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
+<a id="package-section-6"></a>
+
 - **No owned composition, no default Runtime** — this package composes no preset, CLI/Web profile row, or Runtime configuration itself; the built-in `science` agent preset and Web Host's `./edit-service` row are separate application-layer composition, and `ctx.scienceRuntime` remains explicit deployment configuration every Host mounts on its own. See the [R3](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r3-science-tools.md) and [R4](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/feature/2026-08-16-dsh-science-v01-r4-science-preset.md) Agent Notes.
 - **No publication workflow** — the model answers in the conversation; there is no separate Outcome editor or publication tool.
 
 The Host `/read-service` entry exposes five `science` Remote reads for artifact bytes, library metadata, version summaries, chart state, and referenced UTF-8 files. It also registers authenticated GET/HEAD `/api/science-artifact?sessionId=…&versionId=…` through the connection service. Artifact reads require the session’s durable cwd; session-produced artifacts use event coordinates, and other versions in the same project are verified by the store. `textAttachmentByteLimit` bounds referenced UTF-8 previews (default 2 MiB). Workspace files use upstream `api/workspace-files` and `ui-sidebar-files`.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

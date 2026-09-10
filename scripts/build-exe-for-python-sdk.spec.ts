@@ -58,12 +58,32 @@ describe('Python runtime executable builder CLI', () => {
     )
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs run verify-runtime-closure`)
-    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs --filter dsh-python-runtime-closure deploy`)
+    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs --config.verifyDepsBeforeRun=false run verify-runtime-closure`)
+    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs --config.verifyDepsBeforeRun=false --filter dsh-python-runtime-closure deploy`)
     expect(result.stdout).not.toContain(resolve(root, 'python/sdk-runtime/runtime-bootstrap.mjs'))
     expect(result.stdout).toContain('"bin":"runtime-bootstrap.mjs"')
-    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs exec pkg`)
+    expect(result.stdout).toContain(`${process.execPath} C:\\tools\\pnpm.cjs --config.verifyDepsBeforeRun=false exec pkg`)
+    expect(result.stdout).toContain('--config.allowUnusedPatches=true')
+    expect(result.stdout).toContain('--config.force-legacy-deploy=false')
+    expect(result.stdout).toContain('--config.shared-workspace-lockfile=true')
+    expect(result.stdout).toContain('--config.inject-workspace-packages=true')
+    expect(result.stdout).not.toContain('--legacy')
+    expect(result.stdout).not.toContain('--config.auto-install-peers=false')
+    expect(result.stdout).not.toContain('restore direct dependencies')
+    expect(result.stdout).toContain('--config.verifyDepsBeforeRun=false exec pkg')
     expect(result.stdout).not.toMatch(/pnpm\.cmd/i)
+  })
+
+  it('disables automatic dependency refresh once for every pipeline pnpm command', () => {
+    const result = run({ npm_execpath: 'test-pnpm.mjs' }, '--dry-run', '--targets=node24-macos-arm64')
+    expect(result.status).toBe(0)
+    const commands = result.stdout.split('\n').filter(line => line.includes('test-pnpm.mjs '))
+    expect(commands).toHaveLength(4)
+    for (const command of commands) {
+      expect(command).toContain('test-pnpm.mjs --config.verifyDepsBeforeRun=false ')
+      expect(command.match(/--config\.verifyDepsBeforeRun=false/gu)).toHaveLength(1)
+    }
+    expect(commands.some(command => command.endsWith(' run build'))).toBe(true)
   })
 
   it('resolves the pnpm package behind a Windows command shim', () => {
@@ -83,7 +103,7 @@ describe('Python runtime executable builder CLI', () => {
     )
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toContain(`${process.execPath} ${entrypoint} run verify-runtime-closure`)
+    expect(result.stdout).toContain(`${process.execPath} ${entrypoint} --config.verifyDepsBeforeRun=false run verify-runtime-closure`)
     expect(result.stdout).not.toMatch(/pnpm\.cmd/i)
   })
 

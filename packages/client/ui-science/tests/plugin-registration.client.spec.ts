@@ -8,6 +8,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ComposerSubmission, ComposerSubmissionHandler } from '@deepseek-ai/dsh-client-ui-conversation/src/client/service.ts'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { apply, inject } from '../src/client/index.ts'
+import type { ScienceSettingsCardFace } from '../src/client/settings-card-controller.ts'
+import type { ScienceOutcomeInjected } from '../src/client/ScienceOutcomeRow.tsx'
 import type { ScienceDetailsInjected } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceDetailsView } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceLibrary } from '../src/client/ScienceLibrary.tsx'
@@ -43,7 +45,8 @@ async function setup() {
     'sidebar.right.tab.menu.item': { kind: 'list', scope: 'session' },
   } } as never, () => null)
   const releaseLocale = vi.fn()
-  ctx.provide('locale', { subscribe: () => () => {}, register: vi.fn(() => releaseLocale), bind: () => (key: string) => key } as never)
+  const localeListeners = new Set<() => void>()
+  ctx.provide('locale', { subscribe: (listener: () => void) => { localeListeners.add(listener); return () => { localeListeners.delete(listener) } }, register: vi.fn(() => releaseLocale), bind: () => (key: string) => key } as never)
   ctx.provide('connection', {} as never)
   ctx.provide('sessions', {} as never)
   ctx.provide('uiWorkspace', { openSession: vi.fn() } as never)
@@ -61,7 +64,8 @@ async function setup() {
   const registerSubmissionHandler = vi.fn<(handler: ComposerSubmissionHandler) => () => void>(() => releaseHandler)
   const openView = vi.fn()
   ctx.provide('conversation', { registerSubmissionHandler, openView } as never)
-  const registerEvents = vi.fn(() => () => {})
+  const releaseEvents = vi.fn()
+  const registerEvents = vi.fn(() => releaseEvents)
   ctx.provide('uiConversation', { events: { register: registerEvents } } as never)
   const openResourceIn = vi.fn()
   const openTabIn = vi.fn()
@@ -83,7 +87,8 @@ async function setup() {
   }
   const handler = registerSubmissionHandler.mock.calls[0]?.[0]
   if (handler === undefined) throw new Error('submission handler missing')
-  return { slots, fiber, details, handler, science, scienceEdits, cancel, openView, openResourceIn, openTabIn,
+  return { localeListeners, releaseEvents, slots, fiber, details, handler, science, scienceEdits, cancel, openView,
+    openResourceIn, openTabIn,
     registerTab, registerResource, registerEvents, releaseLocale, releaseHandler, releaseTab, releaseResource }
 }
 
@@ -165,4 +170,77 @@ describe('ui-science public composition', () => {
     await expect(b.handler(submission())).rejects.toThrow('offline')
     expect(face.hooks.composerSelections.getSnapshot()).toEqual([target])
   })
+})
+
+it('routes edit operations, removal, navigation and cancellation through their originating session', async () => {
+  const b = await setup()
+  const face = b.details(SECOND)
+  const requests = {
+    addArtifactNote: { artifactId: 'chart-1', version: 2, text: 'Review this' },
+    removeArtifactNote: { artifactId: 'chart-1', noteSeq: 1 },
+    applyChartOps: { artifactId: 'chart-1', version: 2, ops: [] },
+    previewChartOps: { artifactId: 'chart-1', version: 2, ops: [] },
+    saveArtifactAs: { sourceVersionId: 'version-2', newLogicalName: 'copy.png' },
+  }
+  for (const key of Object.keys(requests) as Array<keyof typeof requests>) {
+    const result = { ok: true, value: { accepted: true } }
+    b.scienceEdits[key].mockResolvedValueOnce(result)
+    expect(await face[key](requests[key] as never)).toBe(result)
+    expect(b.scienceEdits[key]).toHaveBeenCalledWith(SECOND, requests[key])
+  }
+  face.addToConversation([target])
+  face.removeFromConversation(target)
+  expect(face.hooks.composerSelections.getSnapshot()).toEqual([])
+  const menu = b.slots.entries('sidebar.right.tab.menu.item')[0]!
+  const header = b.slots.entries('conversation.session.header.utilities')[0]!
+  for (const entry of [menu, header]) {
+    const injected = (entry.inject as unknown as (id: SessionId) => { openLibrary: () => void })(SECOND)
+    injected.openLibrary()
+  }
+  expect(b.openTabIn.mock.calls).toEqual([[SECOND, 'science-library'], [SECOND, 'science-library']])
+  for (const entry of b.slots.entries('tool.call.toolview').filter(entry => ['run_python', 'run_r'].includes(String(entry.options.key)))) {
+    const injected = (entry.inject as unknown as (id: SessionId) => { cancel: () => void })(SECOND)
+    injected.cancel()
+  }
+  expect(b.cancel.mock.calls).toEqual([[{ sessionId: SECOND }], [{ sessionId: SECOND }]])
+  const dock = b.slots.entries('conversation.input.dock')[0]!
+  const dockFace = (dock.inject as unknown as (id: SessionId) => { remove: (index: number) => void })(SECOND)
+  face.addToConversation([target])
+  dockFace.remove(0)
+  expect(b.handler(submission(SECOND))).toBeUndefined()
+  b.science.scienceLibrary.mockResolvedValue({ ok: true, value: { artifacts: [] } })
+  for (const entry of [b.slots.entries('sidebar.right.pane.tab.title')[0]!, b.slots.entries('sidebar.right.pane.tab')[1]!]) {
+    const injected = (entry.inject as unknown as (id: SessionId) => Pick<ScienceDetailsInjected, 'loadLibrary'>)(SECOND)
+    await expect(injected.loadLibrary()).resolves.toMatchObject({ ok: true })
+  }
+  expect(b.science.scienceLibrary.mock.calls).toEqual([[SECOND], [SECOND]])
+})
+
+it('replaces localized edit presentation on language changes and unsubscribes when unloaded', async () => {
+  const b = await setup()
+  expect(b.registerEvents).toHaveBeenCalledTimes(2)
+  for (const listener of b.localeListeners) listener()
+  expect(b.releaseEvents).toHaveBeenCalledTimes(1)
+  expect(b.registerEvents).toHaveBeenCalledTimes(3)
+  await b.fiber.dispose()
+  expect(b.localeListeners.size).toBe(0)
+  expect(b.releaseEvents).toHaveBeenCalledTimes(2)
+})
+
+it('binds published outcome reads to its session and shares staged settings across card mounts', async () => {
+  const b = await setup()
+  const outcome = b.slots.entries('tool.call.toolview').find(entry => entry.options.key === 'publish_outcome')!
+  const outcomeFace = (outcome.inject as unknown as (id: SessionId) => ScienceOutcomeInjected)(SECOND)
+  b.science.scienceVersions.mockResolvedValue({ ok: true, value: { versions: [] } })
+  await expect(outcomeFace.loadVersions(['version-2'])).resolves.toMatchObject({ ok: true })
+  expect(b.science.scienceVersions).toHaveBeenCalledWith(SECOND, ['version-2'])
+  await expect(outcomeFace.loadScienceImage({ versionId: 'version-2', mediaType: 'image/png', byteCount: 1 })).resolves.toBe('/api/science-artifact?sessionId=s2&versionId=version-2')
+  const settings = b.slots.entries('settings.plugin.item')[0]!
+  const injectSettings = settings.inject as unknown as () => ScienceSettingsCardFace
+  const first = injectSettings()
+  first.edit('pythonPrefix', '/science/python')
+  const second = injectSettings()
+  expect(second.hooks.scienceSettingsCard.getSnapshot().pythonPrefix.text).toBe('/science/python')
+  second.discard()
+  expect(first.hooks.scienceSettingsCard.getSnapshot().pythonPrefix.text).toBe('')
 })

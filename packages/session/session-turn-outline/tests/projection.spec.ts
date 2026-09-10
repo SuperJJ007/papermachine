@@ -235,36 +235,32 @@ describe('turn outline projection unit', () => {
     expect('turnOutline' in ctx.sessionProjections.snapshot(session).values).toBe(false)
   })
 
-  it('rejects a persisted checkpoint whose turns are not strictly increasing', async () => {
+  it('discards unordered checkpoint turns and reconstructs their prompts from the log', async () => {
     const { ctx, session } = await harness(true)
+    session.append('turn/start', { turn: 1 })
+    appendPrompt(session, 'First prompt')
+    session.append('turn/start', { turn: 2 })
+    appendPrompt(session, 'Second prompt')
     const checkpoint = ctx.sessionProjections.checkpoint(session)
-    const row = checkpoint.turnOutline
-    expect(row).toBeDefined()
-    expect(() => ctx.sessionProjections.restore({
-      ...checkpoint,
-      turnOutline: {
-        ...row!,
-        val: {
-          turns: [
-            { turn: 2, seq: 1, prompt: '', response: '' },
-            { turn: 2, seq: 4, prompt: '', response: '' },
-          ],
-          draft: '',
-        },
-      },
-    }, [], SessionLogOffset(0), session.header, session.inheritedEventCount)).toThrow(/strictly increasing/)
-    expect(() => ctx.sessionProjections.restore({
-      ...checkpoint,
-      turnOutline: {
-        ...row!,
-        val: {
-          turns: [
-            { turn: 1, seq: 1, prompt: 'ok', response: 'done' },
-            { turn: 2, seq: 4, prompt: '', response: '' },
-          ],
-          draft: '',
-        },
-      },
-    }, [], SessionLogOffset(0), session.header, session.inheritedEventCount)).not.toThrow()
+    const expected = ctx.sessionProjections.snapshot(session)
+    const row = checkpoint.turnOutline!
+    expect(row.ver).toBe(turnOutlineProjectionDefinition.stateVersion)
+    const state = turnOutlineProjectionDefinition.stateSchema.parse(row.val)
+    const invalidState = { ...state, turns: state.turns.map(turn => ({ ...turn, turn: 1 })) }
+    expect(() => turnOutlineProjectionDefinition.stateSchema.parse(invalidState)).toThrow(/strictly increasing/)
+    const malformed = { ...checkpoint, turnOutline: { ...row, val: invalidState } }
+    const events = session.snapshotEvents()
+
+    expect(ctx.sessionProjections.viewCheckpoint(malformed)).not.toHaveProperty('turnOutline')
+    expect(ctx.sessionProjections.restoreFloor(malformed)).toBe(0)
+    expect(() => ctx.sessionProjections.restore(
+      malformed, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+    )).toThrow(/turnOutline.*re-read from seq 0/)
+    expect(ctx.sessionProjections.restore(
+      malformed, events, SessionLogOffset(0), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
+    expect(ctx.sessionProjections.restore(
+      checkpoint, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
   })
 })

@@ -40,6 +40,7 @@ const DESKTOP_PROJECT_FILES = [
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  'cordis.patch.yml',
   'desktop-release.json',
   DESKTOP_PACKAGE_SET_FILE,
 ] as const
@@ -396,15 +397,24 @@ export class DesktopProjectManager {
       this.recover()
       verifySeedIntegrity(seedDir)
       const target = releaseFile(seedDir)
-      verifyDesktopCorePackageSet(seedDir, target.version)
+      const targetPackages = verifyDesktopCorePackageSet(seedDir, target.version)
       if (target.version !== electronVersion) {
         throw new Error(`desktop project: seed ${target.version} does not match Electron ${electronVersion}`)
       }
       if (existsSync(this.paths.profile) && this.releaseVersion() === target.version
         && this.dshVersion() === target.version
         && this.installedPackageVersion(DESKTOP_HOST_PACKAGE) === target.version) {
-        verifyDesktopCorePackageSet(this.paths.profile, target.version)
-        return false
+        const currentPackages = verifyDesktopCorePackageSet(this.paths.profile, target.version)
+        const matches = JSON.stringify(currentPackages) === JSON.stringify(targetPackages)
+          && targetPackages.packages.every((record) => {
+            try {
+              return this.installedPackageVersion(record.name) === record.version
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+              throw error
+            }
+          })
+        if (matches) return false
       }
       this.mergeSeedPnpmState(seedDir)
       const stagingProfile = this.newStagingProfile()

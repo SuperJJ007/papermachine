@@ -18,10 +18,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./edit-service": {
       "types": "./lib/types/edit-service.d.ts",
       "default": "./lib/edit-service.js"
@@ -55,7 +51,6 @@
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/edit-service.js",
     "lib/read-service.js",
     "lib/element-summary.js",
@@ -78,7 +73,6 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
     "@deepseek-ai/dsh-science-runtime": "workspace:^",

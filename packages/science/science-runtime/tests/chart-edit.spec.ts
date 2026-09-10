@@ -572,6 +572,9 @@ describe('ScienceRuntime.previewChartEdit', () => {
     })
     expect([...result.png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
     expect(result.chart.ops).toEqual([titleOp])
+    await expect(JSON.stringify({ pngBase64: Buffer.from(result.png).toString('base64'),
+      chart: result.chart, failedOps: result.failedOps }, null, 2) + '\n')
+      .toMatchFileSnapshot('./expected/chart-preview.expected.json')
     expect(session.snapshotEvents()).toHaveLength(beforeEvents)
     expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(1)
   })

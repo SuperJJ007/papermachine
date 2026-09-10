@@ -97,34 +97,34 @@ describe('title projection unit', () => {
     expect(ctx.sessionProjections.checkpoint(session).titleInput).toBeDefined()
   })
 
-  it('rejects a version-matching checkpoint with inconsistent title input counters', async () => {
+  it('discards inconsistent title input counters and rebuilds them without losing the cached title', async () => {
     const { ctx, session } = await harness(true)
+    appendTitle(session, 'A retained title')
     const checkpoint = ctx.sessionProjections.checkpoint(session)
-    const row = checkpoint.titleInput
-    expect(row).toBeDefined()
+    const expected = ctx.sessionProjections.snapshot(session)
+    const row = checkpoint.titleInput!
+    expect(row.ver).toBe(3)
+    const events = session.snapshotEvents()
     const invalidStates = [
       { first: null, count: 1, lastSeq: null },
-      { first: { seq: 1, text: 'first' }, count: 1, lastSeq: null },
-      { first: { seq: 1, text: 'first' }, count: 0, lastSeq: 1 },
-      { first: { seq: 2, text: 'first' }, count: 1, lastSeq: 1 },
+      { first: { seq: 0, text: 'first' }, count: 1, lastSeq: null },
+      { first: { seq: 0, text: 'first' }, count: 0, lastSeq: 0 },
+      { first: { seq: 1, text: 'first' }, count: 1, lastSeq: 0 },
     ]
+    expect(ctx.sessionProjections.restoreFloor(checkpoint)).toBe(1)
+    expect(ctx.sessionProjections.restore(
+      checkpoint, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+    )).toEqual({ snapshot: expected, checkpoint })
     for (const state of invalidStates) {
-      const malformed = {
-        ...checkpoint,
-        titleInput: { ...row!, val: state },
-      }
+      const malformed = { ...checkpoint, titleInput: { ...row, val: state } }
+      expect(ctx.sessionProjections.viewCheckpoint(malformed).title).toBe('A retained title')
+      expect(ctx.sessionProjections.restoreFloor(malformed)).toBe(0)
       expect(() => ctx.sessionProjections.restore(
-        malformed, [], SessionLogOffset(0), session.header, session.inheritedEventCount,
-      ))
-        .toThrow(/title input state must pair its count with first and last message seqs/)
+        malformed, events.slice(1), SessionLogOffset(1), session.header, session.inheritedEventCount,
+      )).toThrow(/titleInput.*re-read from seq 0/)
+      expect(ctx.sessionProjections.restore(
+        malformed, events, SessionLogOffset(0), session.header, session.inheritedEventCount,
+      )).toEqual({ snapshot: expected, checkpoint })
     }
-
-    expect(() => ctx.sessionProjections.restore({
-      ...checkpoint,
-      titleInput: {
-        ...row!,
-        val: { first: { seq: 1, text: 'first' }, count: 1, lastSeq: 1 },
-      },
-    }, [], SessionLogOffset(0), session.header, session.inheritedEventCount)).not.toThrow()
   })
 })

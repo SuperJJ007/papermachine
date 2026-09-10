@@ -15,18 +15,37 @@ Browser presentation for Science execution cells, Turn-end artifact groups, the 
 
 ## Table of Contents
 
-- [Process view](#process-view)
-- [Artifact viewer](#artifact-viewer-details-entry)
-- [Provenance](#provenance-drill-in)
+- [Chart controls](#package-section-0)
+- [Process view](#package-section-1)
+- [Turn-end artifacts](#package-section-2)
+- [Execution cells](#package-section-3)
+- [Transcript process-detail chrome](#package-section-4)
+- [Recorded Outcome row](#package-section-5)
+- [Settings card](#package-section-6)
+- [Selection store](#package-section-7)
+- [Artifact viewer (right Sidebar)](#package-section-8)
+- [Files toggle](#package-section-9)
+- [Provenance drill-in](#package-section-10)
+- [Workbench shell](#package-section-11)
+- [Composition](#package-section-12)
+- [Runtime assertions](#package-section-13)
+- [Model Experience](#package-section-14)
+- [Known Limitations and Deferred Work](#package-section-15)
+- [Dev Note](#dev-note)
 
+<a id="package-section-0"></a>
 ## Chart controls
 
 Direct-edit rows use localized complete kind names. Multiple axes group under numbered panel headings, with figure-wide rows first; single-panel figures have no headings. Element references outside grouped rows carry a localized panel suffix only for `axes[n].` ids. Native right-Sidebar tabs own the library home and each document.
 
 <a id="process-view"></a>
+
+<a id="package-section-1"></a>
 ## Process view
 
 Runs and artifact versions place into a turn from the Science projection's own trace — the durable session-log index of every turn boundary and authorizing tool call — independent of which conversation pages are loaded; loading earlier pages adds request text and results but never changes ownership. A run whose authorizing call has no trace entry appears in a separate unassigned-history section with a count and contributes no steps, failures, or elapsed time to a request. An artifact version uses its trace owner coordinate when the projection recorded one (the run or annotation call that produced it); otherwise it uses the store's `producerTurn` (read through `remote.science.scienceVersions`, batched per artifact by `useScienceVersionSummaries` — see [Artifact viewer](#artifact-viewer-details-entry)) — the session's last started turn when a viewer operation such as save-as or a direct chart edit produced this version, so it lands on the turn that was current at that moment rather than whichever turn is newest once the store write commits. A version carrying neither falls back to the store's `createdAt` against known turn timing windows, landing on the last turn that had already started when the content committed. A version that resolves none of these — its `createdAt` precedes every turn this view knows about — appears in the unassigned-history section alongside runs. A version whose trace owner coordinate names an exact step also renders its chip inside that step's own row, alongside the turn-level group's chip for its logical artifact's latest version; a version with only a turn (the store-time fallback) renders in the turn-level group alone. A metadata-only re-record — `annotate_artifact` curating title or caption after its producing run has already settled — keeps the version's original producing step, never the currently open call's.
+
+Request and steering text use the trace turn's inclusive log-sequence interval. Failed turns without a user message and partially loaded history do not renumber requests. Text outside every recorded interval is omitted; counting visible requests is only a fallback when no trace turns are available.
 
 Process registers as the `process` conversation view beside Chat and Trajectory for Science sessions. A collapsed turn card contains the request, ordered step strip, totals and artifact chips. Cards wrap within the available width. The strip renders at most 120 calls and reports the full count; the expanded list remains complete.
 
@@ -44,12 +63,14 @@ Annotation titles require a logical name and title; a numeric version is display
 
 Strip and list markers share two status colors and neutral shapes: muted green run squares, red failure squares, pale neutral browse/delegation/other squares, outlined neutral annotation squares and solid neutral publication circles. Results use plain caption-colored text, with failures in red; blue identifies only the selected row and human operations.
 
+<a id="package-section-2"></a>
 ## Turn-end artifacts
 
 Science follows the application theme. Artifact images retain a fixed light canvas in previews and the viewer, without image inversion or dimming.
 
-Science artifact presentation metadata accumulates in authoritative Turn data. After the Assistant reply, one Turn-tail group renders one card per logical artifact and keeps only the highest version produced in that Turn. Cards show a thumbnail or media-type tile, a display name (this Turn's own kept version's curated title, or logical name when that title is empty), and version; activating a card opens that exact version in Science Details. `annotate_artifact` remains a folded process cell and does not render an artifact card at the call site, so files appear once in the transcript. At 6 or fewer artifacts the group shows every card; at 7 or more it shows the first 5 plus a "+N more" button that expands the rest in place. The title's count is always the Turn's total, never the visible slice, and the expanded/collapsed choice is component-local view state that resets on reload.
+Science artifact presentation metadata accumulates in authoritative Turn data. After the Assistant reply, one Turn-tail group renders one card per logical artifact and keeps only the highest version produced in that Turn. Cards show a thumbnail or media-type tile, a display name (this Turn's own kept version's curated title, or logical name when that title is empty), and version; activating a card opens that exact version in the right Sidebar. `annotate_artifact` remains a folded process cell and does not render an artifact card at the call site, so files appear once in the transcript. At 6 or fewer artifacts the group shows every card; at 7 or more it shows the first 5 plus a "+N more" button that expands the rest in place. The title's count is always the Turn's total, never the visible slice, and the expanded/collapsed choice is component-local view state that resets on reload.
 
+<a id="package-section-3"></a>
 ## Execution cells
 
 `run_python` and `run_r` render running, settled, and unavailable-kernel states (`ScienceExecutionRow.tsx`, `run-output.ts`), driven from the durable tool-result text `tool-science`'s `formatRunResult` produces and the joined `science` Session projection run entry (matched by `toolCallId`) — never a new Host fact. A captured table/chart artifact never renders a chip on the row; every artifact surfaces once, in the Turn-tail group (see above).
@@ -66,28 +87,34 @@ A row falls back to a plain folded cell (collapsed code + settled output, expand
 
 Other tool calls use the upstream tool-view fallback. Native Turn Process Folding determines when completed tool calls and reasoning are collapsed; running turns and incomplete history retain upstream behavior.
 
+<a id="package-section-4"></a>
 ## Transcript process-detail chrome
 
 A Chat event definition owns the `science-edit` source and renders its recorded instruction and ordered exact-version references in the standard user row. Generated execution context stays out of that row. The generic reference projector modifies only ordinary user sources, preserving source-owned labels.
 
 Science keeps native context visibility, turn metrics and Turn Process Folding. It registers no per-session transcript suppression or separate tool grouping policy.
 
+<a id="package-section-5"></a>
 ## Recorded Outcome row
 
 An existing session's settled `publish_outcome` result defaults to a one-line revision summary. Expanding the cell reveals its immutable title, Markdown summary, and run/chart/message evidence; exact chart citations still resolve against the current client-safe `science` projection. Expansion is frontend-only state. The Science tool Consumer offers no publication tool for new calls.
 
+<a id="package-section-6"></a>
 ## Settings card
 
 The card registers into `settings.plugin.item` under the fixed `science-runtime` namespace — the namespace `@deepseek-ai/dsh-science-runtime/with-settings` registers, not a package or product id — so it appears whenever the Host serves that namespace and stays absent otherwise, with no navigation row or Host change of its own. It binds the namespace through `ctx.settingsScope` and edits only `['science', 'pythonPrefix']` and `['science', 'rPrefix']` (the section root is the profile map itself, addressed by the fixed `science` profile id, not a `profiles` wrapper field), plus `unsetPath(['science'])` for the explicit remove-override action; no code path writes the section root. Both fields are `role('secret')`, so their stored value never rides a settings response — the card learns per-field presence from `SettingsScopeSnapshot.secrets` and never echoes a stored path back into an input. A blank replacement input is a no-op. The card's status line reports the running Host's actually-bound state against what is currently stored — `effective` (the profile is bound and the Host has already read it), `pendingRestart` (stored and bound disagree, in either direction: a save the Host has not read yet, or a removal the Host is still bound to), or `notConfigured` — read from `SettingsScopeSnapshot.effective` (the value the Host's `restart`-applies Science Runtime entry read at its own registration, frozen until the next Host start) against `.value` (the currently stored section), never from a client-local flag, so the reading survives a page reload. The card owns its own staging and revision fencing rather than importing the Plugins section's card chrome or staged-form model as values, which the bundle-purity gate forbids. Its chrome is built on `@deepseek-ai/dsh-client-ui-primitives`' shared atoms — `Input` for both prefix fields, `Pill` for the Configured/Not configured badge, and `Button` for Save/Discard/Remove override — rather than raw unstyled elements, so the card matches the app's own controls; only the card container's border/radius/background and the collapsed-by-default header/chevron layout, none of which any primitive provides, are this package's own CSS. Collapsed, only the header (name, description, and the expand toggle) is in the accessibility tree — every field, hint, and action button renders only once expanded, matching every sibling card's behavior and accessible-naming register.
 
 
+<a id="package-section-7"></a>
 ## Selection store
 
 The session-scoped selection store persists selected artifact versions and collapsed library groups under `dsh.science.selection.v1`. Native Sidebar state owns document layout, and `ui-layout` owns rightbar width. Process disclosures survive view switches but reset on reload. Each artifact pane independently owns its content/provenance page, provenance subpage and lightbox. Authorized Remotes supply library metadata; the selection store contains no business facts. Version navigation updates both selection and native tab parameters; resource addresses contain only artifact identity.
 
 Artifacts are grouped by the conversation that produced them; groups are collapsible and their collapsed state persists with the selection store. The current conversation stays first, other groups follow their latest artifact time, and sorting applies only within groups. Search filters cards and hides empty groups. Group headers show the conversation title, visible count, and latest relative time using the shared workspace formatter; grid cards are one bordered unit — a full-width 1:1 thumbnail (an image cropped to its top-left corner, or a centered file-type tile) over a footnote with the display title and `vN · <relative time>`, no mediaType text. The list layout keeps its 76px row with the same footnote text. `ProjectLibrary` reads `Date.now()` once per render for both the group headers and every card's footnote.
 
-## Artifact viewer (Details entry)
+<a id="package-section-8"></a>
+## Artifact viewer (right Sidebar)
+
 <a id="artifact-viewer-details-entry"></a>
 
 File previews mount by workspace path and ignore responses after that mount ends. The viewer owns one toolbar lightbox for local and cross-session PNG versions. A settled chart preview does not restart its debounce; see the [viewer lifetime decision](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/bug-fix/2026-08-31-science-viewer-lifecycle.md).
@@ -106,25 +133,29 @@ The `science-artifact` tab kind recognizes `dsh-resource://science-artifact/<art
 
 The viewer renders the artifact library for any current Session regardless of its own `science` projection's state: a Session whose Science mode has not bound yet (`science === null` — a blank Session, or one before its first `science/mode-bound` event) renders the same library home a bound Session with no artifacts would, backed by an inert placeholder projection (`EMPTY_SCIENCE_PROJECTION`, `ScienceDetailsView.tsx`) — the library itself loads through `remote.science.scienceLibrary`, a project-wide RPC independent of any one Session's projection, so it needs no real binding to show. Missing projection support (`science === undefined` — the deployment does not compose a Science Session projection at all), an unavailable attachment, and a stale tab naming an artifact/version the projection no longer resolves each render distinct text.
 
-**Design notes — where the former dashboard's facts went.** The resident Environment strip and Runs list do not reappear as session-wide panel sections. Environment facts live only in the provenance drill-in's Environment sub-tab, scoped to one artifact's run. Outcomes remain in the collapsed `publish_outcome` transcript cell rather than a separate Details destination or landing-view section.
+Environment facts live in the provenance view’s Environment sub-tab, scoped to one artifact’s run. Recorded Outcomes remain in the collapsed `publish_outcome` transcript cell.
 
 Artifact thumbnails and content resolve through this package's own session-scoped loaders (`science-artifact-url-loader.ts`), not the conversation-owned attachment loader. Both resolve to `scienceArtifactUrl(sessionId, versionId)` — the Host's raw-bytes GET route, which accepts a version proven by the Session fold, a corroborated cross-Session input, or exact membership in the Session's derived project, streamed as-is with no base64 pass. `loadImage` resolves immediately to the URL itself (an `<img src>` target); `loadText` `fetch()`es it and returns the decoded response text. Neither keeps a second persistent cache. `science-attachment-loader.ts`'s original base64 loaders (`remote.science.scienceArtifact`) remain, unwired from every registration in this package — see Known Limitations.
 
 **The CSV table (`ArtifactTable.tsx`) is package-local, not a `dsh-client-ui-primitives` export.** A repo-wide grep at design time found no table component anywhere in `packages/client` and no second consumer that would need one; `JsonTree`/`MarkdownText` are reused as-is from `ui-primitives` because they already exist there for other consumers. Parsing (`csv.ts`) is a hand-rolled, RFC4180-style parser (quoted fields, embedded commas/newlines, doubled-quote escaping) rather than a dependency: this is a read-only preview over auto-captured or model-annotated files, never arbitrary untrusted upload, and "configurability does not justify an unsupported... public operation set" (`packages/AGENTS.md`) applies the same way to a speculative shared primitive. A future second consumer is the trigger to promote both into `ui-primitives`, not this one.
 
+<a id="package-section-9"></a>
 ## Files toggle
+
 <a id="files-toggle"></a>
 
 The session header opens the project library through public Sidebar actions. The native Guide card also opens the library for blank Sessions. The legacy Host `toggleScope` boot value does not govern these native registrations.
 
 Project files opens the upstream `files` page. `api/workspace-files`, `ui-sidebar-files` and installed file viewers own directory listing, authorization and preview; Science adds no workspace-file Remote or private file-tab renderer.
 
+<a id="package-section-10"></a>
 ## Provenance drill-in
 
 Reached from the artifact viewer's toolbar (not a separate `conversation.view` tab, and not a keyed `conversation.details.header.actions` entry): a breadcrumb (`<chart title> › Provenance`) whose root segment returns to the content view, over four sticky sub-tabs. Code shows the exact producing run's source; Execution log shows that run's stdout/stderr; Messages shows only the producing Question and Result rows, with actions to inspect the exact tool call and return to its conversation location; Environment shows the current binding for that run. Missing facts produce an explicit unavailable state on the affected page.
 
 The version's `remote.science.scienceVersions` summary carries the store-owned producer `sessionId` and optional exact run/call/request coordinates. For a producer in the current Session, the viewer joins those ids to the already-loaded `science.runs` and conversation tool-call projections; it never guesses from a nearby turn or step. A producer in another Session shows the source Session title or id on all four pages and does not attempt a local run/call join. Library-opened artifact tabs request the same authorized version summary before rendering provenance, so the four-page drill-in behaves consistently outside the producer's live projection without widening project-library authorization.
 
+<a id="package-section-11"></a>
 ## Workbench shell
 
 The library opens from the native right-Sidebar Guide card, which supplies a localized description and matches the two-line Workspace files card. Opening the library preserves the selected Session, including a blank Session.
@@ -138,10 +169,17 @@ Science uses public conversation and Sidebar registrations with session-scoped r
 - `sidebar.right.tab.menu.item` opens the library from an artifact menu.
 - `conversation.composer.dock` shows recorded kernel lifecycle states, without claiming process liveness.
 
+<a id="package-section-12"></a>
 ## Composition
 
 The Science application profile enables this plugin with upstream conversation, locale, settings, resources and Sidebar services plus Science Remote namespaces. Components receive injected readers, actions and hooks rather than a Cordis context. Shared image lightboxes and file-size formatting come from `ui-primitives`; no runtime import from another feature plugin is required.
 
+<a id="package-section-13"></a>
+## Runtime assertions
+
+No runtime invariant companion is published: Its views read Host-owned projections and submit edits through Host services; registry owners manage contribution disposal. Local view state is not a second durable event projection.
+
+<a id="package-section-14"></a>
 ## Model Experience
 
 None, as this package does not assemble provider requests; the artifact viewer can ask the Host's `scienceEdits` Remote (`@deepseek-ai/dsh-tool-science`, "Viewer edit message" section) to validate a submitted selection and queue the structured exact-version user message that the model reads.
@@ -151,6 +189,8 @@ None, as this package does not assemble provider requests; the artifact viewer c
 None; this package neither assembles nor sends provider requests.
 
 ## Known Limitations and Deferred Work
+
+<a id="package-section-15"></a>
 
 - **Preview is limited to the six direct operations** — title, subtitle, axis-label, legend-position, grid, and font changes use the Runtime's debounced preview path. Reference-only element selection does not render or mutate the chart, or overlay a selection rectangle on the PNG. Reference chips show a swatch after the element name only when its recorded current value supplies a color.
 - **The running row's mid-execution summary is static, not a live tail** — no stdout-streaming channel exists between the Runtime and the browser, so a running `run_python`/`run_r` row shows a fixed "Running…" line instead of the design board's latest-stdout-line preview until such a channel exists.
@@ -167,6 +207,7 @@ None; this package neither assembles nor sends provider requests.
 - **A spec exposing no structural target cannot add a composer chip** — target discovery walks `mark`/`encoding.*` through `layer`, `hconcat`/`vconcat`/`concat` members, and the `facet`/`repeat` sub-`spec`; a document with none of those offers no structural selection, while its read-only render and download remain available.
 - **A rendered chart has no text alternative** — PNG artifacts have no accompanying summary or data-table alternative; their source data may be available as a separate artifact.
 
-## Dev Note
+<a id="dev-note"></a>
+### Dev Note
 
 None.

@@ -20,6 +20,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
 
@@ -37,6 +38,8 @@ interface ScriptedLog {
 
 /** The whole scripted behavior for one run. Every field defaults to the least surprising choice. */
 interface Behavior {
+  /** Package whose real manifest must resolve from the profile before this fixture can boot. */
+  requiredProfilePackage?: string
   /** Exit during startup after writing any configured stderr note. */
   failOnBoot?: boolean
   /** Reject every `session/new` (exercises the expect-error step without extra dirs). */
@@ -72,6 +75,11 @@ const fixtureFile = process.env.DSH_SNAPSHOT_FILE ?? ''
 const behavior: Behavior = fixtureFile === ''
   ? {}
   : JSON.parse(readFileSync(join(dirname(fixtureFile), 'behavior.json'), 'utf8')) as Behavior
+
+if (behavior.requiredProfilePackage !== undefined) {
+  const require = createRequire(join(process.env.DSH_HOME!, 'profiles', 'headless', 'cordis.yml'))
+  require.resolve(`${behavior.requiredProfilePackage}/package.json`)
+}
 
 if (behavior.stderrNote !== undefined) process.stderr.write(`${behavior.stderrNote}\n`)
 if (behavior.failOnBoot === true) process.exit(7)

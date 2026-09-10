@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-projection-checkpoint-watermark-admission.md
-2026-09-09-projection-checkpoint-watermark-admission.md: ea5e930c79b3e2a86f771b67c74b62246c8a5bc8
-2026-09-09-projection-checkpoint-watermark-admission.zh.md: 2c495dc74c513f79befc4440b88fc42eae4e1376
+2026-09-09-projection-checkpoint-watermark-admission.md: d63e8dfb11dc653ef660b92f41581495b5501484
+2026-09-09-projection-checkpoint-watermark-admission.zh.md: abe860e47c0d51908ab75a993dc943fc2756b48f

@@ -16,7 +16,7 @@ import {
 } from './science-scaffold.ts'
 import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/science-settings', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/science-settings', import.meta.url))
 const SECTION_EXPECTED = join(SNAPSHOT_DIR, 'section.expected.md')
 const MODE = webSnapshotMode()
 // Recognizable, obviously-fake absolute paths: never a real Conda prefix, but

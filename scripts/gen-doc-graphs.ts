@@ -99,6 +99,46 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'scienceArtifactStore',
+    pkg: 'science-artifact-store',
+    title: 'Project artifact storage',
+    mode: 'core',
+    consumers: ['science-runtime', 'tool-science'],
+    note: 'Owns project identity, immutable artifact versions, and provenance.',
+  },
+  {
+    key: 'scienceRuntime',
+    pkg: 'science-runtime',
+    title: 'Science execution',
+    mode: 'core',
+    consumers: ['tool-science'],
+    note: 'Owns interpreter processes and records durable Science execution facts.',
+  },
+  {
+    key: 'scienceEdits',
+    pkg: 'tool-science',
+    title: 'Science edit admission',
+    mode: 'core',
+    consumers: ['client-ui-science'],
+    note: 'Validates exact-version edit requests and submits logged user messages.',
+  },
+  {
+    key: 'scienceReads',
+    pkg: 'tool-science',
+    title: 'Science artifact reads',
+    mode: 'core',
+    consumers: ['client-ui-science'],
+    note: 'Authorizes project artifact metadata and byte access.',
+  },
+  {
+    key: 'sessionAttachments',
+    pkg: 'session-attachment-index',
+    title: 'Session attachment references',
+    mode: 'core',
+    consumers: ['tool-science'],
+    note: 'Extracts complete attachment references from admitted Session events.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

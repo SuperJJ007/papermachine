@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSITION_FILE, discoverPresets, scanRoot } from '@deepseek-ai/dsh-agent-presets'
+import * as metadataReader from '../src/metadata.ts'
 
 const fsHarness = vi.hoisted(() => ({
   nextReadError: undefined as NodeJS.ErrnoException | undefined,
@@ -147,6 +148,16 @@ describe('preset discovery', () => {
     const found = await scanRoot({ path: root, trust: 'user' }, HARNESS)
 
     expect(found.map(preset => preset.id)).toEqual(['real'])
+  })
+
+  it('propagates an unexpected metadata reader failure instead of publishing a broken row', async () => {
+    const failure = new Error('metadata reader failed unexpectedly')
+    const read = vi.spyOn(metadataReader, 'readPresetMetadata').mockRejectedValueOnce(failure)
+    try {
+      await expect(scanRoot(SYSTEM, HARNESS)).rejects.toBe(failure)
+    } finally {
+      read.mockRestore()
+    }
   })
 
   it('reports a root it cannot read rather than treating it as empty', async () => {

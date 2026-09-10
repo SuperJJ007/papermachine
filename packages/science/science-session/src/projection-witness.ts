@@ -97,6 +97,7 @@ export function preventsScienceModeBinding(event: Pick<ScienceProjectionWitnessE
 export function scienceEventRelevantBeforeMode(event: SessionEvent): boolean {
   return event.type.startsWith('science/')
     || event.type === 'turn/start'
+    || event.type === 'turn/end'
     || preventsScienceModeBinding(event)
     || event.type === 'user/message'
     || event.type === 'assistant/message'

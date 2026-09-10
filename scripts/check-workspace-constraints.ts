@@ -59,6 +59,8 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 const standardReleaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop(?:-host)?$)[^/]+|vendor\/[^/]+)$/
 /** Installable application assembled by electron-builder rather than published to npm. */
 const desktopApplicationDirectory = 'apps/desktop'
+/** Cloud deployment source is private and carries no npm runtime entry. */
+const deploymentOnlyAppDirectories = new Set(['apps/telemetry-receivers'])
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js'],
@@ -155,6 +157,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-science-runtime': ['lib/with-settings.js', 'lib/types-*.js', 'assets'],
   '@deepseek-ai/dsh-tool-science': ['lib/edit-service.js', 'lib/read-service.js', 'lib/element-summary.js'],
   '@deepseek-ai/dsh-science-app': ['presets'],
+  // The Library icon embeds third-party artwork in the client bundle.
+  '@deepseek-ai/dsh-client-ui-science': ['THIRD-PARTY-NOTICES.txt'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.
@@ -294,7 +298,8 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
 }
 
 function isReleaseMemberDirectory(dir: string): boolean {
-  return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
+  return !deploymentOnlyAppDirectories.has(dir)
+    && (standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir))
 }
 
 /**
@@ -385,7 +390,11 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     }
   }
 
-  if (dir.startsWith('apps/') && dir !== desktopApplicationDirectory && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (deploymentOnlyAppDirectories.has(dir)) {
+    for (const field of ['main', 'types', 'bin', 'exports', 'files', 'publishConfig'] as const) {
+      if (manifest[field] !== undefined) errors.push(`${label}: deployment-only app must omit ${field}`)
+    }
+  } else if (dir.startsWith('apps/') && dir !== desktopApplicationDirectory && manifest.name?.startsWith('@deepseek-ai/')) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)

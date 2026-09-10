@@ -1,5 +1,6 @@
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
+  readonly artifactName: string
   readonly appId: string
   readonly directories: {
     readonly output: string
@@ -7,6 +8,7 @@ export interface DesktopElectronBuilderConfig {
   readonly extraResources: readonly [
     { readonly from: string, readonly to: 'runtime' },
     { readonly from: string, readonly to: 'seed' },
+    { readonly from: 'resources', readonly to: 'product' },
   ]
   readonly mac: {
     readonly identity: string | undefined

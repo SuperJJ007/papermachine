@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process'
+import dns from 'node:dns'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterEach, beforeAll, afterAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { getGlobalDispatcher } from 'undici'
 import {
   clearedProxyEnv,
@@ -95,6 +96,31 @@ async function withCleanProxyEnv(run: () => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Settle only the tested origin's DNS failure; all other lookups retain Node's resolver.
+ * Aborting fetch does not finish a pending lookup, which graceful dispatcher disposal still awaits.
+ */
+async function withFailedLookup(hostname: string, run: (lookups: readonly string[]) => Promise<void>): Promise<void> {
+  const previous = dns.lookup
+  const lookups: string[] = []
+  const lookup = vi.spyOn(dns, 'lookup').mockImplementation((...args: unknown[]) => {
+    if (args[0] !== hostname) {
+      Reflect.apply(previous, dns, args)
+      return
+    }
+    lookups.push(hostname)
+    // Every dns.lookup overload ends in an error-first callback; failure supplies no address fields.
+    const callback = args.at(-1) as (error: NodeJS.ErrnoException) => void
+    queueMicrotask(() => { callback(Object.assign(new Error('fixture DNS miss'), { code: 'ENOTFOUND' })) })
+  })
+  try {
+    await run(lookups)
+  } finally {
+    lookup.mockRestore()
+    expect(dns.lookup).toBe(previous)
+  }
+}
+
 describe('installProxyFromEnvironment', () => {
   it('routes the built-in global fetch through the proxy', async () => {
     const { dispose } = await install(proxyAll())
@@ -107,13 +133,16 @@ describe('installProxyFromEnvironment', () => {
   })
 
   it('connects directly when the bypass list covers the target', async () => {
-    const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, NO_PROXY: 'origin.test' }))
-    try {
-      await expect(fetch(proxyTarget, { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
-      expect(proxied).toEqual([])
-    } finally {
-      await dispose()
-    }
+    await withFailedLookup('origin.test', async (lookups) => {
+      const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, NO_PROXY: 'origin.test' }))
+      try {
+        await expect(fetch(proxyTarget)).rejects.toMatchObject({ cause: { code: 'ENOTFOUND' } })
+        expect(lookups).toEqual(['origin.test'])
+        expect(proxied).toEqual([])
+      } finally {
+        await dispose()
+      }
+    })
   })
 
   it('reports a value it cannot use and installs the rest', async () => {
@@ -187,22 +216,38 @@ describe('installProxyFromEnvironment', () => {
   })
 
   it('keeps a scheme direct when the policy refused the proxy the user named for it', async () => {
-    // What `HTTPS_PROXY=socks5://…` plus `HTTP_PROXY=http://p` resolves to: http proxied, https
-    // direct. undici's own EnvHttpProxyAgent cannot express this — with no HTTPS proxy present it
-    // reuses the HTTP one, tunnelling the scheme the diagnostic told the user stayed direct.
-    const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: 'socks5://127.0.0.1:1080' }))
-    try {
-      // The direct path here fails on a DNS miss whose latency is the machine's resolver to decide;
-      // the deadline bounds it. Either rejection proves the same thing — no CONNECT reached the
-      // proxy — and a proxied hop would have answered in milliseconds instead.
-      await expect(fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
-      expect(proxied).toEqual([])
-      // The same policy still tunnels http, so the empty expectation above is not vacuous.
-      await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
-      expect(proxied).toEqual([`GET ${proxyTarget}`])
-    } finally {
-      await dispose()
-    }
+    const beforeDispatcher = getGlobalDispatcher()
+    const beforeEnv = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
+    await withFailedLookup('refused-scheme.invalid', async (lookups) => {
+      // A refused HTTPS proxy must not fall back to the otherwise usable HTTP proxy.
+      const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: 'socks5://127.0.0.1:1080' }))
+      try {
+        await expect(fetch('https://refused-scheme.invalid/')).rejects.toMatchObject({ cause: { code: 'ENOTFOUND' } })
+        expect(lookups).toEqual(['refused-scheme.invalid'])
+        expect(proxied).toEqual([])
+        await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
+        expect(proxied).toEqual([`GET ${proxyTarget}`])
+      } finally {
+        await dispose()
+      }
+    })
+    expect(getGlobalDispatcher()).toBe(beforeDispatcher)
+    expect(proxyRouteFor(new URL(proxyTarget))).toEqual({ proxied: false })
+    expect(Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))).toEqual(beforeEnv)
+  })
+
+  it('sends CONNECT without resolving the origin locally when the HTTPS proxy is usable', async () => {
+    await withFailedLookup('refused-scheme.invalid', async (lookups) => {
+      const { dispose } = await install(proxyAll())
+      try {
+        // The proxy closes CONNECT, so rejection alone cannot distinguish this route from direct DNS failure.
+        await expect(fetch('https://refused-scheme.invalid/')).rejects.toThrow()
+        expect(proxied).toEqual(['CONNECT refused-scheme.invalid:443'])
+        expect(lookups).toEqual([])
+      } finally {
+        await dispose()
+      }
+    })
   })
 })
 

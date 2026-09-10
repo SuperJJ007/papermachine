@@ -1,5 +1,8 @@
 /** Build one release target with matching Electron, Node.js, and seed architecture. */
 
+import { verifyDesktopClientBuild } from './client-build.ts'
+import { prepareDesktopPackageTarballs } from './prepare-desktop-package-tarballs.ts'
+import { prepareProductResources } from './prepare-product-resources.ts'
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
@@ -222,7 +225,7 @@ function runPnpm(
     throw new Error('desktop package: invoke this script through a pnpm package command')
   }
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [pnpmEntry, ...args], {
+    const child = spawn(process.execPath, [pnpmEntry, '--config.verifyDepsBeforeRun=false', ...args], {
       cwd,
       env,
       stdio: 'inherit',
@@ -238,6 +241,7 @@ function runPnpm(
 async function main(): Promise<void> {
   const invocation = parseDesktopPackageInvocation(process.argv.slice(2))
   const { target } = invocation
+  await prepareProductResources(`${target.platform}-${target.arch}`)
   const buildPaths = desktopTargetBuildPaths(target.name)
   const releaseRecordPath = join(buildPaths.artifacts, desktopBuildRecordFilename(target.name))
   if (!invocation.prepareOnly) {
@@ -254,8 +258,9 @@ async function main(): Promise<void> {
   for (const name of WINDOWS_SIGNING_ENV_NAMES) {
     if (process.env[name] !== undefined) electronBuilderEnv[name] = process.env[name]
   }
-  await runPnpm(['run', 'build:official'], buildEnv, REPOSITORY_ROOT)
-  await runPnpm(['run', 'release:pack', '--family', 'dsh', '--out', buildPaths.packedDsh], buildEnv, REPOSITORY_ROOT)
+  await runPnpm(['run', 'build', '--profile', 'papermachine'], buildEnv, REPOSITORY_ROOT)
+  verifyDesktopClientBuild(REPOSITORY_ROOT)
+  await prepareDesktopPackageTarballs(REPOSITORY_ROOT, buildPaths.packedDsh, buildEnv)
   await runPnpm([
     '--dir',
     'apps/desktop-host',

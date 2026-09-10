@@ -1,5 +1,6 @@
 /** Validate packaged Desktop update artifacts before any network upload begins. */
 
+import { PAPER_MACHINE_VERSION } from '../src/product.ts'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
@@ -218,7 +219,7 @@ export async function createDesktopUploadPlan(
     throw new Error(`desktop upload: ${metadataFilename}.files must contain exactly one target update file`)
   }
 
-  const base = `papermachine-${dshVersion}-${target.os}-${target.arch}`
+  const base = `papermachine-${PAPER_MACHINE_VERSION}-${target.os}-${target.arch}`
   const updaterExtension = target.platform === 'darwin' ? 'zip' : 'exe'
   const updaterInfo = updateFileInfo(metadata.files[0], `${metadataFilename}.files[0]`, `${base}.${updaterExtension}`)
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)

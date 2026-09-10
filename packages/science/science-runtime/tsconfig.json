@@ -39,9 +39,6 @@
       "path": "../science-session"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
       "path": "../science-artifact-store"
     }
   ]

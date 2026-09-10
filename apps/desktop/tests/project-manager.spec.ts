@@ -13,7 +13,7 @@ import {
   type DesktopProjectHooks,
 } from '../src/project-manager.ts'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
-import { DESKTOP_PACKAGES_DIR, DESKTOP_PACKAGE_SET_FILE } from '../src/core-package-set.ts'
+import { DESKTOP_PACKAGES_DIR, DESKTOP_PACKAGE_SET_FILE, type DesktopCorePackageRecord } from '../src/core-package-set.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { archivePnpmStore } from '../src/seed-store.ts'
 
@@ -193,6 +193,40 @@ describe('desktop package policy', () => {
 })
 
 describe('desktop project transactions', () => {
+  it('heals a missing client package at the same release and preserves machine overlay in plugin staging', async () => {
+    const root = temporaryRoot()
+    const seed = join(root, 'seed')
+    createTestSeedMetadata(seed, release())
+    writeFileSync(join(seed, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    archiveStore(seed)
+    writeIntegrity(seed)
+    const paths = resolveDesktopPaths(join(root, 'home'))
+    const manager = new DesktopProjectManager(paths, { node: process.execPath, pnpm: writeFakePnpm(root) })
+    await manager.applyRelease(seed, '1.0.0', hooks())
+    const descriptorPath = join(seed, DESKTOP_PACKAGE_SET_FILE)
+    const descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8')) as { packages: DesktopCorePackageRecord[] }
+    const body = Buffer.from('sidebar-client-v1')
+    const file = 'sidebar-client.tgz'
+    writeFileSync(join(seed, DESKTOP_PACKAGES_DIR, file), body)
+    descriptor.packages.push({ name: '@deepseek-ai/dsh-client-ui-sidebar-right', version: '1.0.0', file, bytes: body.length, integrity: `sha512-${createHash('sha512').update(body).digest('base64')}` })
+    descriptor.packages.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))
+    writeFileSync(descriptorPath, JSON.stringify(descriptor))
+    createSeedMetadata(seed, release())
+    writeIntegrity(seed)
+    await expect(manager.applyRelease(seed, '1.0.0', hooks())).resolves.toBe(true)
+    const client = join(paths.profile, 'node_modules/@deepseek-ai/dsh-client-ui-sidebar-right/package.json')
+    expect(existsSync(client)).toBe(true)
+    rmSync(client)
+    await expect(manager.applyRelease(seed, '1.0.0', hooks())).resolves.toBe(true)
+    const overlay = '- id: science-runtime\n  config: {}\n'
+    writeFileSync(join(paths.profile, 'cordis.patch.yml'), overlay)
+    await manager.mutate({ type: 'plugin-add', spec: 'example-plugin@1.0.0' }, {
+      ...hooks(),
+      healthCheck: async (project) => { expect(readFileSync(join(project, 'cordis.patch.yml'), 'utf8')).toBe(overlay) },
+    })
+    expect(readFileSync(join(paths.profile, 'cordis.patch.yml'), 'utf8')).toBe(overlay)
+  })
+
   it('installs the offline seed and reconciles a mismatched private Host', async () => {
     const root = temporaryRoot()
     const seed = join(root, 'seed')

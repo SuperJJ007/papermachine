@@ -1,0 +1,59 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "First call get_science_state. Then use" [disabled]
+  - button "More actions":
+    - img
+  - button "Artifact library"
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: "First call get_science_state. Then use run_python to execute exactly this code: import os import matplotlib matplotlib.use(\"Agg\") import matplotlib.pyplot as plt fig, ax = plt.subplots(figsize=(3, 2), dpi=80) ax.plot([0, 1, 2], [0, 1, 4]) ax.set_title(\"Science snapshot\") fig.savefig(os.path.join(os.environ[\"SCIENCE_ARTIFACT_DIR\"], \"plot.png\"), metadata={\"Software\": \"Science snapshot\"}) print(\"SCIENCE_SNAPSHOT_RUN_OK\") Declare plot.png in raster_artifacts. After success, call annotate_artifact twice with logical_name plot.png, title Main plot, caption Deterministic snapshot chart. Finally call get_science_state again, then reply exactly SCIENCE_SNAPSHOT_DONE. Do not install packages or perform other actions. {{clock}}"
+- button "Copy":
+  - img
+- button "5 tool calls · 2 messages":
+  - text: 5 tool calls · 2 messages
+  - img
+- paragraph: SCIENCE_SNAPSHOT_DONE
+- paragraph: "Artifacts produced this turn: 1"
+- list:
+  - listitem "Main plot v1"
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Usage 46.5K tok":
+  - img
+  - text: Usage 46.5K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "7% of context used"
+- button "Send message" [disabled]
+- button "1 turns 6 steps · {{throughput}} tok/s":
+  - img
+  - text: 1 turns 6 steps{{throughput}} tok/s
+- button "46.5K tok · Cache hit 81%":
+  - img
+  - text: 46.5K tokCache hit 81%
+- text: Latest kernel records python · epoch 1 · started

@@ -5,8 +5,9 @@
  */
 
 import { createRequire } from 'node:module'
-import { closeSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { once } from 'node:events'
+import { closeDesktopPipe } from './pipe-lifecycle.ts'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -432,16 +433,14 @@ async function main(): Promise<void> {
       requestBodies.clear()
       blockedRequests.clear()
       discardedRequestBodies.clear()
-      requestPipe.destroy()
-      closeSync(DESKTOP_REQUEST_PIPE_FD)
+      await closeDesktopPipe(requestPipe)
       await controller.dispose()
       await Promise.allSettled([...runs])
       await responseWriteTail.catch(() => undefined)
       if (!responsePipe.destroyed) {
         await new Promise<void>((resolvePromise) => { responsePipe.end(resolvePromise) })
-        responsePipe.destroy()
       }
-      closeSync(DESKTOP_RESPONSE_PIPE_FD)
+      await closeDesktopPipe(responsePipe)
       if (process.connected) process.disconnect()
       process.exitCode = requestedExitCode
     })()

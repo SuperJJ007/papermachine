@@ -85,6 +85,9 @@ defineAcpSnapshotSuite({
     profile: 'acp',
     tsconfigPath: fileURLToPath(new URL('../../tsconfig.json', import.meta.url)),
   },
+  profilePackages: {
+    '@deepseek-ai/dsh-llm-replay': fileURLToPath(new URL('../../packages/test-support/llm-replay', import.meta.url)),
+  },
   snapshotsDir: corpusDir,
   scenarios,
   mode: snapshotMode(process.env.DSH_SNAPSHOT),

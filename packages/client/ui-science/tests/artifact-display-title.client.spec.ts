@@ -1,7 +1,7 @@
 /** Pure artifact-level display name resolution (C1), shared across every non-version-scoped surface. */
 
 import { describe, expect, it } from 'vitest'
-import { scienceArtifactDisplayTitleOrSelf } from '../src/client/artifact-display-title.ts'
+import { scienceArtifactDisplayTitle, scienceArtifactDisplayTitleOrSelf } from '../src/client/artifact-display-title.ts'
 
 describe('scienceArtifactDisplayTitleOrSelf', () => {
   it('ignores a fact belonging to a different artifact', () => {
@@ -31,4 +31,14 @@ describe('scienceArtifactDisplayTitleOrSelf', () => {
     const self = { artifactId: 'a', version: 1, title: '', logicalName: 'self.png' }
     expect(scienceArtifactDisplayTitleOrSelf([], self)).toBe('self.png')
   })
+})
+
+it('resolves an unordered library without borrowing another artifact title', () => {
+  const facts = [
+    { artifactId: 'other', version: 9, title: 'Other', logicalName: 'other.csv' },
+    { artifactId: 'a', version: 3, title: '', logicalName: 'results.csv' },
+    { artifactId: 'a', version: 1, title: 'Draft', logicalName: 'draft.csv' },
+  ]
+  expect(scienceArtifactDisplayTitle(facts, 'a')).toBe('results.csv')
+  expect(scienceArtifactDisplayTitle(facts, 'missing')).toBeUndefined()
 })

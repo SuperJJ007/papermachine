@@ -48,3 +48,23 @@ describe('recorded Science edit messages', () => {
     expect(ordinary?.match(event as never)).not.toBeNull()
   })
 })
+
+it('retains a recorded edit through updates and anchors its chat row when history is available', () => {
+  const state = definition.start({} as never, { event } as never, { previous: () => undefined })
+  const context = { key: 'science-edit-message:edit-1', id: 'edit-1', state }
+  expect(definition.update(context as never, { event } as never)).toBe(state)
+  expect(definition.buildViewNode?.({ ...context, state: undefined } as never)).toBeNull()
+  expect(definition.buildViewNode?.(context as never)).toMatchObject({
+    key: context.key, id: 'edit-1', kind: 'user', target: 'chat', anchorSeq: 5,
+    location: { kind: 'unresolved' }, data: { content: [{ type: 'text', text: 'Shorten the title' }, event.data.content[1]] },
+  })
+  const location = { kind: 'step', turn: 2, step: 3 }
+  expect(definition.buildViewNode?.({ ...context, start: { event, location } } as never)).toMatchObject({ location })
+})
+
+it('rejects an unrelated event routed into the Science edit start', () => {
+  expect(() => definition.start({} as never, { event: { type: 'turn/start', data: { turn: 1 } } } as never, { previous: () => undefined }))
+    .toThrow('Science input requires a science-edit source')
+  expect(() => definition.start({} as never, { event: { ...event, data: { ...event.data, source: { kind: 'user' } } } } as never, { previous: () => undefined }))
+    .toThrow('Science input requires a science-edit source')
+})

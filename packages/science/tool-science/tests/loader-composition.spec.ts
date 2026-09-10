@@ -2,9 +2,9 @@
  * REQUIRED REAL-composition evidence for `@deepseek-ai/dsh-tool-science`
  * (see `packages/AGENTS.md` and the R3 Agent Note): a test-only `cordis.yml`
  * boots the Loader and a real application composition — session store,
- * invariants, Science Session (+invariant), Science Runtime (+invariant,
+ * invariants, Science Session (+invariant), Science Runtime (
  * with deterministic fake subprocess/sandbox providers), system prompt,
- * tools, agent registry, agent loop, and this Consumer (+invariant) — then
+ * tools, agent registry, agent loop, and this Consumer — then
  * drives it with a scripted deterministic model. It asserts the actual first
  * model request, durable event ordering, the logged environment context,
  * the exact five Science schemas, a run result through the real tool
@@ -28,7 +28,6 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createUserMessage, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import * as ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
-import * as ScienceRuntimeInvariant from '@deepseek-ai/dsh-science-runtime/invariant'
 import * as ScienceSession from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -38,7 +37,6 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolScience from '../src/index.ts'
-import * as ToolScienceInvariant from '../src/invariant.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
@@ -55,13 +53,11 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
   ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
   ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
-  ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
   ['@deepseek-ai/dsh-tools', ToolRuntime],
   ['@deepseek-ai/dsh-agent', AgentRegistry],
   ['@deepseek-ai/dsh-agent-loop', AgentLoop],
   ['@deepseek-ai/dsh-tool-science', ToolScience],
-  ['@deepseek-ai/dsh-tool-science/invariant', ToolScienceInvariant],
 ])
 
 let configRoot: string | undefined
@@ -122,7 +118,6 @@ async function boot(): Promise<Context> {
     '    profiles:',
     '      fake:',
     `        pythonPrefix: ${JSON.stringify(pythonPrefix)}`,
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     "- name: '@deepseek-ai/dsh-system-prompt'",
     "- name: '@deepseek-ai/dsh-tools'",
     "- name: '@deepseek-ai/dsh-agent'",
@@ -134,7 +129,6 @@ async function boot(): Promise<Context> {
     '    profileId: fake',
     '    modeRevision: test-revision',
     '    stateHistoryLimit: 8',
-    "- name: '@deepseek-ai/dsh-tool-science/invariant'",
     '',
   ].join('\n'))
 

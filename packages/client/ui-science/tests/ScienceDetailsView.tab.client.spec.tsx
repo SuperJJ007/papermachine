@@ -538,3 +538,29 @@ describe('ScienceDetailsView: read-only tab opened from a cross-session library 
     expect(await screen.findByRole('navigation', { name: 'Provenance' })).toBeTruthy()
   })
 })
+
+it('opens an unbound session resource at the library latest version and returns to the library', async () => {
+  const store = testScienceSelectionStore()
+  const tabActions = { openTab: vi.fn(), openResource: vi.fn(), close: vi.fn() }
+  const input = props(null, { store, tabActions, libraryArtifacts: [libraryArtifact({ title: undefined })] })
+  render(<ScienceDetailsView {...input} />)
+  await screen.findByRole('button', { name: 'Download' })
+  expect(store.instance.getSnapshot().openArtifacts).toMatchObject([{ artifactId: 'chart-1', version: 1 }])
+  fireEvent.click(screen.getByRole('button', { name: 'Artifact library' }))
+  expect(tabActions.openTab).toHaveBeenCalledWith('science-library')
+})
+
+it('waits for provenance facts after opening a library preview', async () => {
+  let resolve!: (result: Awaited<ReturnType<ScienceDetailsViewProps['loadVersions']>>) => void
+  const pending = new Promise<Awaited<ReturnType<ScienceDetailsViewProps['loadVersions']>>>((accept) => { resolve = accept })
+  const store = testScienceSelectionStore()
+  openTab(store, 'chart-1', 1)
+  render(<ScienceDetailsView {...props(baseProjection(), {
+    store, libraryArtifacts: [libraryArtifact()], loadVersions: () => pending,
+  })} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Provenance' }))
+  expect(screen.getByRole('status').textContent).toBe('Loading…')
+  await act(async () => { resolve({ ok: true, value: { versions: [versionSummary({ producer: { sessionId: 'source-without-title' } })] } }); await pending })
+  expect(screen.getByRole('navigation', { name: 'Provenance' })).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toContain('source-without-title')
+})

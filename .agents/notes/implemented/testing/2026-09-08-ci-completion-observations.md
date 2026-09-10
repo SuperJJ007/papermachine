@@ -28,9 +28,19 @@ The [detached-launch tests](../../../../packages/host/open-in-app/tests/launch-d
 
 The [LSP backpressure test](../../../../packages/lsp/lsp-stdio/tests/instance.spec.ts) preserves the real paused-reader fixture and large native pipe write. Before accepting the abort error, it verifies that the pending write callback settled and the captured subprocess completed; `instance.dead` alone can be true as soon as disposal starts.
 
+The [E2B subprocess tests](../../../../packages/e2b/subprocess-e2b/tests/subprocess.spec.ts) hold sandbox acquisition after a cooperative interrupt begins, then complete or terminate the command before releasing it. No late INT may reach that group; a failed acquisition must leave ordinary command completion and quiescence usable. A completed stdin write establishes startup readiness, so an interrupt ignored before publication cannot satisfy the race assertion.
+
+The [Python process-identity tests](../../../../packages/experimental/code-runtime-python/tests/process-start.spec.ts) supply procfs records for the same pid with distinct start times and a command name containing closing parentheses. Missing or inaccessible records yield unavailable identity rather than breaking teardown. Exact-path filesystem interception and restored platform metadata make the parser observable on non-Linux hosts; [real-process tests](../../../../packages/experimental/code-runtime-python/tests/runtime.spec.ts) retain Linux kernel and process-group evidence. Synthetic procfs records alone cannot establish kernel signaling behavior.
+
+### DNS completion during graceful disposal
+
+A rejected or aborted `fetch` does not prove its DNS lookup has finished. The [proxy dispatcher disposer](../../../../packages/util/http-proxy/src/install.ts) restores process state before awaiting graceful `agent.close()`, which can still wait for pending DNS. A request deadline therefore does not bound teardown; a controlled DNS barrier confirms that fetch rejection can precede disposal completion until the lookup callback is released.
+
+The [proxy installation tests](../../../../packages/util/http-proxy/tests/install.spec.ts) settle DNS failure only for the exact fixture hostname and restore the original resolver in `finally`. They retain real global fetch, dispatchers, and loopback proxy connections: direct routing requires the local lookup and `ENOTFOUND`, while a usable HTTPS proxy requires an observed CONNECT without local origin resolution. Rejection alone cannot distinguish those routes. Disposal also verifies restored dispatcher, routing, and proxy environment. These tests control resolver completion, not operating-system DNS latency.
+
 ### Built-client import classification
 
-The [Node import sweep](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts) admits the Dockkit bundle only when Node reports `ERR_UNKNOWN_FILE_EXTENSION` for its exact `dockkit.module.css` path. Other errors and unexpectedly successful exempt imports fail. Scoped resolve/load hooks exercise expected CSS failure, arbitrary failure, another stylesheet, another error code, and stale exemption without modifying shared build artifacts.
+The [Node import sweep](../../../../packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts) uses a TypeScript configuration without workspace source aliases, so each dependency retains its published module identity. Dockkit is admitted only for `ERR_UNKNOWN_FILE_EXTENSION` naming its exact built `dockkit.module.css` or its primitives dependency’s built `StateDot.module.css`; either ESM dependency may fail first. Other stylesheet paths, source-tree stylesheets, other errors and unexpectedly successful exempt imports fail. Scoped resolve/load hooks exercise these outcomes without modifying shared build artifacts. Win32 bindings share one module instance, so no duplicate koffi-registration exemption is needed.
 
 ## Alternatives considered
 
@@ -39,6 +49,8 @@ The [Node import sweep](../../../../packages/experimental/webworker-runtime/test
 **Completion inferred from acceptance or a preview.** HTTP 202 and an optimistic image can precede the operation being asserted.
 
 **Controlled samples replacing measured worker coverage.** Rejected because they omit verification of Node's actual ELU and transport behavior.
+
+**Force-destroy the dispatcher or extend the test timeout.** Destruction changes the production guarantee that in-flight requests may finish; a longer timeout leaves resolver completion outside fixture control. Deterministic DNS completion preserves graceful disposal and the actual routing assertions.
 
 ## Consequences
 

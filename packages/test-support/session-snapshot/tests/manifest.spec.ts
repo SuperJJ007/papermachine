@@ -9,6 +9,12 @@ describe('snapshot manifest', () => {
     })
   })
 
+  it('accepts the Science CLI profile as an owning replay scenario', () => {
+    expect(parseSnapshotManifest('version: 1\nprofile: science-headless\n')).toEqual({
+      version: 1, profile: 'science-headless',
+    })
+  })
+
   it('parses an explicitly retained Session generation and its migration coverage', () => {
     expect(parseSnapshotManifest([
       'version: 1',

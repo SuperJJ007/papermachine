@@ -126,8 +126,9 @@ async function ensureExpanded(page: Page, column: Locator): Promise<void> {
   await column.locator('[data-sidebar-right-open]').waitFor({ timeout: 10_000 })
 }
 
-/** Reload the session's transient sidebar state before an independent gesture case. */
-async function resetSidebar(page: Page): Promise<Locator> {
+/** Clear only this session's layout preference before an independent gesture case. */
+async function resetSidebar(page: Page, sessionId: string): Promise<Locator> {
+  await page.evaluate((key) => { localStorage.removeItem(key) }, `dsh.sidebar.right.v2.${sessionId}`)
   await page.reload({ waitUntil: 'load' })
   const column = page.locator('[data-rightbar-col]')
   await expandOf(page).waitFor({ timeout: 15_000 })
@@ -210,6 +211,7 @@ describe('web e2e: shipped right Sidebar', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let settledSessionId: string
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold()
@@ -250,6 +252,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // real append path so the Chat surface is live before the Sidebar is driven.
       const agent = scaffold.ctx.agents.list()[0]
       if (agent === undefined) throw new Error('connected workspace did not create an Agent')
+      settledSessionId = String(agent.session.id)
       // The wire parameter is `agentId`; the client passes a session id. If the
       // scaffold's Agent and Session carry different ids, that mismatch is the
       // silent lookup failure.
@@ -451,7 +454,7 @@ describe('web e2e: shipped right Sidebar', () => {
     it('keeps the conversation still during fullscreen entry and installs the hidden track without animation', async () => {
       onTestFailed(() => saveFailureShot(page, 'screenshots/0907-sidebar-rules/sidebar-right-fullscreen-entry'))
       mkdirSync(SHOT_DIR, { recursive: true })
-      const column = await resetSidebar(page)
+      const column = await resetSidebar(page, settledSessionId)
       const frame = page.locator('[class*="frame"]').first()
       const panel = column.locator('[data-sidebar-right-panel]')
       const viewport = page.viewportSize()
@@ -603,7 +606,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // case collects console errors itself.
       const viewport = page.viewportSize()
       if (viewport === null) throw new Error('expected a fixed viewport')
-      const column = await resetSidebar(page)
+      const column = await resetSidebar(page, settledSessionId)
       const frame = page.locator('[class*="frame"]').first()
       const panel = column.locator('[data-sidebar-right-panel]')
       const consoleErrors: string[] = []
@@ -844,7 +847,7 @@ describe('web e2e: shipped right Sidebar', () => {
 
     it('§9.3/§9.4 runs the whole pointer chain in a real browser', async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-gestures'))
-      const column = await resetSidebar(page)
+      const column = await resetSidebar(page, settledSessionId)
       const panes = column.locator('[data-dockkit-pane]')
       const floats = page.locator('[data-sidebar-right-float-host] [data-dockkit-float]')
 
@@ -928,7 +931,7 @@ describe('web e2e: shipped right Sidebar', () => {
 
     it('drops a pane whose last tab closes, and follows the last-tab rule on the surface', async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-settle'))
-      const column = await resetSidebar(page)
+      const column = await resetSidebar(page, settledSessionId)
       const panes = column.locator('[data-dockkit-pane]')
       expect(await column.locator('[data-dockkit-tab-close]').count()).toBe(1)
       await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
@@ -983,18 +986,37 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(tripwire.warnings).toEqual([])
     }, 90_000)
 
-    it('§9.7 returns to the default surface after a reload', async () => {
+    it('§9.7 restores the open surface and floating resource after a reload', async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-reload'))
+      const column = await resetSidebar(page, settledSessionId)
+      const frame = page.locator('[class*="frame"]').first()
+      const floats = page.locator('[data-sidebar-right-float-host] [data-dockkit-float]')
+      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
+      await floatByDrag(page, column.locator('[data-dockkit-tab]').filter({ hasText: SAMPLE_NAME }))
+      await expect.poll(async () => await floats.count()).toBe(1)
+      const preferenceKey = `dsh.sidebar.right.v2.${settledSessionId}`
+      const saved = await page.evaluate(key => localStorage.getItem(key), preferenceKey)
+      expect(saved).not.toBeNull()
+
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-      const frame = page.locator('[class*="frame"]').first()
-      const column = page.locator('[data-rightbar-col]')
-      await column.waitFor({ state: 'attached', timeout: 15_000 })
-      // The surface is view state, not durable session data: a reload zeroes it
-      // back to the collapsed default. Expected behaviour, not a defect.
-      await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-      await expect.poll(async () => await expandOf(page).count()).toBe(1)
-      expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      await expect.poll(async () => await column.locator('[data-sidebar-right-open]').count()).toBe(1)
+      expect(await frame.getAttribute('data-rightbar-collapsed')).toBeNull()
+      expect(await expandOf(page).count()).toBe(0)
+      await expect.poll(async () => await tabTitles(column)).toEqual(['Files'])
+      await expect.poll(async () => await floats.count()).toBe(1)
+      await expect.poll(async () => await tabTitles(floats)).toEqual([SAMPLE_NAME])
+      await floats.locator('[data-textpreview-state="text"]').waitFor({ timeout: 15_000 })
+      const restoredLines = floats.locator('[data-textpreview-plain] [data-textpreview-page] > [data-textpreview-line]')
+      await expect.poll(() => restoredLines.allTextContents()).toEqual(['produced by the seeded turn\n', 'second line\n'])
+      expect(await page.evaluate(key => localStorage.getItem(key), preferenceKey)).toBe(saved)
+
+      // An existing restored resource is revealed, not duplicated in the dock.
+      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await expect.poll(async () => await tabTitles(column)).toEqual(['Files'])
+      expect(await floats.count()).toBe(1)
+      await resetSidebar(page, settledSessionId)
     })
 
     it('opens a context menu on right-click that the strip cannot clip', async () => {

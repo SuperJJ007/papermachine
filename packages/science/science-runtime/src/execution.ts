@@ -39,8 +39,8 @@ const POSIX_LOCALE = 'C.UTF-8'
  * itself is not an option on win32: the platform's `setlocale` rejects it,
  * so R falls back to the same broken `C` behavior anyway. Confirmed on a
  * real Windows box; see the
- * [win32 locale and probe-argv Agent
- * Note](../../../../.agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md).
+ * [win32 locale and probe-argv
+ * limitations](../README.md#known-limitations-and-deferred-work).
  */
 const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
   aix: POSIX_LOCALE, android: POSIX_LOCALE, darwin: 'en_US.UTF-8', freebsd: POSIX_LOCALE, haiku: POSIX_LOCALE,

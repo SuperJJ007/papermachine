@@ -281,7 +281,7 @@ export function scienceTracePips(group: ScienceTraceGroup): readonly {
 
 /**
  * Build ordered process steps without parsing model prose, source code, or shell text.
- * @param nodes - Assembled conversation nodes.
+ * @param nodes - Loaded conversation nodes; request ownership uses trace log-sequence intervals.
  * @param science - Current browser-safe Science projection.
  * @param turnTimes - Authoritative turn timing map.
  * @param summaries - current library facts (content origin, creation time)
@@ -304,16 +304,20 @@ export function buildScienceTraceModel(
   const dialogues: ScienceTraceDialogue[] = []
   let inferredTurn = 0
   for (const node of nodes) {
-    if (node.kind === 'user') {
+    if (node.kind === 'user' || node.kind === 'steering') {
       const text = textOf(node)
       if (text === '') continue
-      inferredTurn = inferredTurn + 1
-      dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq, anchor: `seq:${node.seq}` })
-      continue
-    }
-    if (node.kind === 'steering') {
-      const text = textOf(node)
-      if (text !== '') dialogues.push({ actor: 'user', turn: Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
+      let turn: number
+      if (science.trace.turns.length > 0) {
+        const owner = science.trace.turns.find(candidate => candidate.startSeq <= node.seq
+          && (candidate.endSeq === undefined || node.seq <= candidate.endSeq))
+        if (owner === undefined) continue
+        turn = owner.turn
+      } else {
+        inferredTurn = node.kind === 'user' ? inferredTurn + 1 : Math.max(1, inferredTurn)
+        turn = inferredTurn
+      }
+      dialogues.push({ actor: 'user', turn, text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'tool-result') results.set(node.callId, node)

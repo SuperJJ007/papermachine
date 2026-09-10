@@ -44,6 +44,14 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/science/science-artifact-store': { kind: 'none', reason: 'The project store persists bytes and metadata; consumers own model rendering.' },
+  'packages/science/science-runtime': { kind: 'none', reason: 'The executor supplies operations and logged facts; tool-science owns model context.' },
+  'packages/science/science-session': { kind: 'none', reason: 'The domain validates and projects recorded events without registering model input.' },
+  'packages/session/session-attachment-index': { kind: 'none', reason: 'The registry extracts authorized references from recorded events without creating model input.' },
+  'packages/util/byte-size': { kind: 'indirect', reason: 'The formatter supplies labels embedded in consumer-owned tool results.' },
+  'packages/bundle/science-app': { kind: 'indirect', reason: 'The bundle composes the Science preset; mounted plugins own all model-visible input.' },
+  'packages/client/ui-brand-papermachine': { kind: 'none', reason: 'Browser branding contributes no model input or Session event.' },
+  'packages/client/ui-science': { kind: 'none', reason: 'Browser views render Host facts and delegate edit-message construction to Host services.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },

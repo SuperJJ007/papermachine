@@ -1,0 +1,139 @@
+{
+  "runtime": "Node via /private/tmp/dsh-rc1-node/bin, direct vitest and node --import tsx/esm; no install/build",
+  "logs": [
+    {
+      "file": "p6-final-support-unit.log",
+      "sha256": "f74eaeadae887806a5513e4a25065302a0e234f63cce23f3d53b439f6fc5edf6"
+    },
+    {
+      "file": "p6-science-coverage-isolated.log",
+      "sha256": "56b193d9dc3211c91058893b8f8305e111378614f29a8099f73963e0991d16b7"
+    },
+    {
+      "file": "p6-final-session-replay.log",
+      "sha256": "fe2ce3f1266fbc7cd37595f72042fb804ff981bef8dd05f6e0c230b96c915798"
+    },
+    {
+      "file": "p6-final-advanced-replay.log",
+      "sha256": "8ba4c709c5bec2ae3f4764616d643b3d2fa98c510090b2affaa03b3322f18cb5"
+    },
+    {
+      "file": "p6-final-web-replay.log",
+      "sha256": "97456d22b6762e095af66ca71bbb938d5bae6205d42146c03866ea3b82713ea8"
+    },
+    {
+      "file": "p6-final-corpus-gate.log",
+      "sha256": "d44f938ef449626b6791ccc285442f5290a2b9bf4b26315ef6ad89d094a3c489"
+    },
+    {
+      "file": "p6-final-corpus.log",
+      "sha256": "8ad66722c2e7dee94a897c539250189e878af7bbef6f301801f49ec3b8e004bf"
+    },
+    {
+      "file": "p6-chart-preview-replay.log",
+      "sha256": "badc63d69d1bd397161ad5a8e29ba9b64919a359279d27a2ada6f81d85b08545"
+    },
+    {
+      "file": "p6-final-focused-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "p6-final-pairing.log",
+      "sha256": "3e0382b1a7317a82a82faf5d9c8b97490031075fa80bb49385562b871123760d"
+    },
+    {
+      "file": "p6-kernel-source-rejection.log",
+      "sha256": "dd70383cc181a54cb28cbfb7b719802f4c733db0765337980d544941c82e3f1b"
+    },
+    {
+      "file": "p6-translation-ledger-unit.log",
+      "sha256": "bc24f66d1dbf5ab7438c74c94cd6456970e662ea629887ef0207c6788156efa4"
+    },
+    {
+      "file": "p6-science-web.log",
+      "sha256": "8be0e664ef596632bd6ebcddd492b0125d33284e672a1562d640a208a8a07923"
+    },
+    {
+      "file": "p6-base-web.log",
+      "sha256": "5835dc54e54536a87a6c388c6115f0edba5574fbbeb7b0ee1978f2826eb17f8c"
+    },
+    {
+      "file": "p6-lifecycle-replay.log",
+      "sha256": "ce37144fb3f82120763d76b9f22f48765d41ce775d467fa5d38cef78bbab7ef0"
+    }
+  ],
+  "productionKernel": {
+    "sessionFormat": 3,
+    "events": 51,
+    "tools": [
+      "get_science_state",
+      "run_python",
+      "annotate_artifact",
+      "annotate_artifact",
+      "get_science_state"
+    ],
+    "toolErrors": 0,
+    "runStatuses": [
+      "success"
+    ],
+    "artifactVersions": [
+      1,
+      1,
+      1
+    ],
+    "blobSha256": "f1b73f3b47f69bd28251db4cf4b99d89277b680edf4e96b6d75311768b8eb465",
+    "blobBytes": 6876,
+    "ending": [
+      {
+        "kind": "completed"
+      }
+    ],
+    "rawSessionSha256": "0f02d3181128777a8bd50c20c975cb05b11c9681187b77f51cb7486d9148d13f"
+  },
+  "fixtures": [
+    {
+      "path": "snapshots/session/science-tools/cordis.snapshot.yml",
+      "sha256": "cd343408e7333dcd4929c5c16c5599c5877899249ca5ab4477de0724e1003eb5"
+    },
+    {
+      "path": "snapshots/session/science-tools/cordis.yml",
+      "sha256": "5e6dcb76b34ecc1b877ba923d6213e9698610ecfa45691fd314d4bb873a2ab78"
+    },
+    {
+      "path": "snapshots/session/science-tools/session.v3.jsonl",
+      "sha256": "677d50640f1a219f6d2d5d82003f9fb98d2abb4b35ad4f5cc09a721f2f49ccac"
+    },
+    {
+      "path": "snapshots/session/science-tools/snapshot.yml",
+      "sha256": "1872cf36a3e2972b8ac394ad11f355bacfd36ed698222c6a5088a375840d53fd"
+    },
+    {
+      "path": "snapshots/session/science-tools/system-prompt.expected.md",
+      "sha256": "b707761577c9a059cd77d1bc9264b0aa5d98fd7a50ee67224722bfb8c13032a5"
+    },
+    {
+      "path": "snapshots/session/science-tools/tool-schemas.expected.json",
+      "sha256": "63290490df356e7d951817797efde0e6d76b9da50f26430fd58595ab4e6dfcef"
+    },
+    {
+      "path": "snapshots/web/science-preset/session.v3.jsonl",
+      "sha256": "aa86a4b7bd07c67ce1060ad298a2f4615b692226e36c65a4757f0aa5d93d7696"
+    },
+    {
+      "path": "snapshots/web/science-preset/snapshot.yml",
+      "sha256": "087f0a670104139ac7b6792db979f2e467966feaa5228b84cdcbfe99d203b27b"
+    },
+    {
+      "path": "snapshots/web/science-preset/system-prompt.expected.md",
+      "sha256": "ce2169295e68aa65dbe8082382e6dc05c60d073308de94d2d7070ebdd3e0b6b9"
+    },
+    {
+      "path": "snapshots/web/science-preset/tool-schemas.expected.json",
+      "sha256": "63290490df356e7d951817797efde0e6d76b9da50f26430fd58595ab4e6dfcef"
+    },
+    {
+      "path": "snapshots/web/science-preset/ui.expected.md",
+      "sha256": "3a457524cedfa01a500e3b93db12f00c675ff9f5b5924d657d0dcba81fa10d8b"
+    }
+  ]
+}

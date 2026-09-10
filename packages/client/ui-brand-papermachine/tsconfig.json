@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
       "path": "../ui-conversation"
     },
     {

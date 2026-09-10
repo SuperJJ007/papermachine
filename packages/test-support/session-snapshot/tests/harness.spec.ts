@@ -490,6 +490,24 @@ describe('runScenario', () => {
     expect(permissionFinished).toBe(true)
   })
 
+  it.each(['missing', 'wrong identity'])('rejects an %s overlay package before ACP launch and removes its home', async (kind) => {
+    const { fixtureFile } = await scenario({})
+    const profilePackages: Record<string, string> = {}
+    let workspace = ''
+    await expect(runScenario({ steps: [] }, {
+      agent: AGENT,
+      mode: 'replay',
+      fixtureFile,
+      profilePackages,
+      prepareWorkspace: async (cwd) => {
+        workspace = cwd
+        profilePackages['@snapshot/overlay'] = kind === 'missing' ? join(cwd, 'missing') : cwd
+        await writeFile(join(cwd, 'package.json'), JSON.stringify({ name: '@snapshot/wrong', version: '1.0.0' }))
+      },
+    })).rejects.toThrow(kind === 'missing' ? 'ENOENT' : 'requires its matching named and versioned manifest')
+    await expect(readdir(workspace)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('includes agent stderr when the ACP connection closes during startup', { timeout: 20_000 }, async () => {
     const { fixtureFile } = await scenario({ failOnBoot: true, stderrNote: 'fake agent requested startup failure' })
     await expect(runScenario(

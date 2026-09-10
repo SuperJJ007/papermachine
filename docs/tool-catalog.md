@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-science` | `annotate_artifact`, `get_science_state`, `install_science_packages`, `run_python`, `run_r` | `ctx.tools`, `ctx.systemPrompt`, `ctx.scienceRuntime` | `science/mode-bound`, `science/environment-bound`, `science/run-started`, `science/run-finished`, `science/artifact-saved` | - | - |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). Under `ptc` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
@@ -41,6 +42,242 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+### `annotate_artifact`
+
+Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. If the user names an artifact you have no record of, call this tool with that exact name anyway and relay its diagnostic — never create a substitute file in place of one you cannot find. Returns a text receipt; never file bytes.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "logical_name": {
+      "type": "string",
+      "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Exact existing version of logical_name to curate. Defaults to its latest version."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable artifact title."
+    },
+    "caption": {
+      "type": "string",
+      "description": "Optional human-readable caption."
+    }
+  },
+  "required": [
+    "logical_name",
+    "title"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `get_science_state`
+
+Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `install_science_packages`
+
+Install one or more packages into this session's bound Python or R environment through conda-forge, persisting them across kernel restarts — unlike an in-kernel `pip install`/`install.packages()`, which is lost on restart. Package specs use conda syntax, e.g. "numpy" or "numpy=1.26"; R packages install as prebuilt conda-forge binaries, so no local compiler toolchain is required. On success the affected language's current kernel restarts on its next run_python/run_r call (an environment re-bind — the same event a run result already names), clearing whatever that kernel held in memory; nothing durable changes on failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "description": "Interpreter whose environment receives the install.",
+      "enum": [
+        "python",
+        "r"
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "description": "One or more conda-forge package specs, e.g. \"numpy\" or \"numpy=1.26\".",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "language",
+    "packages"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `run_python`
+
+Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An exception is a result to inspect in stdout/stderr, not a tool failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
+
+### `run_r`
+
+Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An error condition is a result to inspect in stdout/stderr, not a tool failure.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Non-empty source to execute."
+    },
+    "artifact_inputs": {
+      "type": "array",
+      "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "edit_of": {
+      "type": "array",
+      "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "version",
+          "path"
+        ]
+      }
+    },
+    "raster_artifacts": {
+      "type": "array",
+      "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+Source: [`packages/science/tool-science/src/index.ts`](../packages/science/tool-science/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 

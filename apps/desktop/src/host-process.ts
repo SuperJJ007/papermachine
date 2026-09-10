@@ -2,6 +2,8 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
+import { stopProcessGroup } from './provisioning.ts'
+import { RotatingHostLog, drainHostStderr, redactHostStderr, type HostStderrLog } from './host-log.ts'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import {
@@ -82,6 +84,9 @@ export class DesktopHostProcess {
     this.readyReject = reject
   })
   private exitPromise: Promise<void> | undefined
+  private watchdog: ChildProcess | undefined
+  private logDrain: Promise<void> | undefined
+  private stopping: Promise<void> | undefined
   private stderr = ''
 
   /**
@@ -95,6 +100,7 @@ export class DesktopHostProcess {
     private readonly projectDir: string,
     private readonly home: string,
     private readonly inspectPort?: number,
+    private readonly supervision?: { readonly log: HostStderrLog; readonly watchdogEntry: string; readonly onExit: (error: Error) => void },
   ) {}
 
   /** Start the child once and resolve only after its complete composition is active. */
@@ -107,6 +113,7 @@ export class DesktopHostProcess {
       this.projectDir,
       ...(this.inspectPort === undefined ? [] : ['--allow-linked-profile']),
     ], {
+      detached: process.platform !== 'win32',
       cwd: this.projectDir,
       env: {
         ...Object.fromEntries(Object.entries(process.env).filter(([name]) => (
@@ -127,8 +134,24 @@ export class DesktopHostProcess {
     this.requestPipe = requestPipe
     this.responsePipe = responsePipe
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => { this.stderr += chunk })
+    child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-65_536) })
+    if (this.supervision !== undefined) {
+      this.logDrain = drainHostStderr(child, new RotatingHostLog(this.supervision.log, process.env))
+      this.logDrain.catch((error: unknown) => { console.error('desktop: Host log failed', error) })
+      if (process.platform !== 'win32' && child.pid !== undefined) {
+        this.watchdog = spawn(this.node, [this.supervision.watchdogEntry, String(process.pid), String(child.pid)], {
+          detached: true, stdio: 'ignore', env: { PATH: process.env.PATH },
+        })
+        this.watchdog.once('error', (error) => { this.fail(error) })
+        this.watchdog.unref()
+      }
+    }
     child.stdout?.pipe(process.stdout)
+    child.once('exit', (code, signal) => {
+      if (this.stopping === undefined) {
+        this.supervision?.onExit(new Error(`desktop: Host exited (${String(code ?? signal)})`))
+      }
+    })
     responsePipe.on('data', (chunk: Buffer) => { this.acceptResponseBytes(chunk) })
     responsePipe.once('end', () => {
       try {
@@ -151,7 +174,7 @@ export class DesktopHostProcess {
     child.once('error', (error) => { this.fail(error) })
     this.exitPromise = new Promise<void>((resolve) => {
       child.once('exit', (code) => {
-        const suffix = this.stderr.trim() === '' ? '' : `: ${this.stderr.trim()}`
+        const suffix = this.stderr.trim() === '' ? '' : `: ${redactHostStderr(this.stderr.trim(), process.env)}`
         if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
         else this.fail(new Error(`dsh desktop host stopped${suffix}`))
         resolve()
@@ -204,7 +227,12 @@ export class DesktopHostProcess {
   }
 
   /** Request graceful teardown, then wait for child exit. */
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    this.stopping ??= this.stopOwned()
+    return this.stopping
+  }
+
+  private async stopOwned(): Promise<void> {
     const child = this.child
     if (child === undefined) return
     this.blockedResponses.clear()
@@ -220,6 +248,14 @@ export class DesktopHostProcess {
         throw new Error('dsh desktop host did not exit after SIGKILL')
       }
     }
+    if (process.platform !== 'win32') await stopProcessGroup(child)
+    const watchdog = this.watchdog
+    if (watchdog !== undefined && watchdog.exitCode === null && watchdog.signalCode === null) {
+      const done = once(watchdog, 'exit')
+      watchdog.kill('SIGTERM')
+      await done
+    }
+    await this.logDrain
     this.child = undefined
     this.requestPipe = undefined
     this.responsePipe = undefined

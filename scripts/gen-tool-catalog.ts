@@ -64,6 +64,7 @@ import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
+import * as ToolScience from '@deepseek-ai/dsh-tool-science'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
@@ -188,6 +189,16 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-science',
+    dir: 'tool-science',
+    source: 'packages/science/tool-science/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.scienceRuntime'],
+    writes: ['science/mode-bound', 'science/environment-bound', 'science/run-started', 'science/run-finished', 'science/artifact-saved'],
+    mount: async (ctx) => {
+      await ctx.plugin(ToolScience, { profileId: 'science', modeRevision: '1', stateHistoryLimit: 20 })
+    },
+  },
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
     dir: 'tool-ask-user',

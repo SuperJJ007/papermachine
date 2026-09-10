@@ -32,6 +32,15 @@ import {
   translationStructureSignature,
 } from './translation-pairing.ts'
 
+describe('Desktop build documentation discovery', () => {
+  it('excludes copied build documents while retaining authored desktop READMEs', () => {
+    expect(isTranslationScopeFile('apps/desktop/.desktop-build/targets/mac-arm64/runtime/README.md')).toBe(false)
+    expect(isTranslationScopeFile('apps/desktop/.desktop-build/targets/win-x64/artifacts/README.zh.md')).toBe(false)
+    expect(isTranslationScopeFile('apps/desktop/README.md')).toBe(true)
+    expect(isTranslationScopeFile('apps/desktop/resources/README.md')).toBe(true)
+  })
+})
+
 const fixturePairSource = (): boolean => true
 
 function signature(markdown: string) {

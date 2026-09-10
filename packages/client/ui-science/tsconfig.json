@@ -60,9 +60,6 @@
       "path": "../../science/tool-science"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
       "path": "../store"
     },
     {

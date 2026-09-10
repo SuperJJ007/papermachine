@@ -160,6 +160,37 @@ describe('gate graph validation', () => {
     await expect(runGates(subject, subject.length, execute)).resolves.toHaveLength(subject.length)
   })
 
+  it.each(['ci-primary', 'ci-linux-primary', 'ci-coverage', 'ci-windows-complete'] as const)(
+    'includes exactly one blocking telemetry receiver test leaf in %s', (mode) => {
+      const leaves = withPnpmEntrypoint(() => gatesForMode(mode))
+        .filter(gate => gate.id === 'telemetry-receivers-test')
+      expect(leaves).toHaveLength(1)
+      expect(leaves[0]).toMatchObject({
+        command: process.execPath,
+        args: ['--test', 'apps/telemetry-receivers/tests/*.test.mjs'],
+      })
+      expect(leaves[0]?.allowFailure).not.toBe(true)
+      if (mode === 'ci-windows-complete') expect(leaves[0]?.needs).toContain('build')
+      else expect(leaves[0]?.needs).toBeUndefined()
+    },
+  )
+
+  it('executes the receiver suites through the aggregate leaf', async () => {
+    const leaf = withPnpmEntrypoint(() => gatesForMode('ci-coverage'))
+      .find(gate => gate.id === 'telemetry-receivers-test')!
+    const result = await runGate(leaf)
+    expect(result.status, JSON.stringify(result.output)).toBe('passed')
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('reports a missing receiver suite as a failed leaf', async () => {
+    const leaf = withPnpmEntrypoint(() => gatesForMode('ci-coverage'))
+      .find(gate => gate.id === 'telemetry-receivers-test')!
+    const result = await runGate({ ...leaf, args: ['--test', 'apps/telemetry-receivers/tests/missing-receiver-suite.test.mjs'] })
+    expect(result.status).toBe('failed')
+    expect(result.exitCode).not.toBe(0)
+  })
+
   it('builds the native addon before benchmarks through the ci-bench script chain', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-bench'))
     const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {

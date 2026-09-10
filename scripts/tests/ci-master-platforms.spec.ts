@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { gatesForMode } from '../run-gates.ts'
 
 const root = resolve(import.meta.dirname, '../..')
-const masterPush = "github.event_name == 'push' && github.ref == 'refs/heads/master'"
+const platformRun = "github.event_name == 'push' || github.event_name == 'workflow_dispatch'"
 const runtimeBuilder = './.github/workflows/build-exe-for-python-sdk.yml'
 
 interface Job {
@@ -92,17 +92,20 @@ describe('master-only platform scheduling', () => {
     }))
   })
 
-  it('runs all three deferred carriers on master pushes with fail-loud API credentials', () => {
+  it('runs all three deferred carriers after merge or manual dispatch with fail-loud API credentials', () => {
     const master = workflow('ci-master.yml')
     expect(master.on.push).toEqual({ branches: ['master'] })
     expect(Object.keys(master.on).sort()).toEqual(['push', 'workflow_dispatch'])
     const runtime = master.jobs['python-runtime']!
     expect(runtime).toMatchObject({
-      if: masterPush,
+      if: platformRun,
       uses: runtimeBuilder,
       with: { ci: true, targets: 'node24-linux-arm64,node24-macos-arm64,node24-macos-x64' },
       secrets: { DEEPSEEK_API_KEY_EXTERNAL: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
     })
+    for (const [event, runs] of [['push', true], ['workflow_dispatch', true], ['pull_request', false]] as const) {
+      expect(evaluateCondition(runtime.if as string, false, [], event)).toBe(runs)
+    }
     expect(runtime.needs).toBeUndefined()
     expect(runtime['continue-on-error']).toBeUndefined()
     const builder = workflow('build-exe-for-python-sdk.yml')
@@ -121,7 +124,7 @@ describe('master-only platform scheduling', () => {
   it('runs Wine once on hosted master CI and seeds its own apt cache', () => {
     const master = workflow('ci-master.yml')
     const wine = master.jobs.windows!
-    expect(wine).toMatchObject({ if: masterPush, 'runs-on': 'ubuntu-latest' })
+    expect(wine).toMatchObject({ if: platformRun, 'runs-on': 'ubuntu-latest' })
     expect(wine.needs).toBeUndefined()
     expect(wine['continue-on-error']).toBeUndefined()
     expect(master.jobs['wine-apt-cache']).toBeUndefined()

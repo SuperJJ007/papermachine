@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-session-snapshot/normalize
  */
 
+import { normalizeScienceSnapshot } from './science.ts'
 import {
   decodeSeqRanges,
 } from '@deepseek-ai/dsh-session'
@@ -535,7 +536,7 @@ export function scrubModelRequestBulk(rawLog: string): string {
  * @returns committed snapshot JSONL with prompt text and tool schemas tokenized.
  */
 export function scrubSessionSnapshot(rawLog: string): string {
-  const scrubbed = scrubModelRequestBulk(rawLog)
+  const scrubbed = scrubModelRequestBulk(normalizeScienceSnapshot(rawLog))
   let recordIndex = 0
   return scrubbed.split('\n').map((line) => {
     if (line.trim().length === 0) return line

@@ -152,6 +152,7 @@ describe('Science publication payloads', () => {
     'packages/science/science-runtime',
     'packages/science/tool-science',
     'packages/bundle/science-app',
+    'packages/client/ui-science',
   ])('requires every shipped payload entry in %s', (dir) => {
     const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as
       WorkspaceManifest['manifest'] & { files: string[] }
@@ -162,5 +163,28 @@ describe('Science publication payloads', () => {
     }
     expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files, 'unowned'] } }))
       .toContainEqual(expect.stringContaining('package.json files must be'))
+  })
+})
+
+describe('deployment-only applications', () => {
+  const dir = 'apps/telemetry-receivers'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+
+  it('keeps the telemetry receiver private without an npm runtime entry', () => {
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } }))
+      .toContainEqual(expect.stringContaining('must set "private": true'))
+  })
+
+  it.each<[string, Partial<WorkspaceManifest['manifest']>]>([
+    ['main', { main: 'server.mjs' }],
+    ['types', { types: 'server.d.ts' }],
+    ['bin', { bin: 'server.mjs' }],
+    ['exports', { exports: { '.': './server.mjs' } }],
+    ['files', { files: ['server.mjs'] }],
+    ['publishConfig', { publishConfig: { access: 'public' } }],
+  ])('rejects a %s publication declaration', (field, declaration) => {
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, ...declaration } }))
+      .toContainEqual(expect.stringContaining(`deployment-only app must omit ${field}`))
   })
 })

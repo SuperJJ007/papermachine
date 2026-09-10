@@ -1,0 +1,31 @@
+# Agent Note: Science 查看器请求跟随当前内容
+
+Status: implemented
+
+[English](2026-08-31-science-viewer-lifecycle.md) | 中文
+
+## 问题
+
+用户选择另一版本、关闭 pane 或切换会话后，产物读取与编辑预览仍可能完成。
+
+## 决策
+
+原生产物 pane 将异步读取和预览绑定到当前不可变版本及其生命周期。晚到结果不能覆盖新选择。预览回调只更新呈现，不能被当成新的编辑再次启动 debounce。页面本地 undo 和草稿状态随其编辑器结束。
+
+最大化或恢复 pane 改变的是布局，不是会话授权。跨会话查看不会把所查看产物的生产者变成当前编辑会话；Remote 授权与 Runtime admission 仍是权威。
+
+## 考虑过的替代方案
+
+**最后完成的响应一律获胜。** 缓慢的旧请求会覆盖用户当前选择。
+
+**把预览回调作为编辑依赖监听。** 每次预览完成都会触发下一次预览。
+
+**由最大化查看器推断编辑权限。** 布局状态不能证明项目或会话权限。
+
+## 后果
+
+关闭 pane 必须让待完成的呈现更新失效。取消请求有用但并不充分，完成可能与取消竞态；仍须用身份和生命周期检查保护结果。
+
+## 相关决策
+
+相关 owner：[science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.zh.md); [chart-edit-baseline-isolation](2026-08-31-chart-edit-baseline-isolation.zh.md).

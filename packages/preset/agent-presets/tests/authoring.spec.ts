@@ -169,6 +169,24 @@ describe('copying a preset', () => {
     expect(existsSync(join(userRoot, 'mine'))).toBe(false)
   })
 
+  it.each([
+    ['copy policy', 'copyable: false\n', 'its metadata declares copyable: false'],
+    ['broken metadata', 'copyable: "no"\n', 'copyable'],
+  ])('refuses %s in the copy executor without creating a destination', async (_label, metadata, reason) => {
+    await seedPreset(userRoot, 'source', { metadata })
+    const source = (await ctx.agentPresets.list()).find(preset => preset.id === 'source')
+    if (source === undefined) throw new Error('seeded preset was not discovered')
+    expect(source.copyable).toBe(false)
+    const composition = await readFile(source.path, 'utf8')
+
+    await expect(copyComposition([{ path: userRoot, trust: 'user' }], source, 'mine'))
+      .rejects.toThrow(reason)
+
+    expect(existsSync(join(userRoot, 'mine'))).toBe(false)
+    expect(await readFile(source.path, 'utf8')).toBe(composition)
+    expect(await readFile(join(userRoot, 'source', METADATA_FILE), 'utf8')).toBe(metadata)
+  })
+
   it('leaves nothing behind when the copy itself fails', async () => {
     const source = {
       id: 'gone',

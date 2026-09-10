@@ -145,7 +145,10 @@ export interface Config {
 export interface PresetRoot {
   /** Directory holding one subdirectory per preset; a leading `~` expands. */
   path: string
-  /** Trust recorded on every preset discovered under this root. */
+  /**
+   * Trust recorded on every preset discovered under this root. System presets
+   * must provide valid metadata; user presets may omit the metadata file.
+   */
   trust: PresetTrust
 }
 
@@ -157,7 +160,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-Source: [`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+Source: [`packages/preset/agent-presets/src/preset.ts:61`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -401,6 +404,34 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-science"></a>
+
+## `@deepseek-ai/dsh-client-ui-science`
+
+```ts config-catalog
+/** Plugin config: where this deployment renders the Science Files toggle. */
+export interface Config {
+  /**
+   * `session` (default) gates the toggle to a Science Session's own header,
+   * matching the generic Web presentation fence; `global` renders it
+   * app-wide, unconditionally, before any workspace is selected.
+   */
+  toggleScope?: ToggleScope
+}
+
+/**
+ * Where the Files toggle renders for this deployment. `session` gates it to
+ * a Science Session's own header — the generic Web presentation fence,
+ * unchanged from before this field existed. `global` renders it app-wide,
+ * unconditionally, from before any workspace is selected and before any
+ * Session exists — the desktop composition's placement, since the desktop
+ * overlay forces Science as the product default.
+ */
+export type ToggleScope = typeof TOGGLE_SCOPES[number]
+```
+
+Source: [`packages/client/ui-science/src/index.ts:19`](../packages/client/ui-science/src/index.ts)
+
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-code-runtime-worker-thread`
@@ -499,6 +530,14 @@ export interface ToolResultPruneConfig {
   headChars?: number
   /** Maximum trailing Unicode code points retained. Defaults to `1024`. */
   tailChars?: number
+  /**
+   * Tool names never pruned, regardless of size. A deployment names a tool
+   * here when its result is instructions rather than data — a truncated
+   * middle changes model behavior instead of merely losing detail — and
+   * head/tail pruning of instructions is worse than no pruning. Defaults to
+   * `[]`.
+   */
+  exemptTools?: string[]
 }
 ```
 
@@ -824,7 +863,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/headless/src/index.ts:34`](../packages/bundle/headless/src/index.ts)
+Source: [`packages/bundle/headless/src/index.ts:35`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
@@ -1539,6 +1578,12 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Config for connecting to an MCP server over Streamable HTTP (SSE). */
@@ -1561,6 +1606,12 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
+  /**
+   * Deployment-level curation of this server's tool set — include/exclude by
+   * rawName, rename the public-name suffix, or override the model-facing
+   * description; omission registers every discovered tool unchanged.
+   */
+  tools?: ToolFilterConfig
 }
 
 /** Automatic reconnect policy for one MCP server connection. */
@@ -1574,9 +1625,31 @@ export interface ReconnectConfig {
   /** Consecutive failed attempts per outage before giving up for good (default 10). */
   maxAttempts?: number
 }
+
+/**
+ * Deployment-level curation of one MCP server's tool set (`cordis.yml`
+ * `tools:`), applied on every sync — initial, reconnect, and
+ * `notifications/tools/list_changed` re-sync alike. Every rawName referenced
+ * anywhere below must be one the connected server actually advertises;
+ * {@link syncTools} fails loud per sync when one is not.
+ */
+export interface ToolFilterConfig {
+  /** Only these server-advertised rawNames are registered; empty or omitted registers every discovered tool. */
+  include?: string[]
+  /** rawNames removed after `include` narrows the set; empty or omitted removes none. */
+  exclude?: string[]
+  /**
+   * rawName → public-name suffix override. The public name stays
+   * `mcp__<serverName>__<suffix>`, normalized by {@link publicToolName} like
+   * any other tool; two different rawNames may not target the same suffix.
+   */
+  rename?: Record<string, string>
+  /** rawName → model-facing description override; empty or omitted keeps the server-provided description. */
+  describe?: Record<string, string>
+}
 ```
 
-Source: [`packages/mcp/mcp-client/src/index.ts:98`](../packages/mcp/mcp-client/src/index.ts)
+Source: [`packages/mcp/mcp-client/src/index.ts:112`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -1843,6 +1916,287 @@ export interface Config {
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
 Source: [`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
+
+<a id="deepseek-aidsh-science-artifact-store"></a>
+
+## `@deepseek-ai/dsh-science-artifact-store`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
+  dshHome?: string
+  /**
+   * SQLite `journal_mode` pragma for every project's `store.sqlite`. `wal`
+   * (the default) suits local disks; pick a rollback-journal mode on
+   * filesystems where WAL's shared-memory files do not work (network mounts).
+   */
+  journalMode?: JournalMode
+  /**
+   * Maximum time, in milliseconds, a writer blocks waiting for a competing
+   * SQLite write lock before failing (`sqlite3_busy_timeout()`). This is
+   * what makes the append linearization point correct across concurrent
+   * processes instead of failing the second writer outright.
+   */
+  busyTimeoutMs?: number
+  /**
+   * How many pre-upgrade `.bak` copies of a project's `store.sqlite` to
+   * retain when a schema migration runs. Deployment-varying because it
+   * trades disk space against how far back a bad migration can be undone
+   * by hand.
+   */
+  storeBackupRetention?: number
+  /**
+   * Upper bound on how many version rows and dangling session-log events one
+   * `reconcileProject` call processes before reporting `truncated: true` and
+   * returning rather than continuing. Deployment-varying: a larger project
+   * (more versions accumulated, more sessions to fold events from) can
+   * afford — or need — a larger single-call budget than a small one; the
+   * caller (`dsh-science-runtime`) decides whether and how to schedule a
+   * follow-up call for the remainder.
+   */
+  reconcileMaxVersions?: number
+  /**
+   * Consulted at most once per project, during a v1→v2 store upgrade's
+   * optional step 4, to recover `environmentFingerprint`/`producerTurn`/
+   * figure state/annotation provenance this package's v1 rows never held
+   * and only that project's session logs still do. This package never reads
+   * session-log format itself; a consumer that does (e.g. `dsh-science-runtime`)
+   * supplies this hook. Omitted: step 4 is skipped and logged as a warning.
+   */
+  backfillProvenance?: BackfillProvenanceHook
+}
+
+/**
+ * Journal modes the store will run under. `wal` is the default; the
+ * rollback-journal modes exist for filesystems where WAL's shared-memory
+ * files do not work (network mounts).
+ */
+export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
+
+/**
+ * Caller-supplied hook, invoked at most once during the v1→v2 migration's
+ * optional step 4. This package never reads session logs itself — that
+ * format is owned by `dsh-session`/`dsh-science-session`, layers above this
+ * one — so the hook lets the CALLER supply whatever it can recover from a
+ * project's session logs, keyed by `versionId`.
+ *
+ * A `versionId` absent from the returned map (or the hook itself omitted,
+ * or the hook's promise rejecting) leaves that row exactly as steps 1–3 left
+ * it and the migration logs one warning through `onWarning` — it never
+ * fails the migration. A single unreadable session log is this hook's own
+ * concern to skip past; nothing this hook returns can roll back the rest of
+ * the migration's already-applied schema and data changes.
+ * @param projectId - the project whose session logs to consult.
+ * @param rows - every version row migrated from v1, still missing the fields above.
+ * @returns recovered values keyed by `versionId`; an absent key means "nothing found".
+ */
+export type BackfillProvenanceHook = (
+  projectId: string,
+  rows: readonly BackfillProvenanceRow[],
+) => Promise<ReadonlyMap<string, BackfillProvenanceValue>>
+
+/** One version row still missing fields only a v1-era session log ever held, handed to a `backfillProvenance` hook. */
+export interface BackfillProvenanceRow {
+  /** The migrated version's id — the key the hook's returned map is looked up by. */
+  readonly versionId: string
+  /** The artifact this version belongs to, for scoping which session logs are relevant. */
+  readonly artifactId: string
+  /** The session that produced this version, for scoping which session logs are relevant. */
+  readonly producerSessionId: string
+}
+
+/**
+ * What a `backfillProvenance` hook may recover for one version from its
+ * project's session logs. Every field is independently optional: an omitted
+ * field leaves that column at its step-1..3 migrated default (`NULL`, or
+ * `derived: true` on the version's annotation).
+ */
+export interface BackfillProvenanceValue {
+  /** Full 64-hex-character digest, not a preview. */
+  readonly environmentFingerprint?: string
+  /** The request/response turn number of the authorizing tool call. */
+  readonly producerTurn?: number
+  /** The live-figure-object state to write into `figure_state` for this version. */
+  readonly figureState?: BackfillProvenanceFigureState
+  /** The authorizing tool call for the version's ONE migration-derived annotation row, if the log still names it. */
+  readonly annotationToolCallId?: string
+  /** The real edit timestamp for that annotation row, if the log still names it; supplying this also clears the row's `derived` flag. */
+  readonly annotationCreatedAt?: number
+}
+
+/** Live-figure-object state a `backfillProvenance` hook recovered for one version. */
+export interface BackfillProvenanceFigureState {
+  /** Identifies which live figure this state belongs to, opaque to this package. */
+  readonly figureKey: string
+  /** Rendering resolution, dots per inch. */
+  readonly dpi: number
+  /** Opaque JSON text for the chart's live-object state; this package stores it verbatim without parsing. */
+  readonly stateJson: string
+}
+```
+
+Source: [`packages/science/science-artifact-store/src/index.ts:85`](../packages/science/science-artifact-store/src/index.ts)
+
+<a id="deepseek-aidsh-science-runtime"></a>
+
+## `@deepseek-ai/dsh-science-runtime`
+
+Requires: `scienceArtifactStore` · `sessions` · `subprocess` · `sandbox`
+
+```ts config-catalog
+/** Runtime configuration supplied by one Cordis row. */
+export interface Config {
+  /** Explicit Harness home; omitted follows the shared resolver. */
+  readonly dshHome?: string
+  /**
+   * Absolute path to the deployment's micromamba executable. Required for
+   * `ScienceRuntime.installPackages`; omitted means this deployment cannot
+   * install packages, and `installPackages` rejects with
+   * `INSTALLER_NOT_CONFIGURED` rather than silently degrading to an
+   * in-kernel `pip install`/`install.packages()`. Never used for anything
+   * else — binding and running an environment need no installer. Must be
+   * configured together with {@link Config.installChannels}: setting one
+   * without the other fails config resolution.
+   */
+  readonly micromambaPath?: string
+  /**
+   * Ordered, non-empty list of `https://` conda channel URLs `installPackages`
+   * tries in turn, each as one complete, independent `micromamba install`
+   * attempt (never merged into one `--channel` list, which would let a
+   * single solve pull packages from different mirrors into one inconsistent
+   * install) — the same whole-attempt-fallback shape
+   * `apps/desktop/src/environment-declaration.ts`'s `EnvironmentSource.channels`
+   * uses for provisioning, so a deployment that provisioned through a
+   * mirror can also install through it. Only a `'failed'` attempt tries the
+   * next URL; `'cancelled'`/`'timed-out'` stop immediately, since every
+   * attempt shares the same operation deadline and cancellation signal.
+   * Validated identically to the desktop's own channel URLs: `https://`
+   * only, every later character drawn from a fixed allowlist (letters,
+   * digits, and `._~/-`) that admits no whitespace, control character, or
+   * shell metacharacter, since the value reaches `micromamba` argv
+   * unescaped. Must be configured together with {@link Config.micromambaPath}.
+   */
+  readonly installChannels?: string[]
+  /**
+   * Map of profile identifiers to existing language prefixes. An empty map
+   * is a valid explicit unconfigured state — for example a deployment that
+   * defers every profile to the restart-scoped `science-runtime` settings
+   * namespace.
+   */
+  readonly profiles: Readonly<Record<string, ScienceEnvironmentProfileConfig>>
+  /** One caller-independent bound for bind and run operations. */
+  readonly timeoutMs?: number
+  /**
+   * One caller-independent bound for one `installPackages` micromamba
+   * solve/install attempt, separate from {@link Config.timeoutMs} because a
+   * package solve routinely takes far longer than a bind or a run.
+   */
+  readonly installTimeoutMs?: number
+  /**
+   * Maximum package-inventory entries retained per observed interpreter.
+   * An inventory exceeding this cap is truncated and flagged; the digest
+   * still covers the complete pre-truncation inventory.
+   */
+  readonly packagesMaxEntries?: number
+  /**
+   * Maximum package-inventory UTF-8 bytes (summed name and version) retained
+   * per observed interpreter. An inventory exceeding this cap is truncated
+   * and flagged; the digest still covers the complete pre-truncation
+   * inventory.
+   */
+  readonly packagesMaxBytes?: number
+  /**
+   * Whether auto-capture admits a `.png` unconditionally (`'always'`) or
+   * only when the writing run declared it via `raster_artifacts`
+   * (`'declared'`, the default). A model self-inspection render outside
+   * SCIENCE_ARTIFACT_DIR never becomes an artifact.
+   */
+  readonly rasterCapture?: RasterCapturePolicy
+  /** Maximum encoded bytes admitted for one auto-captured run-written file; a larger file is skipped and counted, never a run failure. */
+  readonly captureMaxFileBytes?: number
+  /** Maximum eligible files auto-captured from one run; further eligible files are truncated and flagged, never a run failure. */
+  readonly captureMaxFilesPerRun?: number
+  /**
+   * Maximum artifact versions a session accumulates through auto-capture
+   * before it stops appending further versions, truncated and flagged.
+   */
+  readonly captureMaxArtifactVersionsPerSession?: number
+  /** Maximum artifact-version inputs materialized for one run. */
+  readonly inputMaxFilesPerRun?: number
+  /** Maximum aggregate attachment bytes materialized as inputs for one run. */
+  readonly inputMaxBytesPerRun?: number
+  /**
+   * Idle deadline after a persistent kernel's last `DONE` before the
+   * Runtime ends it with reason `idle`; disarmed while a run is in flight.
+   */
+  readonly kernelIdleTimeoutMs?: number
+  /**
+   * Deadline from a persistent kernel's spawn to its `READY` handshake;
+   * a slower handshake rejects the acquiring run with `KERNEL_START_FAILED`.
+   */
+  readonly kernelStartTimeoutMs?: number
+  /** Deadline for post-run live-figure extraction; a timeout retires the kernel. */
+  readonly chartExtractTimeoutMs?: number
+  /** Recent runs whose registered live figures remain strongly referenced in each kernel. */
+  readonly chartLiveRunsRetained?: number
+  /**
+   * Maximum session logs read, per project, when building the event set for
+   * one store ↔ session reconciliation pass. A project with more matching
+   * sessions than this reports its walk truncated rather than reading them
+   * all in one call — bounded so a large multi-session project's first
+   * Science operation is never blocked scanning every session it has ever had.
+   */
+  readonly reconcileMaxSessions?: number
+  /**
+   * Minimum interval between reconciliation attempts for one project until
+   * a complete, cursor-free, error-free pass succeeds. A later project
+   * resolution triggers the retry; this value does not schedule background work.
+   */
+  readonly reconcileRetryDelayMs?: number
+  /**
+   * Most-recent runs `annotate_artifact`'s not-found diagnostic inspects
+   * for a retained, uncaptured PNG before degrading to the generic
+   * not-found error. Bounds a per-run directory walk that otherwise runs
+   * once per retained run in the session, inside the runtime lease.
+   */
+  readonly annotateDiagnosticMaxRuns?: number
+  /**
+   * Lowest sandbox enforcement level Science accepts for interpreter probes
+   * and persistent kernels, defaulting to `'full'`. `'partial'` is meant for
+   * deployments on win32, where the ACL restricted-token backend
+   * (`dsh-sandbox-windows-acl`) cannot reach full enforcement — its
+   * documented write-boundary gaps (Everyone-writable external objects,
+   * NTFS hard links) stay reachable even under `'partial'`. Whichever level
+   * a confinement call actually reports is recorded on every environment
+   * binding (`ScienceEnvironmentBinding.sandboxEnforcement`) so provenance
+   * shows what Science accepted, not only what it required.
+   */
+  readonly minimumEnforcement?: SandboxEnforcement
+}
+
+/** One allowlisted existing Conda prefix. */
+export interface ScienceEnvironmentProfileConfig {
+  /** Existing prefix containing `bin/python` or `python.exe`. */
+  readonly pythonPrefix?: string
+  /** Existing prefix containing `bin/Rscript` or `Scripts/Rscript.exe`. */
+  readonly rPrefix?: string
+}
+
+/**
+ * Validated `rasterCapture` Config policy for one run's auto-capture walk.
+ * `'declared'` (the default) captures a `.png` only when the run request
+ * named it in `rasterArtifacts`; a self-inspection render the model writes
+ * for its own QA never becomes a redundant artifact. `'always'`
+ * captures every eligible `.png` unconditionally, matching the auto-capture
+ * walk's pre-existing behavior for every other accepted extension.
+ */
+export type RasterCapturePolicy = 'declared' | 'always'
+```
+
+Depends on: [`SandboxEnforcement`](../packages/sandbox/sandbox/src/index.ts)
+
+Source: [`packages/science/science-runtime/src/config.ts:146`](../packages/science/science-runtime/src/config.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2764,7 +3118,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/tool-fs/src/index.ts:25`](../packages/fs/tool-fs/src/index.ts)
+Source: [`packages/fs/tool-fs/src/config.ts:15`](../packages/fs/tool-fs/src/config.ts)
 
 <a id="deepseek-aidsh-tool-fs-search"></a>
 
@@ -2946,6 +3300,26 @@ export interface Config {
 ```
 
 Source: [`packages/workflow/tool-ralph/src/index.ts:21`](../packages/workflow/tool-ralph/src/index.ts)
+
+<a id="deepseek-aidsh-tool-science"></a>
+
+## `@deepseek-ai/dsh-tool-science`
+
+Requires: `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Required deployment identity and model-facing history bound. */
+export interface Config {
+  /** Runtime allowlist profile this Consumer binds on first use. */
+  readonly profileId: string
+  /** Deployment-owned Science mode contract revision. */
+  readonly modeRevision: string
+  /** Maximum recent runs, artifact versions, and direct edits returned per applicable collection. */
+  readonly stateHistoryLimit: number
+}
+```
+
+Source: [`packages/science/tool-science/src/config.ts:14`](../packages/science/tool-science/src/config.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 
@@ -3455,6 +3829,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-approval` ([`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-brand-official` ([`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-brand-papermachine` ([`packages/client/ui-brand-papermachine/src/index.ts`](../packages/client/ui-brand-papermachine/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-chat` ([`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
@@ -3508,7 +3883,10 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
+- `@deepseek-ai/dsh-science-app` ([`packages/bundle/science-app/src/index.ts`](../packages/bundle/science-app/src/index.ts))
+- `@deepseek-ai/dsh-science-session` ([`packages/science/science-session/src/index.ts`](../packages/science/science-session/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
+- `@deepseek-ai/dsh-session-attachment-index` ([`packages/session/session-attachment-index/src/index.ts`](../packages/session/session-attachment-index/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
 - `@deepseek-ai/dsh-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
@@ -3557,6 +3935,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
+- `@deepseek-ai/dsh-byte-size` ([`packages/util/byte-size/src/index.ts`](../packages/util/byte-size/src/index.ts))
 - `@deepseek-ai/dsh-chunked-list` ([`packages/util/chunked-list/src/index.ts`](../packages/util/chunked-list/src/index.ts))
 - `@deepseek-ai/dsh-client-store` ([`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts))
 - `@deepseek-ai/dsh-client-test-runtime` ([`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts))

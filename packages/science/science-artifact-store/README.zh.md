@@ -1,11 +1,40 @@
+---
+description: "将带版本的 Science 产物保存在项目库中，使其不依赖单个会话存续。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-science-artifact-store
 
 [English](README.md) | 中文
+
+## 概述
+
+将带版本的 Science 产物保存在项目库中，使其不依赖单个会话存续。同一项目的会话可以复用精确版本并查看溯源信息。产物字节由项目存储持有。
+
+## 目录
+
+- [包职责](#package-section-0)
+- [Project 身份](#package-section-1)
+- [存储布局](#package-section-2)
+- [Artifact、Version 与侧表记录](#package-section-3)
+- [并发追加的线性化](#package-section-4)
+- [Schema migration](#package-section-5)
+- [删除边界](#package-section-6)
+- [对账](#package-section-7)
+- [配置(schemastery)](#package-section-8)
+- [运行时断言](#package-section-9)
+- [Model Experience](#package-section-10)
+- [Known Limitations and Deferred Work](#package-section-11)
+- [开发备注](#dev-note)
+
+<a id="package-section-0"></a>
+## 包职责
 
 Project 级 Science artifact 注册表与内容寻址版本存储。Session 只是某个 artifact 的生产者、消费者与溯源来源——从不拥有它:同一 Project 内的第二个 Session 可以读取、引用并追加第一个 Session 创建的 artifact,artifact 的生命周期不随产生它的 Session 结束。设计依据:[project artifact store Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md);schema v2 的权威规则(库是 version 全部来源事实的唯一权威,session 日志从不是)见 [project artifact store schema v2 Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-09-01-project-artifact-store-schema-v2.md)。
 
 加载服务不会加载 SQLite。引擎仅在打开项目数据库时导入 `node:sqlite`,空闲 Web Host 不会触发数据库启动工作或 SQLite 实验性功能告警。
 
+<a id="package-section-1"></a>
 ## Project 身份
 
 一个 Project 就是一个工作区目录。`openProject(workspacePath)` 通过工作区下的标记文件 `<workspace>/.papermachine/project.json`(`{projectId, createdAt}`)解析其身份,首次使用时创建该文件。存储自身在 `<storeRoot>/project.json` 保留一份记录(`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`),每次打开时刷新——这份记录本身就是注册表,不存在另外的全局索引文件。
@@ -21,6 +50,7 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 
 `openProject` 会在返回值中携带该结果(`ProjectIdentityOutcome`),以及解析出的 `projectId` 与 `storeRoot`。
 
+<a id="package-section-2"></a>
 ## 存储布局
 
 除 `openProject` 外的每个方法都直接接收 `projectId`,并且是自给自足的——它会打开(或复用已缓存的连接到)该 Project 的存储,不要求同一进程内先调用过 `openProject`;因此 Host 重启后,或已经知道某个 project id 的第二个 Session,都能立即继续工作。存储目录根植于 harness home(`@deepseek-ai/dsh-home-paths` 的 `resolveDshHome`,绝不硬编码路径),位于 `<harnessHome>/projects/<projectId>/`,包含:
@@ -30,6 +60,7 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 - `store.sqlite.v<N>.bak` —— schema migration 触碰 `store.sqlite` 之前写下的升级前快照(见下文「Schema migration」)。保留份数可配置。
 - `blobs/sha256/<hh>/<hash>` —— 内容寻址的原始字节:先写入 `blobs/tmp` 下的临时文件,再重命名到最终路径。重命名会原子地替换已存在的目标文件,而相同摘要下目标文件必然字节相同,因此写入按哈希天然幂等,无需预先检查是否存在。blob 从不受 schema migration 影响——它们是内容寻址的,不在 `store.sqlite` 之内。
 
+<a id="package-section-3"></a>
 ## Artifact、Version 与侧表记录
 
 一条 **Artifact** 记录(主键 `artifact_id`,`UNIQUE(owningProjectId, logicalName)`):`owningProjectId`、`originSessionId`(创建它的 Session)、`logicalName`、`kind`(`'figure' | 'dataset' | 'document' | 'job-output'`)、`latestVersionId`、`createdAt`。
@@ -58,10 +89,12 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 
 `listNotes`/`putNote`/`removeNote` 管理 `artifact_notes`;`getFigureState` 读取 `figure_state`(通过 `createArtifact`/`appendVersion` 的 `figureState` 参数写入);`setVersionHealth` 是本包对 `version_health` 唯一的写方法——构建调用它的对账算法是消费方的工作。
 
+<a id="package-section-4"></a>
 ## 并发追加的线性化
 
 `appendVersion` 的写事务(`BEGIN IMMEDIATE` … `COMMIT`)就是线性化点:读取该 artifact 当前的 `latestVersionId` 只是为了算出下一个 `ordinal`,插入新 version,再更新 `latestVersionId`。SQLite 的 `sqlite3_busy_timeout()`(`busyTimeoutMs` 连接选项)会让第二个写入者在 `BEGIN IMMEDIATE` 上阻塞重试,而不是直接失败;因此两个 Session——包括两个独立的操作系统进程——并发追加时会在这个事务上串行化:后提交者成为 latest,链条永不自动分叉。
 
+<a id="package-section-5"></a>
 ## Schema migration
 
 `PROJECT_ARTIFACT_STORE_SCHEMA_VERSION`(目前是 `2`)是本 build 能写的最高磁盘 `PRAGMA user_version`;更旧的磁盘版本能不能打开,取决于 `STORE_MIGRATIONS` 有没有一条通向它的完整链,不由版本号的形状决定。打开时按磁盘值分支:
@@ -80,10 +113,12 @@ v1→v2 migration(`STORE_MIGRATIONS` 目前唯一的一步)在一个事务里做
 
 `storeBackupRetention`(Config,默认 `1`)控制每个 project 保留几份 `store.sqlite.v<N>.bak`,每次升级后按版本号从小到大剪掉多余的。列出备份目录失败会静默降级(尽力而为的剪枝);拷贝前的 WAL checkpoint 失败同样是尽力而为——备份仍然可用,只是可能缺最近的一点写入。
 
+<a id="package-section-6"></a>
 ## 删除边界
 
 `deleteProject(projectId)` 永久删除 `<storeRoot>/`——索引与全部 blob——这是本包唯一执行的级联删除。本包没有 Session 级别的删除操作:删除某个 Session 的日志是 `dsh-session` 的职责,本包对此不可见;无论生产者 Session 是否仍然存在,每条存储记录都保留其 `sessionId` 作为溯源信息。
 
+<a id="package-section-7"></a>
 ## 对账
 
 `reconcile.ts` 把存储里自己的 version 行拿去和调用方已经从该 project 的 session 日志读出、按 `versionId` 归并（后写覆盖）后的 `science/artifact-saved` 事件比对，本包自己从不读 session 日志。`ScienceArtifactStore.reconcileProject(projectId, events, eventSetComplete, cursor?)` 执行比对并修复存储；`eventSetComplete` 表明调用方是否读完了每条相关 session 日志和事件，返回的 cursor 用于在同一稳定事件集上继续有界工作。`getReconciliationSummary(projectId)` 是对上一次对账结果的纯读取。硬规则：**对账只写存储，绝不写 session 日志**；日志是仅追加的，重写其历史会破坏回放约定。
@@ -104,6 +139,7 @@ v1→v2 migration(`STORE_MIGRATIONS` 目前唯一的一步)在一个事务里做
 
 谁来调用 `reconcileProject`、事件集如何构建，由消费方负责。`dsh-science-runtime` 的 `sessionProject` 每次解析 project id 时都可触发一次有界对账，并通过 `@deepseek-ai/dsh-session-persistence` 的 `SessionPersistence.inspect()` 读取该 project 自己的 session 日志（由它自己的 `reconcileMaxSessions` 配置设上限）。Runtime 会在符合条件的尝试之间保留逐 session 累积的事件与 store cursor。完整事件收集之后，只有 store 运行既无 cursor 又无错误，才会在当前 Host 生命周期内抑制该 project 的后续尝试；否则，之后的 project 解析可在 `reconcileRetryDelayMs` 后重试。触发机制以及它在 `annotateArtifact`、`performChartEdit`、`saveArtifactAs` 追加点上对 W2/W3 崩溃窗口的收窄，见该包的 README。
 
+<a id="package-section-8"></a>
 ## 配置(schemastery)
 
 ```ts
@@ -132,9 +168,15 @@ interface Config {
 
 `backfillProvenance` 是一个函数值,像本仓库里其他被注入实例的 config 字段(例如 `dsh-session-telemetry-otel` 的 `exporter`/`processor`)一样用 `z.any()` 校验——它是编程方式传入的,不是从 `cordis.yml` 来的。本包从不自己读 session 日志格式;需要读的消费方(例如 `dsh-science-runtime`)提供这个钩子。
 
+<a id="package-section-9"></a>
+## 运行时断言
+
+本包没有 `./invariant` 入口。打开或读取存储时检查 schema 版本与字节摘要，SQLite 事务保证追加操作的原子性。没有需要配套断言的独立进程内观测。
+
+<a id="package-section-10"></a>
 ## Model Experience
 
-None, as the package persists project-owned artifact bytes and metadata; model-facing consumers such as `dsh-science-runtime` and `dsh-tool-science` own any prompt, schema, or request rendering of what it stores.
+无，因为本包持久化项目所有的产物字节与元数据；`dsh-science-runtime` 和 `dsh-tool-science` 等消费方负责相关提示词、schema 和请求呈现。
 
 #### KV Cache effect
 
@@ -142,8 +184,15 @@ None — this package never assembles or sends provider requests; it has no live
 
 ## Known Limitations and Deferred Work
 
+<a id="package-section-11"></a>
+
 - **没有未引用 blob 的垃圾回收** —— 一次 append 若在 artifact 存在性校验失败前已经写入了 blob(字节的写入发生在事务校验目标 artifact 之前),该 blob 不会被回收;内容寻址使其成为无害的孤儿数据,而非正确性问题。
 - **工作区身份使用 `resolve()` 而非 `realpath()`** —— 通过两条不同的符号链接路径到达同一目录不会被识别为同一目录;只有字面路径相等才能区分「重新打开」与「移动/复制」。
 - **复制检测在打开时是启发式的** —— 若原目录在打开副本时不可达(例如磁盘未挂载),该情况与移动无法区分,id 会被保留,这是设计 note 中已接受的 v1 风险。
 - **不支持跨 Project 读写、保留策略或依赖 DAG** —— 本包只实现了 [project artifact store Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md) 机制第 1/2/5/6/10 条;跨 Project 访问、版本保留策略与依赖追踪明确延后。
 - **`reconstructVersion` 恢复出的 `mediaType`/`kind` 是推断值,不是核实过的事实** —— 悬空事件的 `logicalName` 扩展名不在固定的五种类型集合里时,会回退到 `application/octet-stream`/`document`;一旦库行与事件都不再携带真实值,就没有办法再把它找回来。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

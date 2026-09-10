@@ -1,5 +1,7 @@
 /** Build and launch the unpackaged Electron shell against the current workspace. */
 
+import { prepareDesktopClientBuild } from './client-build.ts'
+import { prepareProductResources } from './prepare-product-resources.ts'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -46,12 +48,12 @@ async function run(command: string, args: readonly string[], cwd: string, enviro
   })
 }
 
-async function runPackageScript(script: string, cwd: string): Promise<void> {
+async function runPackageScript(script: string, cwd: string, args: readonly string[] = []): Promise<void> {
   const packageManager = process.env.npm_execpath
   if (packageManager === undefined || packageManager === '') {
     throw new Error('desktop development: invoke this launcher through pnpm run dev:desktop or start:desktop')
   }
-  await run(process.execPath, [packageManager, 'run', script], cwd)
+  await run(process.execPath, [packageManager, '--config.verifyDepsBeforeRun=false', 'run', script, ...args], cwd)
 }
 
 async function launchElectron(projectDir: string): Promise<void> {
@@ -85,10 +87,11 @@ async function launchElectron(projectDir: string): Promise<void> {
 
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { 'skip-build': { type: 'boolean', default: false } } })
-  if (!values['skip-build']) {
-    await runPackageScript('build', REPOSITORY_ROOT)
+  await prepareDesktopClientBuild(REPOSITORY_ROOT, values['skip-build'], async () => {
+    await runPackageScript('build', REPOSITORY_ROOT, ['--profile', 'papermachine'])
     await runPackageScript('build', APP_ROOT)
-  }
+  })
+  await prepareProductResources()
   for (const path of [
     join(APP_ROOT, 'lib', 'main.js'),
     join(REPOSITORY_ROOT, 'apps', 'desktop-host', 'lib', 'index.js'),

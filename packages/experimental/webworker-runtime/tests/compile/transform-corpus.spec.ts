@@ -17,9 +17,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, test, TestRunner } from 'vitest'
 
 const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.url))
+const artifactEnvironment = {
+  ...process.env,
+  TSX_TSCONFIG_PATH: fileURLToPath(new URL('./tsconfig.artifacts.json', import.meta.url)),
+}
 
 test('every built bundle imports under Node', (context) => {
-  const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', runner], { encoding: 'utf8' })
+  const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', runner], { encoding: 'utf8', env: artifactEnvironment })
   const output = `${finished.stdout}${finished.stderr}`
   if (output.includes('no built bundles found')) {
     context.skip('the workspace has no build output to sweep')
@@ -34,6 +38,8 @@ test('every built bundle imports under Node', (context) => {
 // The hook replaces only the chosen bundle; shared build artifacts stay intact.
 test.each([
   ['expected-css', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
+  ['dependency-css', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
+  ['source-css', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['error', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['other-css', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['other-code', 1, '- UNEXPECTED BASELINE FAILURE'],
@@ -42,9 +48,14 @@ test.each([
   const root = new URL('../../../../../', import.meta.url)
   const bundle = 'packages/client/ui-dockkit/lib/index.js'
   const css = fileURLToPath(new URL('packages/client/ui-dockkit/lib/components/dockkit.module.css', root))
+  const selectedCss = mode === 'dependency-css'
+    ? fileURLToPath(new URL('packages/client/ui-primitives/lib/StateDot.module.css', root))
+    : mode === 'source-css'
+      ? fileURLToPath(new URL('packages/client/ui-primitives/src/StateDot.module.css', root))
+      : mode === 'other-css' ? `${css}.other.css` : css
   const message = mode === 'error'
     ? 'dockkit-negative-control'
-    : `Unknown file extension ".css" for ${mode === 'other-css' ? `${css}.other.css` : css}`
+    : `Unknown file extension ".css" for ${selectedCss}`
   const source = mode === 'clean'
     ? 'export {}'
     : `throw Object.assign(new Error(${JSON.stringify(message)}), { code: ${JSON.stringify(mode === 'other-code' ? 'ERR_OTHER' : 'ERR_UNKNOWN_FILE_EXTENSION')} })`
@@ -67,14 +78,14 @@ test.each([
     await import(${JSON.stringify(pathToFileURL(runner).href)})
   `
   const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
-    cwd: fileURLToPath(root), encoding: 'utf8', timeout: TestRunner.getCurrentTest()!.timeout,
+    cwd: fileURLToPath(root), encoding: 'utf8', env: artifactEnvironment, timeout: TestRunner.getCurrentTest()!.timeout,
   })
   const output = `${finished.stdout}${finished.stderr}`
   expect(finished.error).toBeUndefined()
   expect(finished.signal).toBeNull()
   expect(finished.status, output).toBe(status)
   expect(output).toContain(finding)
-  if (mode === 'error' || mode === 'other-css' || mode === 'other-code') {
+  if (mode === 'error' || mode === 'other-css' || mode === 'other-code' || mode === 'source-css') {
     expect(output).toContain(`- UNEXPECTED BASELINE FAILURE ${bundle}: ${message}\n`)
   }
 })

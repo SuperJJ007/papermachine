@@ -54,3 +54,9 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 ## Development
 
 Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+
+## PaperMachine
+
+From this repository, `pnpm papermachine --port 8766` launches the Science Web profile and `pnpm papermachine:headless "task"` launches its headless profile through the local CLI. Neither command resolves a global `dsh` executable. The `science` and `science-headless` CLI profiles select the [PaperMachine application home](../../packages/util/home-paths/README.md#papermachine-application-home) before reading profiles, settings, credentials or user patches; their plugin-management and config-dump modes use the same selection. Official `web` and other ordinary DSH profiles retain their existing home behavior.
+
+Set `PAPERMACHINE_HOME` to a separate absolute directory for migration acceptance. Automatic product-root selection applies to these two named profiles; custom profiles use the ordinary explicit `DSH_HOME` mechanism. Root selection alone does not migrate historical Science sessions or provision Python/R environments.

@@ -4,9 +4,9 @@
  * @module @deepseek-ai/dsh-home-paths
  */
 
-import { opendir, realpath } from 'node:fs/promises'
+import { opendir, readFile, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /** Directory name for the default DeepSeek Harness home under the OS home. */
 export const DSH_HOME_DIR_NAME = '.dsh'
@@ -109,4 +109,44 @@ export function dshHomePath(...segments: string[]): string {
  */
 export function dshHomeDisplay(resolvedHome: string): string {
   return resolvedHome === resolve(defaultDshHome()) ? DEFAULT_DSH_HOME_DISPLAY : `$${DSH_HOME_ENV}`
+}
+
+/**
+ * Resolve PaperMachine data independently of the official DSH home.
+ * Explicit configuration precedes PAPERMACHINE_HOME, the saved absolute-path
+ * ~/.papermachine-home pointer, and ~/.papermachine. Ambient DSH_HOME is ignored.
+ * @param configured - optional absolute or current-user tilde path for this launch.
+ * @returns canonical absolute root without creating or changing user data.
+ * @throws when a selected path is blank, relative, unreadable, or overlaps ~/.dsh.
+ */
+export async function resolvePaperMachineHome(configured?: string): Promise<string> {
+  let selected = configured ?? process.env.PAPERMACHINE_HOME
+  if (selected === undefined) {
+    try {
+      selected = await readFile(join(homedir(), '.papermachine-home'), 'utf8')
+    } catch (error) {
+      // Only a missing saved location permits the product's default directory.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    if (selected !== undefined && !isAbsolute(selected.trim())) {
+      throw new Error('PaperMachine: saved home must be a non-empty absolute path')
+    }
+  }
+  selected = selected === undefined ? join(homedir(), '.papermachine') : selected.trim()
+  const expanded = expandHomePath(selected)
+  if (selected === '' || !isAbsolute(expanded)) {
+    throw new Error('PaperMachine: home must be a non-empty absolute path or current-user tilde path')
+  }
+  const [home, official] = await Promise.all([
+    canonicalizeWatchPath(resolve(expanded)),
+    canonicalizeWatchPath(resolve(defaultDshHome())),
+  ])
+  const contains = (parent: string, child: string): boolean => {
+    const suffix = relative(parent, child)
+    return suffix === '' || (!isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith(`..${sep}`))
+  }
+  if (contains(home, official) || contains(official, home)) {
+    throw new Error('PaperMachine: home must not overlap the official ~/.dsh directory')
+  }
+  return home
 }

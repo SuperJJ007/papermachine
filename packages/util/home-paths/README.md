@@ -37,6 +37,11 @@ const settings = dshHomePath('settings')     // join one child onto the resolved
 
 An explicit configured path has the highest precedence, then `$DSH_HOME`, then the default `~/.dsh`. An empty or whitespace-only `$DSH_HOME` is treated as unset, so a blank override never resolves the home to the current working directory.
 
+<a id="papermachine-application-home"></a>
+### PaperMachine application home
+
+`resolvePaperMachineHome()` resolves an explicit launch path, then `PAPERMACHINE_HOME`, then the saved absolute-path `~/.papermachine-home` file, then `~/.papermachine`. It ignores inherited `DSH_HOME`, preserves spaces and Unicode, and rejects blank or relative selections. It resolves existing symlinks and rejects paths inside, equal to, or containing the official `~/.dsh` directory. The resolver does not create files. Product entrypoints pass its result to the runtime as `DSH_HOME`; the ordinary DSH resolver remains unchanged.
+
 ### Displaying a home
 
 For user-facing paths, render the root symbolically rather than as a machine path: the default home displays as `~/.dsh` and any configured home displays as `$DSH_HOME`. The display form never leaks an absolute machine path.

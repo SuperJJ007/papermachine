@@ -17,8 +17,8 @@ describe('desktop auto-update environment', () => {
       environment: 'test',
       target: 'mac-arm64',
       origin: 'https://desktop-updates.example.com',
-      publicUrl: 'https://desktop-updates.example.com/_/harness/desktop/stable/mac-arm64/',
-      keyPrefix: '_/harness/desktop/stable/mac-arm64',
+      publicUrl: 'https://desktop-updates.example.com/_/papermachine/desktop/stable/mac-arm64/',
+      keyPrefix: '_/papermachine/desktop/stable/mac-arm64',
     })
     expect(resolveDesktopUploadConfig({
       DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com/',
@@ -33,13 +33,15 @@ describe('desktop auto-update environment', () => {
   it('selects the production URL for packages and bucket for uploads', () => {
     expect(resolveDesktopAutoUpdateConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: 'https://papermachine-updates.example.com',
     }, 'win32', 'x64')).toMatchObject({
       environment: 'production',
       target: 'win-x64',
-      publicUrl: 'https://download.deepseek.com/_/harness/desktop/stable/win-x64/',
+      publicUrl: 'https://papermachine-updates.example.com/_/papermachine/desktop/stable/win-x64/',
     })
     expect(resolveDesktopUploadConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: 'https://papermachine-updates.example.com',
       DOWNLOAD_PROD_COS_BUCKET: 'production-download-bucket',
     }, 'win32', 'x64')).toMatchObject({
       bucket: 'production-download-bucket',
@@ -59,7 +61,38 @@ describe('desktop auto-update environment', () => {
     }, 'darwin', 'arm64')).toThrow(/DOWNLOAD_TEST_COS_BUCKET/u)
     expect(() => resolveDesktopUploadConfig({
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: 'https://papermachine-updates.example.com',
     }, 'win32', 'x64')).toThrow(/DOWNLOAD_PROD_COS_BUCKET/u)
+  })
+
+  it('requires an explicit production origin', () => {
+    expect(() => resolveDesktopAutoUpdateConfig({
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+    }, 'win32', 'x64')).toThrow(/PAPERMACHINE_DOWNLOAD_ORIGIN/u)
+  })
+
+  it.each([
+    'https://download.deepseek.com',
+    'https://DOWNLOAD.DEEPSEEK.COM',
+    'https://download.deepseek.com.',
+    'https://DOWNLOAD.DEEPSEEK.COM./',
+  ])('rejects the official update origin %s in either deployment', (origin) => {
+    expect(() => resolveDesktopAutoUpdateConfig({
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: origin,
+    }, 'darwin', 'arm64')).toThrow(/PaperMachine update origin/u)
+    expect(() => resolveDesktopAutoUpdateConfig({
+      DOWNLOAD_TEST_ORIGIN: origin,
+    }, 'darwin', 'arm64')).toThrow(/PaperMachine update origin/u)
+  })
+
+  it('rejects a production feed without HTTPS or with a path', () => {
+    for (const origin of ['http://updates.example.com', 'https://updates.example.com/releases']) {
+      expect(() => resolveDesktopAutoUpdateConfig({
+        DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+        PAPERMACHINE_DOWNLOAD_ORIGIN: origin,
+      }, 'darwin', 'arm64')).toThrow(/HTTPS origin/u)
+    }
   })
 
   it('rejects a test download URL that is not an HTTPS origin', () => {

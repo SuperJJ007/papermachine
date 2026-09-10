@@ -1,7 +1,7 @@
 /** Resolve public release identifiers supplied by the packaging environment. */
 
 /** Environment variable that supplies the Electron application identifier. */
-export const DESKTOP_APP_ID_ENV = 'DSH_DESKTOP_APP_ID'
+export const DESKTOP_APP_ID_ENV = 'PAPERMACHINE_DESKTOP_APP_ID'
 
 /** Environment variable that supplies electron-builder's macOS certificate qualifier. */
 export const MACOS_SIGNING_IDENTITY_ENV = 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'
@@ -33,12 +33,14 @@ function requireEnvironmentValue(env, name) {
 }
 
 /**
- * Resolve and validate the application identifier shared by every platform target.
+ * Resolve the PaperMachine application identifier; omitted overrides use com.papermachine.desktop.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
  * @returns {string} Reverse-DNS application identifier.
  */
 export function resolveDesktopAppId(env) {
-  const appId = requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)
+  const appId = env[DESKTOP_APP_ID_ENV] === undefined
+    ? 'com.papermachine.desktop'
+    : requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)
   if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(appId)) {
     throw new Error(`desktop release environment: ${DESKTOP_APP_ID_ENV} must be a reverse-DNS identifier`)
   }

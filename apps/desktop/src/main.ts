@@ -1,6 +1,6 @@
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -12,6 +12,7 @@ import {
   protocol,
   type IpcMainInvokeEvent,
 } from 'electron'
+import { resolvePaperMachineHome } from '@deepseek-ai/dsh-home-paths'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
@@ -130,9 +131,9 @@ async function serveShellAsset(request: Request): Promise<Response> {
   }
 }
 
-async function main(): Promise<void> {
+async function main(home: string): Promise<void> {
   const resources = runtimeResources()
-  const paths = resolveDesktopPaths()
+  const paths = resolveDesktopPaths(home)
   const development = developmentProject()
   const activeProject = development ?? paths.profile
   const hostInspectPort = developmentHostInspectPort(development !== undefined)
@@ -157,7 +158,7 @@ async function main(): Promise<void> {
   }
 
   const startHost = async (projectDir = activeProject): Promise<DesktopHostProcess> => {
-    const next = new DesktopHostProcess(resources.node, projectDir, hostInspectPort)
+    const next = new DesktopHostProcess(resources.node, projectDir, home, hostInspectPort)
     await next.start()
     return next
   }
@@ -383,9 +384,20 @@ async function main(): Promise<void> {
   })
 }
 
-const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+async function prepareApplication(): Promise<string | undefined> {
+  const home = await resolvePaperMachineHome()
+  process.env.PAPERMACHINE_HOME = home
+  process.env.DSH_HOME = home
+  const userData = join(home, 'desktop', 'electron-user-data')
+  await mkdir(userData, { recursive: true, mode: 0o700 })
+  app.setName('PaperMachine')
+  app.setPath('userData', userData)
+  app.setPath('sessionData', userData)
+  if (!claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })) return
+  return home
+}
 
-if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
+async function reportStartupFailure(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error)
   console.error(error)
   const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
@@ -394,4 +406,8 @@ if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unk
   }
   dialog.showErrorBox(resolveDesktopLocale(app.getLocale()).messages.startupFailed, message)
   app.exit(1)
-})
+}
+
+// Electron defers ready until ESM evaluation finishes; browser paths must be set first.
+const home = await prepareApplication().catch(reportStartupFailure)
+if (home !== undefined) void app.whenReady().then(() => main(home)).catch(reportStartupFailure)

@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { resolvePaperMachineHome } from '@deepseek-ai/dsh-home-paths'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
@@ -27,6 +28,12 @@ function readVersion(): string {
  */
 export async function runCli(): Promise<void> {
   const invocation = parseDshArgs(process.argv.slice(2), readVersion())
+
+  if (invocation.profile === 'science' || invocation.profile === 'science-headless') {
+    const home = await resolvePaperMachineHome()
+    process.env.PAPERMACHINE_HOME = home
+    process.env.DSH_HOME = home
+  }
 
   switch (invocation.mode) {
     case 'profile': {

@@ -54,3 +54,9 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 ## 开发
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.zh.md#source-execution)为准。
+
+## PaperMachine
+
+在本仓库中，`pnpm papermachine --port 8766` 通过本地 CLI 启动 Science Web profile，`pnpm papermachine:headless "task"` 启动其无界面 profile。这两个命令都不查找全局 `dsh` 可执行文件。CLI 的 `science` 和 `science-headless` profile 在读取 profile、设置、凭据或用户补丁前选择 [PaperMachine 应用目录](../../packages/util/home-paths/README.zh.md#papermachine-application-home)；其插件管理和配置转储模式采用相同选择。官方 `web` 及其他普通 DSH profile 保留原有目录行为。
+
+迁移验收时，将 `PAPERMACHINE_HOME` 设置为独立的绝对路径目录。自动产品目录选择适用于这两个具名 profile；自定义 profile 使用普通的显式 `DSH_HOME` 机制。目录选择本身不迁移历史 Science 会话，也不配置 Python/R 环境。

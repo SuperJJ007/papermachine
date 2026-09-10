@@ -87,11 +87,13 @@ export class DesktopHostProcess {
   /**
    * @param node - absolute bundled upstream Node.js executable.
    * @param projectDir - active or staged desktop npm project.
+   * @param home - Resolved PaperMachine home shared by active and staged hosts.
    * @param inspectPort - optional loopback inspector port for workspace development.
    */
   constructor(
     private readonly node: string,
     private readonly projectDir: string,
+    private readonly home: string,
     private readonly inspectPort?: number,
   ) {}
 
@@ -106,9 +108,13 @@ export class DesktopHostProcess {
       ...(this.inspectPort === undefined ? [] : ['--allow-linked-profile']),
     ], {
       cwd: this.projectDir,
-      env: Object.fromEntries(Object.entries(process.env).filter(([name]) => (
-        name !== 'NODE_OPTIONS' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
-      ))),
+      env: {
+        ...Object.fromEntries(Object.entries(process.env).filter(([name]) => (
+          name !== 'NODE_OPTIONS' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
+        ))),
+        DSH_HOME: this.home,
+        PAPERMACHINE_HOME: this.home,
+      },
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe', 'ipc'],
     })
     const requestPipe = child.stdio[DESKTOP_REQUEST_PIPE_FD]

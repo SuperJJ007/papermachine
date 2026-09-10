@@ -8,14 +8,12 @@ export const DESKTOP_AUTO_UPDATE_ENV = 'DSH_DESKTOP_AUTO_UPDATE_ENV'
 const UPDATE_ENVIRONMENTS = {
   test: {
     originEnvName: 'DOWNLOAD_TEST_ORIGIN',
-    fixedOrigin: undefined,
     bucketEnvName: 'DOWNLOAD_TEST_COS_BUCKET',
     secretIdEnvName: 'DOWNLOAD_TEST_COS_SECRET_ID',
     secretKeyEnvName: 'DOWNLOAD_TEST_COS_SECRET_KEY',
   },
   production: {
-    originEnvName: undefined,
-    fixedOrigin: 'https://download.deepseek.com',
+    originEnvName: 'PAPERMACHINE_DOWNLOAD_ORIGIN',
     bucketEnvName: 'DOWNLOAD_PROD_COS_BUCKET',
     secretIdEnvName: 'DOWNLOAD_PROD_COS_SECRET_ID',
     secretKeyEnvName: 'DOWNLOAD_PROD_COS_SECRET_KEY',
@@ -118,6 +116,9 @@ function httpsOrigin(value, name) {
     || parsed.hash !== '') {
     throw new Error(`desktop auto-update: ${name} must be an absolute HTTPS origin without a path, credentials, query, or fragment`)
   }
+  if (parsed.hostname.replace(/\.+$/u, '') === 'download.deepseek.com') {
+    throw new Error(`desktop auto-update: ${name} must use a PaperMachine update origin`)
+  }
   return parsed.origin
 }
 
@@ -127,19 +128,15 @@ function httpsOrigin(value, name) {
  * @param {NodeJS.Platform} platform - Target Node.js platform.
  * @param {string} arch - Target Node.js architecture.
  * @returns {{ environment: 'test' | 'production', target: 'mac-arm64' | 'mac-x64' | 'win-x64', origin: string, publicUrl: string, keyPrefix: string }} Resolved updater configuration.
- * @throws {Error} When the test deployment lacks a valid HTTPS origin.
+ * @throws {Error} When the selected deployment lacks a valid PaperMachine HTTPS origin.
  */
 export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
   const environment = resolveDesktopAutoUpdateEnvironment(env)
   const target = resolveDesktopAutoUpdateTarget(platform, arch)
   const deployment = UPDATE_ENVIRONMENTS[environment]
-  let origin = deployment.fixedOrigin
-  if (origin === undefined) {
-    const { originEnvName } = deployment
-    if (originEnvName === undefined) throw new Error('desktop auto-update: selected deployment has no origin')
-    origin = httpsOrigin(requiredEnvironmentValue(env, originEnvName), originEnvName)
-  }
-  const keyPrefix = `_/harness/desktop/stable/${target}`
+  const { originEnvName } = deployment
+  const origin = httpsOrigin(requiredEnvironmentValue(env, originEnvName), originEnvName)
+  const keyPrefix = `_/papermachine/desktop/stable/${target}`
   return {
     environment,
     target,
@@ -155,7 +152,7 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
  * @param {NodeJS.Platform} platform - Target Node.js platform.
  * @param {string} arch - Target Node.js architecture.
  * @returns {{ environment: 'test' | 'production', target: 'mac-arm64' | 'mac-x64' | 'win-x64', origin: string, publicUrl: string, keyPrefix: string, bucket: string, secretIdEnvName: string, secretKeyEnvName: string }} Resolved upload configuration.
- * @throws {Error} When the selected deployment lacks a required origin or bucket, or the test origin is not HTTPS.
+ * @throws {Error} When the selected deployment lacks a required origin or bucket, or the origin is not a PaperMachine HTTPS origin.
  */
 export function resolveDesktopUploadConfig(env, platform, arch) {
   const update = resolveDesktopAutoUpdateConfig(env, platform, arch)

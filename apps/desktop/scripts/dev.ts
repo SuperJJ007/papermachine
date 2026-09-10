@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { resolvePaperMachineHome } from '@deepseek-ai/dsh-home-paths'
 import { DESKTOP_HOST_PROTOCOL_VERSION } from '../src/host-protocol.ts'
 import type { DesktopRelease } from '../src/release.ts'
 import { prepareDevelopmentProject } from './development-project.ts'
@@ -60,18 +61,19 @@ async function launchElectron(projectDir: string): Promise<void> {
   const mainPort = debugPort('DSH_DESKTOP_MAIN_INSPECT_PORT', 9229)
   const rendererPort = debugPort('DSH_DESKTOP_RENDERER_DEBUG_PORT', 9222)
   const hostPort = debugPort('DSH_DESKTOP_HOST_INSPECT_PORT', 9230)
-  const home = resolve(process.env.DSH_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
-  const userData = join(DEVELOPMENT_ROOT, 'electron-user-data')
+  const home = await resolvePaperMachineHome(process.env.PAPERMACHINE_HOME ?? join(DEVELOPMENT_ROOT, 'home'))
+  const userData = join(home, 'desktop', 'electron-user-data')
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: home,
+    PAPERMACHINE_HOME: home,
     DSH_DESKTOP_DEV_PROJECT_DIR: projectDir,
     DSH_DESKTOP_HOST_INSPECT_PORT: String(hostPort),
     DSH_DESKTOP_NODE_BINARY: process.execPath,
     DSH_DESKTOP_OPEN_DEVTOOLS: process.env.DSH_DESKTOP_OPEN_DEVTOOLS ?? '1',
     ELECTRON_ENABLE_LOGGING: process.env.ELECTRON_ENABLE_LOGGING ?? '1',
   }
-  console.log(`desktop development: DSH_HOME=${home}`)
+  console.log(`desktop development: PAPERMACHINE_HOME=${home}`)
   console.log(`desktop development: inspectors main=${String(mainPort)}, renderer=${String(rendererPort)}, host=${String(hostPort)}`)
   await run(electron, [
     `--inspect=127.0.0.1:${String(mainPort)}`,

@@ -1,5 +1,5 @@
 /** Environment variable that supplies the Electron application identifier. */
-export const DESKTOP_APP_ID_ENV: 'DSH_DESKTOP_APP_ID'
+export const DESKTOP_APP_ID_ENV: 'PAPERMACHINE_DESKTOP_APP_ID'
 
 /** Environment variable that supplies electron-builder's macOS certificate qualifier. */
 export const MACOS_SIGNING_IDENTITY_ENV: 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'
@@ -40,7 +40,7 @@ export type MacOSNotarizationEnvironment =
   | MacOSKeychainNotarizationEnvironment
 
 /**
- * Resolve and validate the application identifier shared by every platform target.
+ * Resolve the PaperMachine application identifier; omitted overrides use com.papermachine.desktop.
  * @param env - Packaging environment.
  * @returns Reverse-DNS application identifier.
  */

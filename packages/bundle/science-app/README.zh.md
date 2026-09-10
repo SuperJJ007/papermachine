@@ -17,6 +17,8 @@ bundle 的 Host 插件将其 preset 绝对目录提供为 `sciencePresetRoot`。
 
 Science 运行时、投影、编辑与读取服务、附件索引在 Host 挂载。Science UI 配置行在客户端迁移完成前保持禁用。Science preset 替换 base 中面向模型的工具配置行。
 
+仓库命令 `pnpm papermachine` 和 `pnpm papermachine:headless "task"` 选择独立的 [PaperMachine 应用目录](../../util/home-paths/README.zh.md#papermachine-application-home)。迁移验收应显式指定 `PAPERMACHINE_HOME`；继承的 `DSH_HOME` 不决定 Science CLI 数据目录。
+
 ## Model Experience
 
 该 preset 提供 Python 和 R 执行、产物发布、只读工作区工具及受限委派。

@@ -67,7 +67,7 @@ export function desktopUpdateMetadataFilename(
  * @param platform - Target Node.js platform.
  * @param arch - Target Node.js architecture.
  * @returns Resolved updater configuration.
- * @throws When the test deployment lacks a valid HTTPS origin.
+ * @throws When the selected deployment lacks a valid PaperMachine HTTPS origin.
  */
 export function resolveDesktopAutoUpdateConfig(
   env: NodeJS.ProcessEnv,
@@ -81,7 +81,7 @@ export function resolveDesktopAutoUpdateConfig(
  * @param platform - Target Node.js platform.
  * @param arch - Target Node.js architecture.
  * @returns Resolved upload configuration.
- * @throws When the selected deployment lacks a required origin or bucket, or the test origin is not HTTPS.
+ * @throws When the selected deployment lacks a required origin or bucket, or the origin is not a PaperMachine HTTPS origin.
  */
 export function resolveDesktopUploadConfig(
   env: NodeJS.ProcessEnv,

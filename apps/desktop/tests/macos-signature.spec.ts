@@ -12,7 +12,7 @@ import {
 } from '../scripts/verify-macos-signature.mjs'
 
 const RELEASE_ENVIRONMENT = {
-  DSH_DESKTOP_APP_ID: 'com.example.desktop',
+  PAPERMACHINE_DESKTOP_APP_ID: 'com.example.desktop',
   DSH_DESKTOP_TARGET_PLATFORM: 'darwin',
   DSH_DESKTOP_TARGET_ARCH: 'arm64',
   DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Example Company (TEAMID1234)',
@@ -46,7 +46,9 @@ describe('desktop macOS release signature', () => {
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')
     expect(portablePath(config.extraResources[1]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/seed')
     expect(config).toMatchObject({
-      appId: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
+      appId: RELEASE_ENVIRONMENT.PAPERMACHINE_DESKTOP_APP_ID,
+      productName: 'PaperMachine',
+      artifactName: 'papermachine-${version}-${os}-${arch}.${ext}',
       mac: {
         identity: RELEASE_ENVIRONMENT.DSH_DESKTOP_MACOS_SIGNING_IDENTITY,
         forceCodeSigning: true,
@@ -58,7 +60,7 @@ describe('desktop macOS release signature', () => {
       },
       publish: [{
         provider: 'generic',
-        url: 'https://desktop-updates.example.com/_/harness/desktop/stable/mac-arm64/',
+        url: 'https://desktop-updates.example.com/_/papermachine/desktop/stable/mac-arm64/',
       }],
     })
     expect(typeof config.artifactBuildCompleted).toBe('function')
@@ -67,7 +69,7 @@ describe('desktop macOS release signature', () => {
   it('validates Windows signing without requiring macOS identifiers for a Windows target', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     expect(() => createElectronBuilderConfig({
-      DSH_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.DSH_DESKTOP_APP_ID,
+      PAPERMACHINE_DESKTOP_APP_ID: RELEASE_ENVIRONMENT.PAPERMACHINE_DESKTOP_APP_ID,
       DSH_DESKTOP_TARGET_PLATFORM: 'win32',
     }, 'win32')).toThrow(/DSH_DESKTOP_WINDOWS_CER_FILE/u)
   })
@@ -119,9 +121,19 @@ describe('desktop macOS release signature', () => {
     }).toThrow(`TeamIdentifier=${expected.teamId}`)
   })
 
+  it('keeps the installed PaperMachine identity when official CLI release variables are inherited', () => {
+    expect(resolveDesktopAppId({})).toBe('com.papermachine.desktop')
+    expect(resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'com.deepseek.harness' }))
+      .toBe('com.papermachine.desktop')
+    expect(resolveDesktopAppId({
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+      PAPERMACHINE_DESKTOP_APP_ID: 'com.example.papermachine',
+    })).toBe('com.example.papermachine')
+  })
+
   it('rejects missing and malformed release identifiers', () => {
-    expect(() => resolveDesktopAppId({})).toThrow(/DSH_DESKTOP_APP_ID/u)
-    expect(() => resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
+    expect(() => resolveDesktopAppId({ PAPERMACHINE_DESKTOP_APP_ID: ' ' })).toThrow(/PAPERMACHINE_DESKTOP_APP_ID/u)
+    expect(() => resolveDesktopAppId({ PAPERMACHINE_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
     expect(() => resolveMacOSSigningEnvironment({})).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
     expect(() => resolveMacOSSigningEnvironment({
       DSH_DESKTOP_MACOS_SIGNING_IDENTITY: 'Developer ID Application: Example Company (TEAMID1234)',

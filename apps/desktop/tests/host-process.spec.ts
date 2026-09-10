@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopHostProcess } from '../src/host-process.ts'
 
 const roots: string[] = []
@@ -71,10 +71,45 @@ function projectWithHost(source: string): string {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 describe('desktop host process', () => {
+  it('uses the selected PaperMachine home and local runtime despite ambient CLI settings', async () => {
+    const project = projectWithHost(`
+process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'local' })
+function onRequestFrame(frame) {
+  if (frame.type !== 1) return
+  responseStart(frame.streamId)
+  responseData(frame.streamId, JSON.stringify({
+    home: process.env.DSH_HOME,
+    paperMachineHome: process.env.PAPERMACHINE_HOME,
+    executable: process.execPath,
+    entry: process.argv[1],
+    nodeOptions: process.env.NODE_OPTIONS,
+  }))
+  responseEnd(frame.streamId)
+}
+`)
+    const home = join(project, 'papermachine')
+    vi.stubEnv('DSH_HOME', join(project, 'official-dsh'))
+    vi.stubEnv('PAPERMACHINE_HOME', join(project, 'unselected-home'))
+    vi.stubEnv('NODE_OPTIONS', '--require /must-not-run')
+    const host = new DesktopHostProcess(process.execPath, project, home)
+    try {
+      const response = await host.fetch(new Request('dsh-app://app/environment'))
+      expect(await response.json()).toEqual({
+        home,
+        paperMachineHome: home,
+        executable: process.execPath,
+        entry: join(project, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js'),
+      })
+    } finally {
+      await host.stop()
+    }
+  })
+
   it('carries raw request and response bytes and shuts the child down cleanly', async () => {
     const project = projectWithHost(`
 const bodies = new Map()
@@ -98,7 +133,7 @@ function answer(streamId) {
 `)
     const previous = process.env.NODE_OPTIONS
     process.env.NODE_OPTIONS = '--require /path/that-must-not-reach-the-child'
-    const host = new DesktopHostProcess(process.execPath, project)
+    const host = new DesktopHostProcess(process.execPath, project, join(project, 'home'))
     try {
       await expect(host.start()).resolves.toMatchObject({ dshVersion: 'clean' })
       const response = await host.fetch(new Request('dsh-app://app/example', { method: 'POST', body: 'request' }))
@@ -124,7 +159,7 @@ function onRequestFrame(frame) {
   responseEnd(frame.streamId)
 }
 `)
-    const host = new DesktopHostProcess(process.execPath, project)
+    const host = new DesktopHostProcess(process.execPath, project, join(project, 'home'))
     try {
       const response = await host.fetch(new Request('dsh-app://app/large'))
       const body = new Uint8Array(await response.arrayBuffer())
@@ -151,7 +186,7 @@ function onRequestFrame(frame) {
       start(controller) { controller.enqueue(Buffer.from('first')) },
       cancel() { canceled = true },
     })
-    const host = new DesktopHostProcess(process.execPath, project)
+    const host = new DesktopHostProcess(process.execPath, project, join(project, 'home'))
     try {
       const request = new Request('dsh-app://app/early', {
         method: 'POST',
@@ -184,7 +219,7 @@ function onRequestFrame(frame) {
   }
 }
 `)
-    const host = new DesktopHostProcess(process.execPath, project)
+    const host = new DesktopHostProcess(process.execPath, project, join(project, 'home'))
     try {
       const canceled = await host.fetch(new Request('dsh-app://app/cancel'))
       await canceled.body?.cancel()
@@ -202,7 +237,7 @@ process.send({ type: 'ready', protocolVersion: 3, dshVersion: 'invalid-frame' })
 function onRequestFrame(frame) {
   if (frame.type === 1) responsePipe.write(Buffer.alloc(13))
 }
-`))
+`), tmpdir())
     await invalid.start()
     await expect(invalid.fetch(new Request('dsh-app://app/invalid'))).rejects.toThrow(/invalid Host response frame marker/u)
     await invalid.stop().catch(() => undefined)
@@ -210,7 +245,7 @@ function onRequestFrame(frame) {
     const earlyExit = new DesktopHostProcess(process.execPath, projectWithHost(`
 function onRequestFrame() {}
 process.exit(0)
-`))
+`), tmpdir())
     await expect(earlyExit.start()).rejects.toThrow(/response pipe ended/u)
   })
 })

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -327,6 +327,50 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
 }
 
 describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
+
+  it('keeps PaperMachine and official profile data separate in the built CLI', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pm-built-isolation-'))
+    try {
+      const official = join(root, '.dsh')
+      const product = join(root, 'PaperMachine Data')
+      mkdirSync(official)
+      const patch = join(official, 'cordis.patch.yml')
+      writeFileSync(patch, 'invalid official patch\n')
+      const env = { HOME: root, USERPROFILE: root, DSH_HOME: official, PAPERMACHINE_HOME: product, PATH: '' }
+      const science = await runBuiltBin(['--profile', 'science', '--dump-config'], env, root)
+      expect(science.code, science.stderr).toBe(0)
+      expect(science.stdout).toContain('ui-science')
+      expect(readdirSync(official)).toEqual(['cordis.patch.yml'])
+      expect(readFileSync(patch, 'utf8')).toBe('invalid official patch\n')
+      const productManifest = join(product, 'profiles/science/package.json')
+      const productBefore = readFileSync(productManifest, 'utf8')
+      writeFileSync(patch, '[]\n')
+      const web = await runBuiltBin(['web', '--dump-config'], env, root)
+      expect(web.code, web.stderr).toBe(0)
+      expect(web.stdout).not.toContain('ui-science')
+      expect(existsSync(join(official, 'profiles/web/package.json'))).toBe(true)
+      expect(readFileSync(productManifest, 'utf8')).toBe(productBefore)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a built Science profile directed into official data before writing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pm-built-refusal-'))
+    try {
+      const official = join(root, '.dsh')
+      mkdirSync(official)
+      const result = await runBuiltBin(['--profile', 'science-headless', '--dump-config'], {
+        HOME: root, USERPROFILE: root, DSH_HOME: official, PAPERMACHINE_HOME: official,
+      }, root)
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('must not overlap')
+      expect(readdirSync(official)).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('requires --profile and rejects removed commands', async () => {
     const bare = await runBuiltBin()
     expect(bare.code).toBe(1)

@@ -48,7 +48,7 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 
 ## 桌面应用
 
-[Electron 桌面应用](../apps/desktop/README.zh.md)持有保留的 `$DSH_HOME/profiles/desktop` npm 项目。每个签名 Electron 发行版绑定一个确切 dsh 版本并携带第一方离线 seed；启动时通过内置 pnpm 把该版本安装进可写 profile，同时保留旧 profile 中桌面插件的确切版本。CLI profile 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、lockfile 或 `node_modules`。
+[Electron 桌面应用](../apps/desktop/README.zh.md)持有保留的 `$DSH_HOME/profiles/desktop` npm 项目。签名发行版绑定确切的 dsh 版本和第一方离线 seed。内置 pnpm 安装该版本，同时保留桌面插件版本。Science CLI 与 Desktop 共享独立于官方 DSH 的 PaperMachine 数据，但可执行程序、插件激活、lockfile 和 `node_modules` 保持独立。
 
 Electron 通过内置的上游 Node.js 进程启动私有 Desktop Host 包；该包从保留 profile 加载已安装的 dsh 后端与匹配的客户端图。一元 RPC、Remote stream 与版本匹配的客户端资源经带版本的分帧字节管道传输，Node IPC 只保留生命周期控制，再通过安全的 `dsh-app://` 协议到达渲染进程；因此桌面组合不会开放 Web server 或 loopback 端口。只有壳自有 UI 能通过内置 pnpm 及其私有 `$DSH_HOME/desktop/pnpm/store` 执行插件事务。
 

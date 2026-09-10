@@ -69,6 +69,8 @@ describe('desktop package target', () => {
   it('keeps COS credentials out of every packaging subprocess', () => {
     expect(withoutDesktopUploadCredentials({
       DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: 'https://papermachine-updates.example.com',
+      PAPERMACHINE_DESKTOP_APP_ID: 'com.papermachine.desktop',
       DOWNLOAD_TEST_COS_BUCKET: 'test-download-bucket',
       DOWNLOAD_TEST_COS_SECRET_ID: 'test-id',
       DOWNLOAD_TEST_COS_SECRET_KEY: 'test-key',
@@ -78,6 +80,8 @@ describe('desktop package target', () => {
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
     })).toEqual({
       DOWNLOAD_TEST_ORIGIN: 'https://desktop-updates.example.com',
+      PAPERMACHINE_DOWNLOAD_ORIGIN: 'https://papermachine-updates.example.com',
+      PAPERMACHINE_DESKTOP_APP_ID: 'com.papermachine.desktop',
       DOWNLOAD_TEST_COS_BUCKET: 'test-download-bucket',
       DOWNLOAD_PROD_COS_BUCKET: 'production-download-bucket',
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',

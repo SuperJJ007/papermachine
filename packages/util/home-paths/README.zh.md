@@ -37,6 +37,11 @@ const settings = dshHomePath('settings')     // join one child onto the resolved
 
 显式配置的路径优先级最高，然后是 `$DSH_HOME`，最后是默认的 `~/.dsh`。空或仅含空白的 `$DSH_HOME` 视为未设置，因此空白的覆盖值绝不会把主目录解析到当前工作目录。
 
+<a id="papermachine-application-home"></a>
+### PaperMachine 应用目录
+
+`resolvePaperMachineHome()` 依次选择显式启动路径、`PAPERMACHINE_HOME`、保存绝对路径的 `~/.papermachine-home` 文件，最后使用 `~/.papermachine`。它忽略继承的 `DSH_HOME`，保留空格和 Unicode，并拒绝空值或相对路径。它解析现有符号链接，并拒绝位于官方 `~/.dsh` 内、等于该目录或包含该目录的路径。解析器不创建文件。产品入口将结果作为 `DSH_HOME` 传给运行时；普通 DSH 解析器保持不变。
+
 ### 展示主目录
 
 面向用户的路径请以符号形式渲染根目录，而不是机器路径：默认主目录显示为 `~/.dsh`，任何已配置的主目录显示为 `$DSH_HOME`。展示形式绝不会泄露机器的绝对路径。

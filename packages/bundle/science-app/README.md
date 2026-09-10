@@ -17,6 +17,8 @@ The bundle's Host plugin publishes its absolute preset directory as `sciencePres
 
 Science runtime, projections, edit and read services, and attachment indexing mount on the Host. The Science UI row remains disabled pending its client migration. The Science preset replaces the base model-facing tool rows.
 
+The repository commands `pnpm papermachine` and `pnpm papermachine:headless "task"` select an isolated [PaperMachine application home](../../util/home-paths/README.md#papermachine-application-home). Use an explicit `PAPERMACHINE_HOME` for migration acceptance; inherited `DSH_HOME` does not select the Science CLI data directory.
+
 ## Model Experience
 
 The preset exposes Python and R execution, artifact publication, read-only workspace tools, and restricted delegation.

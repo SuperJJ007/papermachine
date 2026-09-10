@@ -47,8 +47,8 @@ export function createElectronBuilderConfig(
   const buildPaths = desktopTargetBuildPaths(update.target)
   return {
     appId,
-    productName: 'DeepSeek Harness',
-    artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
+    productName: 'PaperMachine',
+    artifactName: 'papermachine-${version}-${os}-${arch}.${ext}',
     directories: { output: buildPaths.artifacts },
     asar: true,
     files: [

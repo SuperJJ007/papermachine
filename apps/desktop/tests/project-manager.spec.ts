@@ -401,6 +401,7 @@ describe('desktop project transactions', () => {
     expect(profile.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      '@deepseek-ai/dsh-science-app',
       '@scope/plugin',
     ])
     expect(readFileSync(join(paths.pnpm.store, 'release-1'), 'utf8')).toBe('one')

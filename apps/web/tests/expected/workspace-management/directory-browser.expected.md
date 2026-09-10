@@ -1,10 +1,12 @@
 - dialog "Select Workspace Directory":
   - heading "Select Workspace Directory" [level=2]
+  - button "Filesystem root"
   - navigation:
     - button "Home"
     - img
     - button "browse-golden"
   - button "Edit path":
+    - text: Edit path
     - img
   - list:
     - listitem:

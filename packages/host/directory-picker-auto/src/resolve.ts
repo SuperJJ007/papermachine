@@ -13,7 +13,7 @@ export type DirectoryPickerBackendKind = 'native' | 'browse'
 
 /** Environment keys the resolution reads (a `process.env` subset). */
 export type DirectoryPickerEnv = Readonly<
-  Partial<Record<'DISPLAY' | 'WAYLAND_DISPLAY', string>>
+  Partial<Record<'DISPLAY' | 'WAYLAND_DISPLAY' | 'WSL_DISTRO_NAME' | 'WSL_INTEROP', string>>
 >
 
 /** Host facts the backend choice is a pure function of, sampled once at boot. */
@@ -24,7 +24,7 @@ export interface DirectoryPickerHostFacts {
   platform: NodeJS.Platform
   /** SSH launch fact from the inherited process layer, independent of `.env` values. */
   ssh: boolean
-  /** Environment sample; DISPLAY/WAYLAND_DISPLAY marks a Linux display. */
+  /** Display environment plus inherited WSL markers; a WSL display does not imply a usable native chooser. */
   env: DirectoryPickerEnv
   /** Whether a Linux chooser binary the native backend can drive (zenity/kdialog) is on PATH; consulted only when `platform` is linux. */
   linuxChooser: boolean
@@ -39,7 +39,8 @@ const present = (value: string | undefined): boolean => value !== undefined && v
  * a loopback-only bind (an all-interfaces bind admits remote browsers no OS
  * chooser can reach), no SSH launch (under SSH port-forwarding the chooser
  * would open on the unattended server), and a servable display session —
- * assumed on darwin/win32, requiring `DISPLAY`/`WAYLAND_DISPLAY` plus a
+ * assumed on darwin/win32, using browse for Linux with inherited WSL markers,
+ * otherwise requiring `DISPLAY`/`WAYLAND_DISPLAY` plus a
  * chooser binary on linux, and never true elsewhere (the native backend
  * drives exactly darwin/win32/linux). Anything ambiguous resolves to
  * `browse`, which works everywhere.
@@ -51,5 +52,6 @@ export function resolveDirectoryPickerBackend(facts: DirectoryPickerHostFacts): 
   if (facts.ssh) return 'browse'
   if (facts.platform === 'darwin' || facts.platform === 'win32') return 'native'
   if (facts.platform !== 'linux' || !facts.linuxChooser) return 'browse'
+  if (present(facts.env.WSL_DISTRO_NAME) || present(facts.env.WSL_INTEROP)) return 'browse'
   return present(facts.env.DISPLAY) || present(facts.env.WAYLAND_DISPLAY) ? 'native' : 'browse'
 }

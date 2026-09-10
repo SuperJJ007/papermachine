@@ -19,7 +19,7 @@
  * error surface. Hidden entries are host-flagged and hidden by default; the
  * footer's fixed-label "Show hidden files" toggle (aria-pressed, check when
  * on) reveals them (client-side only). The path editor announces itself with
- * a pencil glyph and a bar-wide hover-lit outline, opens seeded with a
+ * a text label, pencil glyph and hover-lit outline, opens seeded with a
  * trailing separator, and keeps the panes under the draft: the final segment
  * prefix-filters the LAST pane while that pane's level is the one the draft's
  * directory part names (a dot-led prefix also reveals the hidden entries it
@@ -696,6 +696,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     ? null
     : readDraft(crumbSource, pathDraft, scanned.current).tail
   const crumbs = crumbSource === null ? [] : displayCrumbs(crumbSource, t('browser.home'))
+  const filesystemRoot = crumbSource?.crumbs[0]
   const crumbTail = crumbs.at(-1)?.path
   useEffect(() => {
     const trail = crumbTrailRef.current
@@ -821,6 +822,17 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
             {pathDraft === null
               ? (
                 <>
+                  {filesystemRoot !== undefined && filesystemRoot.path !== crumbs[0]?.path && (
+                    <button
+                      type="button"
+                      className={css.crumb}
+                      title={filesystemRoot.path}
+                      disabled={parentInert}
+                      onClick={() => { navigate(filesystemRoot.path) }}
+                    >
+                      {t('browser.root')}
+                    </button>
+                  )}
                   <span className={css.crumbTrail} role="navigation" ref={crumbTrailRef}>
                     {crumbs.map((crumb, index) => (
                       <span key={crumb.path} className={css.crumbSeat}>
@@ -836,12 +848,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                       </span>
                     ))}
                   </span>
-                  {/* The empty zone right of the crumbs is the path-edit
-                    * affordance: the whole remainder of the bar clicks into
-                    * the editor, and the pencil glyph parked at its right
-                    * edge (with the same tooltip) is what says so — an
-                    * invisible target the operator must guess at is the one
-                    * way into typing a path. */}
+                  {/* The labeled path editor remains reachable when the breadcrumb trail scrolls. */}
                   <button
                     type="button"
                     className={css.crumbEditZone}
@@ -872,6 +879,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                       setPathDraft(base.endsWith(sep) ? base : `${base}${sep}`)
                     }}
                   >
+                    <span>{t('browser.editPath')}</span>
                     <IconEditOutline16 size={14} className={css.crumbEditGlyph} />
                   </button>
                 </>

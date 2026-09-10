@@ -60,11 +60,16 @@ export const SURFACE_PACKAGES: Record<DirectoryPickerBackendKind, string> = {
  * @param ctx - cordis context carrying the injected `webServer` and `loader`.
  */
 export async function apply(ctx: Context): Promise<void> {
+  const launch = launchEnvironmentOf(ctx)
   const backend = resolveDirectoryPickerBackend({
     bindHost: ctx.webServer.host,
     platform: process.platform,
-    ssh: launchedThroughSsh(launchEnvironmentOf(ctx)),
-    env: process.env,
+    ssh: launchedThroughSsh(launch),
+    env: {
+      ...process.env,
+      WSL_DISTRO_NAME: launch.getFrom('WSL_DISTRO_NAME', ['process'])?.value ?? '',
+      WSL_INTEROP: launch.getFrom('WSL_INTEROP', ['process'])?.value ?? '',
+    },
     linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
   })
   await ctx.effect(async () => {

@@ -13,7 +13,7 @@
 // seeded-history seed reused verbatim — no new recording).
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { join, sep } from 'node:path'
+import { join, parse, sep } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -30,7 +30,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workspace-man
 // spec needs any one cold session row, not new recorded content.
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
-const BROWSER_EXPECTED = join(SNAPSHOT_DIR, 'directory-browser.expected.md')
+const BROWSER_EXPECTED = fileURLToPath(new URL('./expected/workspace-management/directory-browser.expected.md', import.meta.url))
 const SEED_ID = 'workspace-management-web-e2e'
 // Both waits exceed ui-primitives' 200ms POINTER_GRACE_MS. Keep them above
 // that value if the shared setting changes.
@@ -662,10 +662,40 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('leaves Home through the root shortcut and adopts a Unicode directory outside Home', async () => {
+    const target = join(scaffold.workspaceCwd, 'mounted-volume', '\u7814\u7a76 \u7a7a\u95f4')
+    await mkdir(target, { recursive: true })
+    const realHome = process.env.HOME
+    const realUserProfile = process.env.USERPROFILE
+    const isolatedHome = join(scaffold.workspaceCwd, 'picker-home')
+    await mkdir(isolatedHome, { recursive: true })
+    process.env.HOME = isolatedHome
+    process.env.USERPROFILE = isolatedHome
+    try {
+      const dialog = await browseTo(isolatedHome)
+      await dialog.getByRole('button', { name: 'Filesystem root', exact: true }).click()
+      await expect.poll(() => dialog.getByRole('button', { name: parse(target).root, exact: true }).count()).toBe(1)
+      await dialog.getByRole('button', { name: 'Edit path', exact: true }).click()
+      const input = dialog.getByRole('textbox', { name: 'Edit path' })
+      await input.fill(target)
+      await input.press('Enter')
+      await input.waitFor({ state: 'detached' })
+      await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await expect.poll(async () => (await scaffold.ctx.workspaceRegistry.resolveByPath(target))?.path).toBe(target)
+      await expect.poll(() => scaffold.ctx.agents.list().find(agent => agent.session.header.cwd === target)).not.toBeUndefined()
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      if (realHome === undefined) delete process.env.HOME
+      else process.env.HOME = realHome
+      if (realUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = realUserProfile
+    }
+  }, 60_000)
+
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {
     expect(tripwire.warnings).toEqual([])
-    // The directory-browser aria golden is this spec's one owned artifact;
-    // the seed it reuses is owned (and inventory-guarded) by seeded-history.
-    await assertFixtureInventory(SNAPSHOT_DIR, ['.gitkeep', 'directory-browser.expected.md'])
+    // The seed is owned by seeded-history; the ARIA golden lives beside this spec.
+    await assertFixtureInventory(SNAPSHOT_DIR, ['.gitkeep'])
   })
 })

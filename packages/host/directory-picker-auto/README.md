@@ -29,7 +29,9 @@ Compose this plugin instead of a concrete backend when the same composition must
 
 ### How the choice is made
 
-`native` requires every signal that the operator can see the host display and the native backend can serve it: a loopback-only bind (read from the injected `webServer`; an all-interfaces bind admits remote browsers no OS chooser can reach), no SSH launch (the shared [launch-environment](../../util/launch-environment/README.md) predicate ignores project/user `.env` values and checks only inherited non-empty `SSH_CONNECTION`/`SSH_TTY`), and a servable display session — assumed on darwin and win32; on linux, `DISPLAY`/`WAYLAND_DISPLAY` plus a zenity or kdialog binary on `PATH`; never on any other platform. Anything ambiguous resolves to `browse`, which works everywhere.
+`native` requires every signal that the operator can see the host display and the native backend can serve it: a loopback-only bind (read from the injected `webServer`; an all-interfaces bind admits remote browsers no OS chooser can reach), no SSH launch (the shared [launch-environment](../../util/launch-environment/README.md) predicate ignores project/user `.env` values and checks only inherited non-empty `SSH_CONNECTION`/`SSH_TTY`), and a servable display session — assumed on darwin and win32; on linux without inherited WSL markers, `DISPLAY`/`WAYLAND_DISPLAY` plus a zenity or kdialog binary on `PATH`; never on any other platform. Anything ambiguous resolves to `browse`, which works everywhere.
+
+Non-empty inherited `WSL_DISTRO_NAME` or `WSL_INTEROP` selects `browse` on Linux even when WSLg advertises a display and a chooser is installed. Project/user `.env` markers do not affect this decision. This selects a directory on the running Host; it does not switch a Windows Host into a WSL runtime. See the [WSL directory selection decision](../../../.agents/notes/implemented/bug-fix/2026-09-11-wsl-workspace-directory-selection.md).
 
 ### What you get
 
@@ -62,7 +64,8 @@ The chooser is a pure decision plus a mount: `resolveDirectoryPickerBackend` sam
 | Bind host is not `127.0.0.1` | `browse` |
 | `SSH_CONNECTION` or `SSH_TTY` present | `browse` |
 | darwin or win32 | `native` |
-| linux with a chooser binary and a display | `native` |
+| linux with inherited `WSL_DISTRO_NAME` or `WSL_INTEROP` | `browse` |
+| other linux with a chooser binary and a display | `native` |
 | anything else | `browse` |
 
 ### Source map
@@ -106,7 +109,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define when the boot-time sample can misjudge the host. They are current package constraints, not a task backlog.
 
 - **Detection infers operator location from launch context, which no launch-side signal can prove** — a tmux session detached from its SSH launch loses the `SSH_*` markers; a Darwin process outside an Aqua session still counts as displayed; and a workstation-local launch later reached through `ssh -L` arrives from `127.0.0.1`, resolves `native`, and opens the chooser on the unattended workstation. A wrong `native` choice degrades to the backend's existing retryable failure dialog, and composing `-browse` directly selects the safe interaction for such deployments.
-- **The Linux chooser probe reads `PATH` only** — a zenity/kdialog reachable some other way (shell alias, non-PATH install) still resolves `browse`; installing either binary on `PATH` restores `native` eligibility at the next boot.
+- **The Linux chooser probe reads `PATH` only** — a zenity/kdialog reachable some other way (shell alias, non-PATH install) still resolves `browse`; installing either binary on `PATH` restores non-WSL `native` eligibility at the next boot.
 - **Boot-time only** — one resolution serves every client of the boot; per-connection adaptivity (native for a local browser, browse for a remote one, same server) would need a per-client capability and the wire advertisement the seam does not carry, and waits for a deployment that serves both at once.
 
 <a id="dev-note"></a>

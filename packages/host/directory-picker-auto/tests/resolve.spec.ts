@@ -37,6 +37,23 @@ describe('resolveDirectoryPickerBackend', () => {
     expect(resolveDirectoryPickerBackend({ ...linux, env: { DISPLAY: ':0' }, linuxChooser: false })).toBe('browse')
   })
 
+  it.each([
+    { WSL_DISTRO_NAME: 'Ubuntu' },
+    { WSL_INTEROP: '/run/WSL/123_interop' },
+  ])('uses browse in WSL even with a chooser and display: %o', (markers) => {
+    expect(resolveDirectoryPickerBackend({
+      ...attended, platform: 'linux', linuxChooser: true, env: { DISPLAY: ':0', ...markers },
+    })).toBe('browse')
+    expect(resolveDirectoryPickerBackend({ ...attended, platform: 'win32', env: markers })).toBe('native')
+  })
+
+  it('keeps native Linux eligible when WSL markers are empty', () => {
+    expect(resolveDirectoryPickerBackend({
+      ...attended, platform: 'linux', linuxChooser: true,
+      env: { DISPLAY: ':0', WSL_DISTRO_NAME: '', WSL_INTEROP: '' },
+    })).toBe('native')
+  })
+
   it('resolves browse on platforms the native backend cannot serve, display or not', () => {
     expect(resolveDirectoryPickerBackend({ ...attended, platform: 'freebsd', env: { DISPLAY: ':0' }, linuxChooser: true })).toBe('browse')
     expect(resolveDirectoryPickerBackend({ ...attended, platform: 'openbsd', env: { WAYLAND_DISPLAY: 'wayland-1' } })).toBe('browse')

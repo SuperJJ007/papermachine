@@ -164,6 +164,8 @@ function stubAttendedHost(): void {
   vi.stubEnv('SSH_CONNECTION', '')
   vi.stubEnv('SSH_TTY', '')
   vi.stubEnv('DISPLAY', ':0')
+  vi.stubEnv('WSL_DISTRO_NAME', '')
+  vi.stubEnv('WSL_INTEROP', '')
 }
 
 describe('real Loader composition', () => {
@@ -218,6 +220,29 @@ describe('real Loader composition', () => {
     await includeTree(ctx).stop()
     expect(await readFile(configPath, 'utf8')).toContain('disabled: true')
     expect(await readFile(configPath, 'utf8')).not.toContain(NATIVE)
+  })
+
+  it.skipIf(process.platform !== 'linux')('mounts browse for an inherited WSL launch even with a display', async () => {
+    stubAttendedHost()
+    const launchEnvironment = createLaunchEnvironmentSnapshot([
+      { source: 'process', values: { WSL_DISTRO_NAME: 'Ubuntu' } },
+    ])
+    const { ctx } = await loadComposition('127.0.0.1', { launchEnvironment })
+    expect(ctx.get('directoryPicker')?.capability().kind).toBe('browse')
+    expect(entryNames(ctx)).toContain(BROWSE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(NATIVE)
+  })
+
+  it.each(['project-env', 'user-env'] as const)('ignores WSL markers supplied by %s', async (source) => {
+    stubAttendedHost()
+    vi.stubEnv('WSL_DISTRO_NAME', 'Ubuntu')
+    vi.stubEnv('WSL_INTEROP', '/run/WSL/123_interop')
+    const launchEnvironment = createLaunchEnvironmentSnapshot([
+      { source, values: { WSL_DISTRO_NAME: 'Ubuntu', WSL_INTEROP: '/run/WSL/123_interop' } },
+    ])
+    const { ctx } = await loadComposition('127.0.0.1', { launchEnvironment })
+    expect(ctx.get('directoryPicker')?.capability().kind).toBe('native')
+    expect(entryNames(ctx)).toContain(NATIVE_SURFACE)
   })
 
   it('mounts the browse backend under an SSH launch', { timeout: 60_000 }, async () => {

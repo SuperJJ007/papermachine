@@ -29,7 +29,9 @@ kind: "package-reference"
 
 ### 选择是如何作出的
 
-`native` 要求「操作者看得到宿主屏幕、且原生后端能服务它」的全部信号：仅回环的绑定（从注入的 `webServer` 读取；全网卡绑定会接入任何 OS 选择器都触及不到的远程浏览器）；非 SSH 启动（共用的 [launch-environment](../../util/launch-environment/README.zh.md) 判断忽略项目与用户 `.env` 中的值，只检查继承的非空 `SSH_CONNECTION`／`SSH_TTY`）；以及可服务的显示会话——darwin 与 win32 上视为存在；linux 上要求 `DISPLAY`／`WAYLAND_DISPLAY`，外加 `PATH` 上有 zenity 或 kdialog 二进制；其余任何平台上都不成立。任何含糊情形都判定为处处可用的 `browse`。
+`native` 要求「操作者看得到宿主屏幕、且原生后端能服务它」的全部信号：仅回环的绑定（从注入的 `webServer` 读取；全网卡绑定会接入任何 OS 选择器都触及不到的远程浏览器）；非 SSH 启动（共用的 [launch-environment](../../util/launch-environment/README.zh.md) 判断忽略项目与用户 `.env` 中的值，只检查继承的非空 `SSH_CONNECTION`／`SSH_TTY`）；以及可服务的显示会话——darwin 与 win32 上视为存在；没有继承 WSL 标记的 linux 上要求 `DISPLAY`／`WAYLAND_DISPLAY`，外加 `PATH` 上有 zenity 或 kdialog 二进制；其余任何平台上都不成立。任何含糊情形都判定为处处可用的 `browse`。
+
+Linux 上继承的非空 `WSL_DISTRO_NAME` 或 `WSL_INTEROP` 会选择 `browse`，即使 WSLg 声明了显示且已安装选择器。项目或用户 `.env` 中的标记不影响此决策。此操作选择运行中 Host 上的目录，不会将 Windows Host 切换成 WSL 运行环境。详见 [WSL 目录选择决策](../../../.agents/notes/implemented/bug-fix/2026-09-11-wsl-workspace-directory-selection.zh.md)。
 
 ### 你会得到什么
 
@@ -62,7 +64,8 @@ kind: "package-reference"
 | 绑定宿主不是 `127.0.0.1` | `browse` |
 | 存在 `SSH_CONNECTION` 或 `SSH_TTY` | `browse` |
 | darwin 或 win32 | `native` |
-| linux 且带选择器二进制与显示 | `native` |
+| linux 且继承了 `WSL_DISTRO_NAME` 或 `WSL_INTEROP` | `browse` |
+| 其他 linux 且带选择器二进制与显示 | `native` |
 | 其他任何情况 | `browse` |
 
 ### 源码地图
@@ -106,7 +109,7 @@ kind: "package-reference"
 这些限制说明启动时采样何时会误判宿主。它们是当前包约束，不是任务积压。
 
 - **探测是从启动上下文推断操作者位置，而任何启动侧信号都无法证明这一点**——从 SSH 启动中脱离的 tmux 会话会丢失 `SSH_*` 标记；Aqua 会话之外的 Darwin 进程仍被算作有显示；在工作站本地启动、之后经 `ssh -L` 访问时，请求会从 `127.0.0.1` 到达，系统会判定 `native`，并把选择器弹在无人值守的工作站上。错误的 `native` 选择会退化为后端既有的可重试失败对话框，而对这类部署，直接组合 `-browse` 即选择安全的交互。
-- **Linux 选择器探查只读 `PATH`**——以其他途径可用的 zenity／kdialog（shell 别名、未装在 PATH 上）仍判定为 `browse`；把任一二进制装到 `PATH` 上，下次启动即恢复 `native` 资格。
+- **Linux 选择器探查只读 `PATH`**——以其他途径可用的 zenity／kdialog（shell 别名、未装在 PATH 上）仍判定为 `browse`；把任一二进制装到 `PATH` 上，下次启动即恢复非 WSL 的 `native` 资格。
 - **仅在启动时判定**——一次判定服务本次启动的所有客户端；按连接自适应（同一台服务器，本地浏览器用 native、远程浏览器用 browse）需要按客户端的能力对象以及 seam 未携带的协议通告，等到出现同时服务两种形态的部署再做。
 
 <a id="dev-note"></a>

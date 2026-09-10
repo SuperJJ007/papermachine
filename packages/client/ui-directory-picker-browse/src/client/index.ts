@@ -38,6 +38,7 @@ export function apply(ctx: ClientContext): void {
       ['zh', {
         'browser.title': '选择工作区目录',
         'browser.home': '主目录',
+        'browser.root': '文件系统根目录',
         'browser.newFolder': '新建文件夹',
         'browser.folderName': '文件夹名称',
         'browser.createIn': '在"{name}"中新建文件夹',
@@ -53,6 +54,7 @@ export function apply(ctx: ClientContext): void {
       ['en', {
         'browser.title': 'Select Workspace Directory',
         'browser.home': 'Home',
+        'browser.root': 'Filesystem root',
         'browser.newFolder': 'New folder',
         'browser.folderName': 'Folder name',
         'browser.createIn': 'New folder in "{name}"',

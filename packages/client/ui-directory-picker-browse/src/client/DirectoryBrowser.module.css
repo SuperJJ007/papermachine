@@ -130,16 +130,16 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The empty remainder of the bar: a real click target that flips the bar into
- * path-edit mode. The pencil glyph seated at its right edge is the standing
- * affordance; the outline the gesture lights belongs to the bar, so the whole
- * row reads as the box the input will occupy. */
+/* Path entry stays visible beside a scrolling breadcrumb trail. */
 .crumbEditZone {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex: 1 0 34px;
-  min-width: 34px;
+  flex: 1 0 auto;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
   height: 22px;
   padding: 0;
   border: none;

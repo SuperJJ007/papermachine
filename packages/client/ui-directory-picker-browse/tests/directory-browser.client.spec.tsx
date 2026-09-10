@@ -132,6 +132,32 @@ describe('DirectoryBrowser', () => {
     expect(screen.queryByRole('button', { name: '/' })).toBeNull()
   })
 
+  it('leaves Home through the filesystem root shortcut', async () => {
+    const b = mount()
+    const root = await screen.findByRole('button', { name: 'browser.root' })
+    fireEvent.click(root)
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenCalledWith('/', expect.any(AbortSignal)) })
+    await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('home') })
+    expect(screen.queryByRole('button', { name: 'browser.root' })).toBeNull()
+    expect(columns()).toHaveLength(1)
+  })
+
+  it('opens an absolute mounted path with spaces and Unicode without translating it', async () => {
+    const target = '/volumes/d/\u7814\u7a76 \u7a7a\u95f4'
+    const b = mount({ listDirectory: async path => path === target ? {
+      path: target, home: HOME,
+      crumbs: [{ name: '/', path: '/', hidden: false }, { name: target, path: target, hidden: false }],
+      entries: [], truncated: false,
+    } : listingFor(path) })
+    fireEvent.click(await screen.findByRole('button', { name: 'browser.editPath' }))
+    const input = screen.getByRole('textbox', { name: 'browser.editPath' })
+    fireEvent.change(input, { target: { value: target } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(screen.queryByRole('textbox', { name: 'browser.editPath' })).toBeNull() })
+    fireEvent.click(screen.getByRole('button', { name: 'browser.open' }))
+    expect(b.onOpen).toHaveBeenCalledWith(target)
+  })
+
   it('shows hidden entries when the toggle is on and hides them again on close', async () => {
     const b = mount()
     await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })

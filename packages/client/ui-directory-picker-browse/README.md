@@ -29,6 +29,8 @@ Mount this plugin alongside `ui-workspace` and the host backend [`dsh-host-direc
 
 ### Navigating and creating
 
+Within the Home subtree, **Filesystem root** opens the root reported by the Host, while the Home breadcrumb remains compact. **Edit path** has a visible label and accepts an absolute Host path, including mounted volumes with custom mount roots, spaces, and Unicode. Paths stay in the Host filesystem; the dialog does not translate drive letters or select an execution environment.
+
 Step through folders, edit the path directly, or filter the last pane by prefix; a Host-flagged hidden entry stays hidden until the footer toggle reveals it. **New folder** opens a nested create dialog targeting the selected folder and selects what it creates; **Open** adopts the selected folder, falling back to the listed level. Confirming a directory is the picked path; dismissing the dialog is the cancellation.
 
 -----

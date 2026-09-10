@@ -13,7 +13,7 @@ const launch = vi.hoisted(() => ({
   status: vi.fn(), windows: [] as Array<InstanceType<typeof FakeWindow>>,
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   events: new Map<string, (...args: unknown[]) => unknown>(),
-  order: [] as string[],
+  order: [] as string[], buildMenu: vi.fn(),
 }))
 // Electron's dynamically named IPC/event callbacks have heterogeneous signatures.
 class FakeWindow {
@@ -59,7 +59,7 @@ vi.mock('electron', () => ({
     handle: (name: string, handler: (...args: unknown[]) => unknown) => launch.handlers.set(name, handler),
   },
   nativeTheme: { shouldUseDarkColors: false },
-  Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn() },
+  Menu: { buildFromTemplate: launch.buildMenu, setApplicationMenu: vi.fn() },
 }))
 vi.mock('../src/project-manager.ts', () => ({ DesktopProjectManager: class { recover() {} applyRelease = launch.applyRelease; mutate = launch.mutate } }))
 vi.mock('../src/host-process.ts', () => ({ DesktopHostProcess: class { start = launch.startHost; stop = launch.stopHost } }))
@@ -110,6 +110,7 @@ afterEach(() => {
 describe('desktop main initialization', () => {
   it('opens isolated onboarding before installing seed and conda, then opens the app with a separate preload', async () => {
     await boot()
+    expect(launch.buildMenu).toHaveBeenCalledWith(expect.arrayContaining([{ role: 'editMenu' }]))
     expect(launch.applyRelease).not.toHaveBeenCalled()
     expect(launch.startHost).not.toHaveBeenCalled()
     expect(existsSync(join(process.env.PAPERMACHINE_HOME!, 'desktop/electron-user-data'))).toBe(true)

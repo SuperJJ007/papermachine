@@ -213,3 +213,5 @@ The development launcher projects workspace dependency links and skips `DesktopP
 - Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
 - Desktop plugins with dependency lifecycle scripts are rejected unless their package appears in the desktop project's reviewed `allowBuilds` policy.
 - The desktop shell shares sessions, settings, credentials, workspaces, and storage under `$DSH_HOME` with the PaperMachine CLI, while executable packages, plugin activation, lockfiles, and package-manager state remain separate.
+
+The application menu includes Electron's standard `editMenu`, which routes native copy, cut, paste, select-all, undo, and redo to the focused renderer. Custom application actions must preserve this role so macOS editing shortcuts work in every window.

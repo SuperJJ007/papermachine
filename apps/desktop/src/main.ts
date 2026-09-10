@@ -390,7 +390,7 @@ async function main(home: string): Promise<void> {
       { role: 'about' },
       { role: 'quit' },
     ],
-  }]))
+  }, { role: 'editMenu' }]))
 
   const createMainWindow = (): BrowserWindow => {
     const window = createWindow(appPreload)

@@ -213,3 +213,5 @@ PAPERMACHINE_HOME=/private/tmp/papermachine-desktop-acceptance DSH_TELEMETRY_DIS
 - 发布签名、公证、更新托管和跨上一版本的已安装产物验证需要生产发布环境。
 - 依赖包含 lifecycle script 的桌面插件，只有其包名进入桌面项目经过评审的 `allowBuilds` 策略后才能安装。
 - 桌面壳与 PaperMachine CLI 共享 `$DSH_HOME` 下的会话、设置、凭据、工作区和存储，但可执行包、插件激活、锁文件与包管理器状态彼此隔离。
+
+应用菜单包含 Electron 标准 `editMenu`，将原生复制、剪切、粘贴、全选、撤销和重做交给当前焦点的 renderer。自定义应用操作必须保留该菜单角色，使 macOS 编辑快捷键在各窗口中生效。

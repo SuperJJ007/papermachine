@@ -1,3 +1,4 @@
+import { zh as displayZh, en as displayEn } from './science-display-locales.ts'
 /** `science` namespace dictionaries for the dedicated artifact/run/Outcome rows, the artifact viewer, and its provenance drill-in. */
 
 /** Dictionary namespace owned by this plugin. */
@@ -5,6 +6,27 @@ export const NS = 'science'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  ...displayZh,
+  'copy': '复制',
+  'copied': '已复制',
+  'copyFailed': '复制失败',
+  'footnotes': '脚注',
+  'json.copyValue': '复制值',
+  'json.copyJson': '复制 JSON',
+  'json.copyPath': '复制路径',
+  'json.copyPrettyJson': '复制格式化 JSON',
+  'json.copyCompactJson': '复制紧凑 JSON',
+  'json.collapseNode': '折叠节点',
+  'json.expandNode': '展开节点',
+  'json.copyButtonTitle': '{action}',
+  'inspect': '查看详情',
+  'relative.now': '刚刚',
+  'relative.minutes': '{n} 分钟前',
+  'relative.hours': '{n} 小时前',
+  'relative.days': '{n} 天前',
+  'relative.months': '{n} 个月前',
+  'relative.years': '{n} 年前',
+
   'nav.files': '成果',
   'kernel.status': '内核最近记录',
   'kernel.item': '{language} · epoch {epoch} · {state}',
@@ -313,6 +335,27 @@ export type ScienceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  ...displayEn,
+  'copy': 'Copy',
+  'copied': 'Copied',
+  'copyFailed': 'Copy failed',
+  'footnotes': 'Footnotes',
+  'json.copyValue': 'Copy value',
+  'json.copyJson': 'Copy JSON',
+  'json.copyPath': 'Copy path',
+  'json.copyPrettyJson': 'Copy pretty JSON',
+  'json.copyCompactJson': 'Copy compact JSON',
+  'json.collapseNode': 'Collapse node',
+  'json.expandNode': 'Expand node',
+  'json.copyButtonTitle': '{action}',
+  'inspect': 'Inspect',
+  'relative.now': 'now',
+  'relative.minutes': '{n}min ago',
+  'relative.hours': '{n}h ago',
+  'relative.days': '{n}d ago',
+  'relative.months': '{n}mo ago',
+  'relative.years': '{n}y ago',
+
   'nav.files': 'Artifacts',
   'kernel.status': 'Latest kernel records',
   'kernel.item': '{language} · epoch {epoch} · {state}',

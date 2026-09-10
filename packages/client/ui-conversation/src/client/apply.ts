@@ -121,7 +121,20 @@ export function apply(ctx: Context, config: Config = Config({})): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
   const t = ctx.locale.bind(NS)
-  const conversationStore = createConversationStore()
+  const handle = createConversationStore()
+  const viewBindings: Array<() => void> = []
+  ctx.effect(() => () => { for (const dispose of viewBindings) dispose() }, 'conversation: scoped view navigation')
+  const conversationStore: typeof handle = {
+    ...handle,
+    create(scopeKey) {
+      const instance = handle.create(scopeKey)
+      if (scopeKey !== undefined) viewBindings.push(concreteConversation(ctx).bindViewOpener(scopeKey as SessionId, (view, focus) => {
+        activateView(scopeKey as SessionId, view)
+        instance.actions.openView(view, focus)
+      }))
+      return instance
+    },
+  }
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
   )

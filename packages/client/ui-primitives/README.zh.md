@@ -157,3 +157,5 @@ kind: "package-library"
 </details>
 
 **运行时不变式：** 不发布伴生入口。这些是纯 props-in React atom，没有 Cordis API、事件、service 或跨插件可变状态；渲染约定由组件测试覆盖。
+
+`ImageLightbox` 是共享图片查看器，控件文案由调用方显式提供。功能包传入图片及标签，无须导入其他功能插件。

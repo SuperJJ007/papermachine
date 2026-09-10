@@ -1,3 +1,4 @@
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -23,13 +24,14 @@ export function PaperMachineBrandMark({ size, className }: PaperMachineBrandMark
  * renders through the host OS font stack. Its box matches the 24px-tall
  * default-size box the official svg wordmark occupies in the same slot, so
  * swapping brand plugins moves nothing else in the sidebar brand row.
+ * @param props - Framework-provided brand translation seat.
  * @returns the wordmark element.
  */
-export function PaperMachineBrandName() {
+export function PaperMachineBrandName({ t }: PropsLocale<'brand.papermachine'>) {
   return (
     <span className={css.wordmark}>
-      <span className={css.paper}>Paper</span>
-      <span className={css.machine}>Machine</span>
+      <span className={css.paper}>{t('wordmark.paper')}</span>
+      <span className={css.machine}>{t('wordmark.machine')}</span>
     </span>
   )
 }

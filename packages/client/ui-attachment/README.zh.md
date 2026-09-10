@@ -103,3 +103,5 @@ Chat 中的一条用户消息把文件与图片放在同一个靠右、可换行
 </details>
 
 **运行时不变式：** 不发布伴生入口。本包只贡献 effect 所有的 slot entry；slot 注册表负责其生命周期并校验声明。
+
+公开的 `ImageLightbox` 导出转发 `ui-primitives` 中的共享实现。

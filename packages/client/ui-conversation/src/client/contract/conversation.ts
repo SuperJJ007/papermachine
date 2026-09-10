@@ -186,6 +186,8 @@ export interface ConversationNodeDefinition<State = unknown> {
   readonly kind: string
   /** Sole view target owned by this Definition; omitted for state-only Contexts. */
   readonly target?: string
+  /** Source kind whose user-message presentation this Definition exclusively owns in its target. */
+  readonly userSourceKind?: string
   /**
    * Extract this Definition's stable business identity from one event.
    * @param event - standard or compact Client history event; no Context or history access is available.

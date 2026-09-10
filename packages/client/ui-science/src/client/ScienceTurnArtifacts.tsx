@@ -13,7 +13,7 @@ import css from './ScienceTurnArtifacts.module.css'
 /** Navigation and loading capabilities supplied by the Turn-tail registration. */
 export interface ScienceTurnArtifactsInjected {
   readonly loadImage: ScienceImageLoader
-  readonly openArtifact: () => void
+  readonly openArtifact: (selection: { artifactId: string; version: number }) => void
 }
 
 export type ScienceTurnArtifactsProps = PropsRuntime<'conversation.chat.turnTail'>
@@ -21,9 +21,10 @@ export type ScienceTurnArtifactsProps = PropsRuntime<'conversation.chat.turnTail
   & PropsLocale<'science'> & PropsStore<ScienceSelectionStore>
   & InjectFace<ScienceTurnArtifactsInjected>
 
-function ArtifactThumbnail({ item, loadImage }: {
+function ArtifactThumbnail({ item, loadImage, t }: {
   item: ScienceArtifactPresentationItem
   loadImage: ScienceImageLoader
+  t: ScienceTurnArtifactsProps['t']
 }) {
   const [src, setSrc] = useState<string | null>(null)
   useEffect(() => {
@@ -36,7 +37,7 @@ function ArtifactThumbnail({ item, loadImage }: {
     return () => { live = false }
   }, [item, loadImage])
   return src === null
-    ? <ArtifactFileTile mediaType={item.content.mediaType} />
+    ? <ArtifactFileTile t={t} mediaType={item.content.mediaType} />
     : <img src={src} alt="" />
 }
 
@@ -62,12 +63,12 @@ export function ScienceTurnArtifacts({ matched, actions, loadImage, openArtifact
           // not the raw logicalName — is the artifact-level display name.
           const name = item.title !== '' ? item.title : item.logicalName
           return (
-            <button type="button" role="listitem" aria-label={`${name} v${String(item.version)}`} className={css.card} key={item.artifactId}
+            <button type="button" role="listitem" aria-label={t('display.artifactVersion', { name, version: item.version })} className={css.card} key={item.artifactId}
               onClick={() => {
                 actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
-                openArtifact()
+                openArtifact({ artifactId: item.artifactId, version: item.version })
               }}>
-              <span className={css.thumb}><ArtifactThumbnail item={item} loadImage={loadImage} /></span>
+              <span className={css.thumb}><ArtifactThumbnail item={item} loadImage={loadImage} t={t} /></span>
               <span className={css.meta}><span className={css.name}>{name}</span>
                 <span className={css.version}>{t('artifact.version', { version: item.version })}</span></span>
             </button>

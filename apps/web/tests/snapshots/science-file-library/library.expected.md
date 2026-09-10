@@ -1,0 +1,40 @@
+## Details column — project file library
+- tablist:
+  - tab "Artifact library Close" [selected]:
+    - text: ⌂
+    - button "Close"
+  - tab "Files Close":
+    - text: Files
+    - button "Close"
+  - tab "seed.csv Close":
+    - text: seed.csv
+    - button "Close"
+  - button "Split to the right"
+  - button "Show the sidebar fullscreen"
+  - button "Close the sidebar"
+- button "Project files"
+- textbox "Search"
+- combobox "Artifact sort":
+  - option "Newest"
+  - option "Oldest"
+  - option "Name" [selected]
+- button "Switch grid or list view": Grid
+- text: 3 artifacts
+- region "Current session B · This session":
+  - heading "Current session B · This session 1 · now" [level=3]:
+    - button "Current session B · This session 1 · now" [expanded]:
+      - img
+      - text: Current session B · This session 1 · now
+  - list:
+    - listitem:
+      - button "Open Beta metrics, version 1": Beta metrics v1 · now
+- region "Source session A":
+  - heading "Source session A 2 · now" [level=3]:
+    - button "Source session A 2 · now" [expanded]:
+      - img
+      - text: Source session A 2 · now
+  - list:
+    - listitem:
+      - button "Open Alpha results, version 1": Alpha results v1 · now
+    - listitem:
+      - button "Open Research notes, version 1": Research notes v1 · now

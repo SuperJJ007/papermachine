@@ -410,7 +410,7 @@ export interface LaunchOptions {
 async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persistenceRoot: string): Promise<unknown[]> {
   const failures: unknown[] = []
   await Promise.resolve(ctx.fiber.dispose()).catch((error: unknown) => failures.push(error))
-  await rm(workspaceCwd, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+  await rm(workspaceCwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch((error: unknown) => failures.push(error))
   await rm(persistenceRoot, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
   return failures
 }
@@ -491,7 +491,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     persistenceRoot = await mkdtemp(join(tmpdir(), 'dsh-web-e2e-sessions-'))
   } catch (error) {
     const failures: unknown[] = [error]
-    await rm(workspaceCwd, { recursive: true, force: true }).catch((cleanupError: unknown) => failures.push(cleanupError))
+    await rm(workspaceCwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      .catch((cleanupError: unknown) => failures.push(cleanupError))
     restoreSkillRootEnvironment()
     if (failures.length > 1) throw new AggregateError(failures, 'web scaffold temp-root setup failed')
     throw error
@@ -1275,7 +1276,11 @@ export async function seedSession(
   fixtureText: string,
   id: string,
   agentPreset?: string,
-  options: { readonly createdAt?: number } = {},
+  options: {
+    readonly createdAt?: number
+    /** Retain envelope times when domain payloads carry causal timestamps, as Science execution facts do. */
+    readonly preserveEventTimes?: boolean
+  } = {},
 ): Promise<SessionId> {
   const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
   const events = decoded.events
@@ -1284,7 +1289,7 @@ export async function seedSession(
   // An open final turn would be mutated by resume's crash repair on first
   // open; a committed seed must be a closed recording.
   if (last.type !== 'turn/end') throw new Error(`seed fixture must end in turn/end, got ${last.type}`)
-  const createdAt = options.createdAt ?? Date.now() - 60_000
+  const createdAt = options.createdAt ?? (options.preserveEventTimes === true ? events[0]!.time : Date.now() - 60_000)
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
@@ -1301,7 +1306,7 @@ export async function seedSession(
   const timeAnchor = fixtureCreatedAt === 0 ? createdAt : fixtureCreatedAt
   let nextTime = timeAnchor
   const materializedEvents: SessionEvent[] = events.map((event) => {
-    const time = nextTime
+    const time = options.preserveEventTimes === true ? event.time : nextTime
     if (event.type === 'assistant/message') {
       const stream = rebaseSeedStream(event.data.stream, time)
       const completedAt = Math.max(time, seedStreamEnd(stream) ?? time)

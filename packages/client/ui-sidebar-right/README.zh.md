@@ -63,7 +63,7 @@ kind: "package-reference"
 
 每个动作之后，套件的 settle planner 保证停靠面有内容：最后一个 tab 被关闭、搬走或浮出的停靠格会被并掉；只剩根格且它为空时，重新播种引导 tab。永远至少有一个 tab，永远没有空格——因此没有单独的「关闭格」手势。
 
-状态只在内存中。刷新会让每个会话回到折叠的默认态；切换会话则让每个停靠面留在原处。
+状态按会话保存在浏览器存储中。切换会话保留各自布局；刷新在渲染前恢复原生记录及其资源实例。
 
 <a id="extension-seats"></a>
 ## 扩展席位
@@ -112,7 +112,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只在内存中。** 不持久化任何东西；刷新让每个会话从折叠态开始。
+- **浏览器本地持久化。** 每个会话恢复原生标签布局及展开状态。恢复的记录在渲染前绑定资源实例。`openResourceIn` 与 `openTabIn` 始终指向操作来源会话。
 - **没有会话就没有停靠面。** 状态按会话 id 键控，因此 hero 画面右侧什么都不显示。
 - **硬编码的层叠。** 面板与浮窗宿主使用固定的 z-index 值，因为客户端还没有 z-index token 层。
 - **未暴露撤销。** 记录的序列只能通过 `@internal` 服务方法步进；产品控件是有意缺席的。

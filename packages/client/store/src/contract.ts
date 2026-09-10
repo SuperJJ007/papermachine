@@ -56,6 +56,8 @@ export type BakedActions<T, A extends ActionsDecl<T>> = {
 export interface StoreSpec<T, A extends ActionsDecl<T>> {
   init: () => T
   persist?: string
+  /** Top-level fields restored from init and omitted from persisted JSON. */
+  transient?: readonly (keyof T)[]
   actions: A
 }
 

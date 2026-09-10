@@ -56,7 +56,7 @@ interface Adoption {
 
 /**
  * Create the public controller and the plugin-private store adoption callback.
- * Adoption subscribes without reconciling; the first store commit creates occurrences.
+ * Adoption reconciles restored layouts before the first render, then follows commits.
  * @param tabs - registered tab types.
  * @param pin - resource retention for an occurrence's lifetime.
  * @returns the controller and a callback releasing exactly its own adoption.
@@ -77,6 +77,7 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
       }
       const adoption: Adoption = { store, unsubscribe: store.subscribe(sync) }
       adopted.set(sessionId, adoption)
+      sync()
       return () => {
         adoption.unsubscribe()
         if (adopted.get(sessionId) === adoption) adopted.delete(sessionId)
@@ -136,6 +137,18 @@ const RESOURCE_SCHEME = 'dsh-resource://'
 
 /** The outward right-Sidebar face (`ctx.sidebarRight`). */
 export interface ISidebarRight {
+  /** Open a resource in the originating session; released sessions are ignored.
+   * @param sessionId - Session that owns the initiating UI action.
+   * @param address - Stable resource address.
+   * @param options - Placement and navigation parameters.
+   */
+  openResourceIn(sessionId: SessionId, address: string, options?: SidebarRightOpenResourceOptions): void
+  /** Open a page in the originating session; released sessions are ignored.
+   * @param sessionId - Session that owns the initiating UI action.
+   * @param kind - Registered page kind.
+   * @param options - Placement and navigation parameters.
+   */
+  openTabIn<K extends string>(sessionId: SessionId, kind: K, options?: SidebarRightOpenTabOptions<K>): void
   /**
    * Open a resource: claim it, place it, reveal the column, record the navigation.
    *
@@ -262,7 +275,7 @@ export class SidebarRightController implements ISidebarRight {
   /**
    * Open a resource in one session, for a tab's own action; nothing happens
    * for a session whose store was never adopted or whose adoption was released.
-   * Not part of `ISidebarRight`: the Tab domain's path.
+   * Shared by the Tab domain and session-owned extension actions.
    * @param sessionId - the session the acting tab is in.
    * @param address - a `dsh-resource://<type>/…` address.
    * @param options - placement, the opening type, and navigation parameters.
@@ -275,7 +288,7 @@ export class SidebarRightController implements ISidebarRight {
   /**
    * Open a page type in one session, for a tab's own action; nothing happens
    * for a session whose store was never adopted or whose adoption was released.
-   * Not part of `ISidebarRight`: the Tab domain's path.
+   * Shared by the Tab domain and session-owned extension actions.
    * @param sessionId - the session the acting tab is in.
    * @param kind - the page type's kind.
    * @param options - placement and that kind's navigation parameters.
@@ -288,7 +301,7 @@ export class SidebarRightController implements ISidebarRight {
   /**
    * Close a tab of one session, for the tab's own action; nothing happens
    * for a session whose store was never adopted or whose adoption was released.
-   * Not part of `ISidebarRight`: the Tab domain's path.
+   * Shared by the Tab domain and session-owned extension actions.
    * @param sessionId - the session the tab is in.
    * @param tabId - the tab to close.
    */

@@ -1,0 +1,46 @@
+## Details column — artifact viewer (csv/json/md/png)
+- tablist:
+  - tab "Artifact library Close":
+    - text: ⌂
+    - button "Close"
+  - tab "summary.csv Close":
+    - text: summary.csv
+    - button "Close"
+  - tab "metrics.json Close":
+    - text: metrics.json
+    - button "Close"
+  - tab "report.md Close":
+    - text: report.md
+    - button "Close"
+  - tab "plot.png Close" [selected]:
+    - text: plot.png
+    - button "Close"
+  - button "Split to the right"
+  - button "Show the sidebar fullscreen"
+  - button "Close the sidebar"
+- button "Artifact library":
+  - img
+  - text: Artifact library
+- button "Previous version" [disabled]:
+  - img
+- text: v1
+- button "Next version" [disabled]:
+  - img
+- button "Provenance"
+- button "Download":
+  - img
+- button "Export" [disabled]
+- text: Export will be available in C4
+- button "Expand":
+  - img
+- button "Save as"
+- button "Close tab":
+  - img
+- 'button "View original: plot.png"':
+  - img "plot.png"
+- button "Select region to edit"
+- region "Notes":
+  - heading "Notes" [level=3]
+  - textbox "Artifact note":
+    - /placeholder: "Add a private note\nThese notes belong only to you and never enter model context."
+  - button "Save" [disabled]

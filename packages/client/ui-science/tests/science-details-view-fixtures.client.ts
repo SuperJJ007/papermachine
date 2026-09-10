@@ -12,16 +12,17 @@
  * wires through `loadVersions` — never derived from the raw artifact, matching
  * production (`version-summaries.ts`).
  */
-import { useRef } from 'react'
+import { useSyncExternalStore } from 'react'
 import { screen } from '@testing-library/react'
 import { vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { type ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { type SessionId } from '@deepseek-ai/dsh-session'
 import type {
   ScienceArtifactId, ScienceArtifactNote, ScienceClientArtifactVersion, ScienceClientProjection, ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session/types'
+import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import type { ScienceDetailsViewProps } from '../src/client/ScienceDetailsView.tsx'
 import type { ScienceLibraryArtifact, ScienceVersionSummary } from '../src/client/library-artifact.ts'
 import { en } from '../src/client/locales.ts'
@@ -134,8 +135,8 @@ export function note(over: Omit<Partial<ScienceArtifactNote>, 'artifactId'> & { 
   }
 }
 
-function emptySnapshot(): ConversationSnapshot {
-  return { nodes: [], chat: { nodes: { get: () => undefined, values: () => [] } } } as unknown as ConversationSnapshot
+function emptySnapshot(): ChatSnapshot {
+  return { legacy: { nodes: [], turnTimings: {} }, nodes: { get: () => undefined, values: () => [] } } as unknown as ChatSnapshot
 }
 
 type Props = ScienceDetailsViewProps
@@ -159,12 +160,11 @@ export function props(
     loadChartState?: Props['loadChartState']
     loadVersions?: Props['loadVersions']
     loadLibrary?: Props['loadLibrary']
-    loadWorkspaceFiles?: Props['loadWorkspaceFiles']
-    loadWorkspaceFile?: Props['loadWorkspaceFile']
     addToConversation?: Props['addToConversation']
     removeFromConversation?: Props['removeFromConversation']
-    composerSelections?: Props['composerSelections']
+    composerSelections?: SnapshotStore<readonly ScienceEditSelection[]>
     store?: ReturnType<typeof testScienceSelectionStore>
+    tabActions?: { openTab: ReturnType<typeof vi.fn>; openResource: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }
     notes?: readonly ScienceArtifactNote[]
     addArtifactNote?: Props['addArtifactNote']
     removeArtifactNote?: Props['removeArtifactNote']
@@ -174,26 +174,28 @@ export function props(
     summaries?: readonly ScienceVersionSummary[]
     libraryArtifacts?: readonly ScienceLibraryArtifact[]
     health?: { orphan: number; reconstructed: number; missingContent: number }
-    bindArtifactLibraryView?: Props['bindArtifactLibraryView']
   } = {},
 ): Props {
   const store = over.store ?? testScienceSelectionStore()
+  const navigation = over.tabActions ?? { openTab: vi.fn(), openResource: vi.fn(), close: vi.fn() }
+  const selections = over.composerSelections ?? createSnapshotStore<readonly ScienceEditSelection[]>([])
   const summaries = over.summaries ?? []
   const libraryArtifacts = over.libraryArtifacts ?? []
   return {
     sessionId: SESSION,
-    // Present only because `SessionStandardProps` declaration-merges in a
-    // hook every session-scoped slot's props type carries; the current
-    // component never calls it.
-    useSession: (select: (s: ConversationSnapshot) => unknown) => {
-      const ref = useRef<{ value: unknown }>({ value: undefined })
-      ref.current = { value: select(emptySnapshot()) }
-      return ref.current.value
+    useChat: (select: (snapshot: ChatSnapshot) => unknown) => select(emptySnapshot()),
+    useTabInfo: () => {
+      const active = store.useStore(state => state.activeTabId)
+      return { tab: { contentId: `dsh-resource://science-artifact/${encodeURIComponent(active?.replace('artifact:', '') ?? 'chart-1')}`, navigation: { params: undefined, revision: 0 }, actions: navigation } }
     },
+    useComposerSelections: (select: (items: readonly ScienceEditSelection[]) => unknown) => select(useSyncExternalStore(
+      listener => selections.subscribe(listener), () => selections.getSnapshot(),
+    )),
+    inspectCall: vi.fn(),
+    returnToConversation: vi.fn(),
     useProjection: vi.fn((key: string) => key === 'science' ? science : (over.notes ?? [])),
     useStore: store.useStore,
     actions: store.actions,
-    bindArtifactLibraryView: over.bindArtifactLibraryView ?? vi.fn(() => () => {}),
     loadImage: over.loadImage ?? vi.fn().mockResolvedValue('data:image/png;base64,abc'),
     loadText: over.loadText ?? vi.fn().mockResolvedValue('a,b\n1,2\n'),
     loadChartState: over.loadChartState ?? vi.fn().mockResolvedValue(null),
@@ -203,11 +205,8 @@ export function props(
     loadLibrary: over.loadLibrary ?? vi.fn().mockResolvedValue({
       ok: true, value: { projectId: 'project-1', artifacts: libraryArtifacts, ...over.health === undefined ? {} : { health: over.health } },
     }),
-    loadWorkspaceFiles: over.loadWorkspaceFiles ?? vi.fn().mockResolvedValue({ ok: true, value: { root: '', entries: [] } }),
-    loadWorkspaceFile: over.loadWorkspaceFile ?? vi.fn().mockResolvedValue({ ok: false, error: { code: 'internal', message: 'missing', details: {} } }),
     addToConversation: over.addToConversation ?? vi.fn(),
     removeFromConversation: over.removeFromConversation ?? vi.fn(),
-    composerSelections: over.composerSelections ?? createSnapshotStore([]),
     addArtifactNote: over.addArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     removeArtifactNote: over.removeArtifactNote ?? vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } }),
     applyChartOps: over.applyChartOps ?? vi.fn().mockResolvedValue({

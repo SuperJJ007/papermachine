@@ -9,7 +9,7 @@ import {
 } from './columns.ts'
 
 /**
- * Transient layout preferences. Responsive concessions never rewrite widths;
+ * Frame preferences with a browser-persisted rightbar width. Responsive concessions never rewrite widths;
  * the right panel's expanded state belongs to its occupant.
  */
 type LayoutState = {
@@ -76,6 +76,8 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       rightbarFullscreen: false,
       rightbarInstant: false,
     }),
+    persist: 'dsh.layout.panels.v1',
+    transient: ['sidebar', 'viewportWidth', 'narrowExpanded', 'rightbarShown', 'rightbarTrack', 'rightbarFullscreen', 'rightbarInstant'],
     actions: {
       setSidebar: (d, px: number) => {
         d.rightbarInstant = false

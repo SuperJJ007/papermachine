@@ -237,3 +237,14 @@ export function deepFreeze<T>(value: T): T {
   }
   return value
 }
+
+/**
+ * Serialize a JSON value into a bounded text summary, preserving strings verbatim.
+ * @param value - JSON value to summarize.
+ * @param maxCharacters - Maximum characters before the ellipsis.
+ * @returns Text truncated only when the serialized value exceeds the limit.
+ */
+export function jsonValueSummary(value: JsonValue, maxCharacters: number): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length > maxCharacters ? `${text.slice(0, maxCharacters)}…` : text
+}

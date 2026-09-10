@@ -12,6 +12,10 @@ export class ConversationEventRegistry extends ConversationDefinitionRegistry<Co
    */
   register(definition: ConversationNodeDefinition): () => void {
     assertDefinitionTarget(definition)
+    if (definition.userSourceKind !== undefined && this.entries().some(entry =>
+      entry.target === definition.target && entry.userSourceKind === definition.userSourceKind)) {
+      throw new Error(`conversation source "${definition.userSourceKind}" is already owned in target "${definition.target}"`)
+    }
     return this.registerDefinition(
       definition.kind,
       definition,

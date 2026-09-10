@@ -9,7 +9,8 @@
  * become necessary.
  */
 
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
@@ -22,15 +23,13 @@ export type ScienceChartStateLoader = (content: ScienceArtifactContentRef) => Pr
  * Build the Details entry's `loadChartState` for one session mount,
  * resolving the live session binding lazily on every call — mirrors
  * `science-attachment-loader.ts`'s own `readArtifact` binding lookup.
- * @param sessions - the injected runtime sessions service.
+ * @param remote - the generated Science Remote client.
  * @param sessionId - the owning registration's own session mount.
  * @returns a loader for `sessions.scienceChartState`.
  */
-export function createScienceChartStateLoader(sessions: ISessions, sessionId: SessionId): ScienceChartStateLoader {
+export function createScienceChartStateLoader(remote: Context['remote'], sessionId: SessionId): ScienceChartStateLoader {
   return async (content: ScienceArtifactContentRef): Promise<ScienceChartState | null> => {
-    const session = sessions.binding(sessionId)?.session
-    if (session === undefined) throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
-    const result = await session.readScienceChartState(content.versionId as VersionId)
+    const result = await remote.science.scienceChartState(sessionId, content.versionId as VersionId)
     if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
     return result.value.chart
   }

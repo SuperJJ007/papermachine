@@ -26,12 +26,7 @@ export const Config: z<Config> = z.object({
 })
 
 declare module '@deepseek-ai/cordis' { interface Context { scienceReads: ScienceReadService } }
-declare module '@deepseek-ai/dsh-typert-protocol' {
-  interface RemoteErrorDetailsMap {
-    'science-artifact-error': { reason: string }
-    'attachment-error': { reason: string }
-  }
-}
+
 function failure(reason: string, message: string): RemoteError<'science-artifact-error'> {
   return new RemoteError('science-artifact-error', message, { reason })
 }

@@ -63,7 +63,7 @@ Carrying the mint counter in the surface is what makes a recorded sequence repla
 
 After every action the kit's settle planner keeps the surface populated: a docked pane whose last tab was closed, moved out, or floated is merged away, and when only the root pane is left and it is empty, the guide tab is reseeded. There is always at least one tab, and never an empty pane — so there is no separate "close pane" gesture.
 
-State is memory-only. A reload returns every session to the collapsed default; switching sessions keeps each surface where it was.
+State persists per session in browser storage. Switching sessions retains each layout; reloading restores the native records and their resource occurrences before rendering.
 
 <a id="extension-seats"></a>
 ## Extension seats
@@ -112,7 +112,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Memory-only.** Nothing is persisted; a reload starts every session collapsed.
+- **Browser-local persistence.** Each session restores its native tab layout and expanded state. Restored records acquire their resource occurrences before rendering. `openResourceIn` and `openTabIn` target the originating session even if the active session changes.
 - **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
 - **Hard-coded stacking.** The panel and the float host use fixed z-index values because the client has no z-index token layer yet.
 - **Undo is not exposed.** The recorded sequence is stepped only through the `@internal` service methods; product controls are deliberately absent.

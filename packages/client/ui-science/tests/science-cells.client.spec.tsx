@@ -22,12 +22,12 @@ function settled(name: string, over: Partial<ToolResultNode> = {}): ToolResultNo
     kind: 'tool-result', seq: 3, time: 3_000, callId: `call-${name}`,
     call: { name, argsRaw: JSON.stringify({ code: 'print("hello")\nprint("done")' }) }, callTime: 2_000,
     content: [{ type: 'text', text: 'hello\ndone' }], isError: false,
-    callView: null, resultView: null, subCalls: [], ...over,
+    subCalls: [], ...over,
   }
 }
 
 function running(name: string): RunningToolCall {
-  return { callId: `call-${name}`, name, argsRaw: '{}', turn: 1, step: 1, time: 2_000, callView: null, subCalls: [] }
+  return { callId: `call-${name}`, name, argsRaw: '{}', turn: 1, step: 1, time: 2_000, subCalls: [] }
 }
 
 function props(

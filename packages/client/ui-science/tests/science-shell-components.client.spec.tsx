@@ -5,16 +5,13 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { ScienceArtifactId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { ScienceComposerChips } from '../src/client/ScienceComposerChips.tsx'
 import { ScienceComposerSelections } from '../src/client/composer-selections.ts'
-import { ScienceDestinations } from '../src/client/ScienceDestinations.tsx'
-import { ScienceEmptyDetails } from '../src/client/ScienceEmptyDetails.tsx'
-import { ScienceGlobalToggle } from '../src/client/ScienceGlobalToggle.tsx'
+import { ScienceLibraryAction } from '../src/client/sidebar-entries.tsx'
 import { ScienceKernelStatus } from '../src/client/ScienceKernelStatus.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -23,75 +20,12 @@ const t = makeTranslate(en)
 
 afterEach(cleanup)
 
-function sessionState(current: SessionId | undefined): SessionListState {
-  return {
-    ids: current === undefined ? [] : [current],
-    byId: current === undefined ? {} : {
-      [current]: { id: current, displayTitle: 'Session', running: false, blank: false, updatedAt: 1, agentPreset: 'science' },
-    },
-    current,
-    phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
-    currentAddress: undefined,
-  }
-}
-
-describe('ScienceDestinations', () => {
-  it('renders the Artifacts destination and opens it for the current Session', () => {
-    const openScience = vi.fn()
-    render(<ScienceDestinations {...({
-      wide: true,
-      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(SESSION))),
-      openScience,
-      t,
-    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.queryByRole('button', { name: 'Sessions' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
-    expect(screen.queryByRole('button', { name: 'Outcomes' })).toBeNull()
-    expect(openScience).toHaveBeenCalledWith(SESSION)
-  })
-
-  it('renders no Science destinations without a current Science Session', () => {
-    const openScience = vi.fn()
-    render(<ScienceDestinations {...({
-      wide: false,
-      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(undefined))),
-      openScience,
-      t,
-    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.queryByRole('button', { name: 'Artifacts' })).toBeNull()
-    expect(openScience).not.toHaveBeenCalled()
-  })
-
-  it('renders compact rail destinations with localized titles', () => {
-    render(<ScienceDestinations {...({
-      wide: false,
-      useSessions: bindSnapshotSelector(createSnapshotStore(sessionState(SESSION))),
-      openScience: vi.fn(),
-      t,
-    } as unknown as Parameters<typeof ScienceDestinations>[0])} />)
-    expect(screen.getByRole('button', { name: 'Artifacts' }).getAttribute('title')).toBe('Artifacts')
-    expect(screen.queryByText('Artifacts')).toBeNull()
-  })
-})
-
-describe('ScienceEmptyDetails', () => {
-  it('explains the empty project and closes through the owner action', () => {
-    const closeDetails = vi.fn()
-    render(<ScienceEmptyDetails {...({ closeDetails, t } as unknown as Parameters<typeof ScienceEmptyDetails>[0])} />)
-    expect(screen.getByText(en['details.artifacts.chooseSession'])).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Close tab' }))
-    expect(closeDetails).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('ScienceGlobalToggle', () => {
-  it('renders the Files button unconditionally and toggles the shared Details column', () => {
-    const toggleDetails = vi.fn()
-    render(<ScienceGlobalToggle {...({ toggleDetails, t } as unknown as Parameters<typeof ScienceGlobalToggle>[0])} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Science details' }))
-    expect(toggleDetails).toHaveBeenCalledTimes(1)
+describe('Science library header entry', () => {
+  it('opens the public guide and uses the locale label', () => {
+    const openLibrary = vi.fn()
+    render(<ScienceLibraryAction {...({ openLibrary, t } as Parameters<typeof ScienceLibraryAction>[0])} />)
+    fireEvent.click(screen.getByRole('button', { name: t('library.home') }))
+    expect(openLibrary).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -149,16 +83,17 @@ describe('Science composer targets', () => {
       ...elementSpec,
       target: { kind: 'element', elementId, elementKind: 'title', axes: elementId === 'title' ? 0 : 1, label: null, current: 'Loss' },
     }])
-    render(<ScienceComposerChips selections={selections} artifacts={[]} remove={vi.fn()} t={makeTranslate(zh)} />)
+    render(<ScienceComposerChips selections={selections.getSnapshot()} artifacts={[]} remove={vi.fn()} t={makeTranslate(zh)} />)
     expect(screen.getByText(elementId === 'title' ? 'loss.png v1 · 标题' : 'loss.png v1 · 标题 · 子图 2')).toBeTruthy()
   })
 
   it('renders nothing when empty and removes region and element chips', () => {
     const selections = createSnapshotStore<readonly ScienceEditSelection[]>([])
     const remove = vi.fn()
-    const view = render(<ScienceComposerChips selections={selections} artifacts={[]} remove={remove} t={t} />)
+    const view = render(<ScienceComposerChips selections={selections.getSnapshot()} artifacts={[]} remove={remove} t={t} />)
     expect(view.container.firstChild).toBeNull()
     act(() => { selections.set([commented, region, elementSpec]) })
+    view.rerender(<ScienceComposerChips selections={selections.getSnapshot()} artifacts={[]} remove={remove} t={t} />)
     // No matching artifact fact supplied: falls back to the wire logicalName.
     expect(screen.getByText('loss.png v1 · region 10%,20%: make it blue')).toBeTruthy()
     expect(screen.getByText('residuals.png v2 · region 10%,20%')).toBeTruthy()
@@ -175,7 +110,7 @@ describe('Science composer targets', () => {
       { artifactId: 'chart-1', version: 1, title: 'Loss curve (draft)', logicalName: 'loss.png' },
       { artifactId: 'chart-1', version: 2, title: 'Loss curve, final', logicalName: 'loss.png' },
     ]
-    render(<ScienceComposerChips selections={selections} artifacts={artifacts} remove={vi.fn()} t={t} />)
+    render(<ScienceComposerChips selections={selections.getSnapshot()} artifacts={artifacts} remove={vi.fn()} t={t} />)
     expect(screen.getByText('Loss curve, final v1 · region 10%,20%: make it blue')).toBeTruthy()
     expect(screen.queryByText(/^loss\.png/)).toBeNull()
   })

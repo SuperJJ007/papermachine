@@ -15,6 +15,7 @@ export interface ScienceToolCellProps {
   readonly output?: string | null | undefined
   readonly children?: ReactNode
   readonly inspect?: (() => void) | undefined
+  readonly inspectLabel: string
   readonly copyLabel: string
   readonly copiedLabel: string
   /** Tool identifier exposed for presentation-specific styling and tests. */
@@ -29,7 +30,7 @@ function leading(state: ScienceToolRowState, icon: ReactNode): ReactNode {
 
 /** Render one single-line cell whose execution material mounts only when expanded. */
 export function ScienceToolCell({
-  state, icon, title, summary, code, output, children, inspect, copyLabel, copiedLabel, toolKind,
+  state, icon, title, summary, code, output, children, inspect, inspectLabel, copyLabel, copiedLabel, toolKind,
 }: ScienceToolCellProps) {
   const [expanded, setExpanded] = useState(false)
   const expandable = code !== undefined || output !== undefined && output !== null || children !== undefined
@@ -47,7 +48,7 @@ export function ScienceToolCell({
           )}
           {output !== undefined && output !== null && <pre className={css.output}>{output}</pre>}
           {children}
-          {inspect !== undefined && <button type="button" className={css.inspect} onClick={inspect}>Inspect</button>}
+          {inspect !== undefined && <button type="button" className={css.inspect} onClick={inspect}>{inspectLabel}</button>}
         </div>
       </DisclosureRow>
     </div>

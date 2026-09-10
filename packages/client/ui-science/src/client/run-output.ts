@@ -10,7 +10,8 @@
 /** The two fixed section markers `formatRunResult` (tool-science `run.ts`) always emits, in order. */
 const STDOUT_MARKER = '--- stdout ---\n'
 const STDERR_MARKER = '\n--- stderr ---\n'
-const EMPTY_SENTINEL = '(empty)'
+/** Durable formatRunResult protocol token; consumed by parsing, never rendered as UI copy. */
+const RUN_RESULT_ABSENCE_SENTINEL = '(empty)'
 const STDOUT_TRUNCATED_SUFFIX = '\n(stdout truncated)'
 const STDERR_TRUNCATED_MARKER = '\n(stderr truncated)'
 /**
@@ -51,7 +52,7 @@ export function splitRunResultSections(resultText: string): RunOutputSections | 
   let stdoutBlock = resultText.slice(afterStdoutMarker, stderrAt)
   const stdoutTruncatedMarker = stdoutBlock.endsWith(STDOUT_TRUNCATED_SUFFIX)
   if (stdoutTruncatedMarker) stdoutBlock = stdoutBlock.slice(0, -STDOUT_TRUNCATED_SUFFIX.length)
-  const stdout = stdoutBlock === EMPTY_SENTINEL ? '' : stdoutBlock
+  const stdout = stdoutBlock === RUN_RESULT_ABSENCE_SENTINEL ? '' : stdoutBlock
 
   let stderrBlock = resultText.slice(stderrAt + STDERR_MARKER.length)
   const truncatedAt = stderrBlock.indexOf(STDERR_TRUNCATED_MARKER)
@@ -65,7 +66,7 @@ export function splitRunResultSections(resultText: string): RunOutputSections | 
     }
     if (footerAt !== -1) stderrBlock = stderrBlock.slice(0, footerAt)
   }
-  const stderr = stderrBlock === EMPTY_SENTINEL ? '' : stderrBlock
+  const stderr = stderrBlock === RUN_RESULT_ABSENCE_SENTINEL ? '' : stderrBlock
 
   return { stdout, stdoutTruncatedMarker, stderr }
 }

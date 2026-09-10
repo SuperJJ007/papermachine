@@ -1,0 +1,103 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science chart replay" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Artifact library"
+  - button "Open the sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- navigation "Turn navigation":
+  - button "Jump to turn 1"
+  - button "Jump to turn 2"
+- text: Replay the accepted Science result. {{clock}}
+- button "Copy":
+  - img
+- paragraph: I will generate the requested chart.
+- paragraph: "Artifacts produced this turn: 1"
+- list:
+  - listitem "Observed series v1"
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation" [disabled]:
+  - img
+- text: Available only on the last message of a completed turn
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- 'button "Python run {}"':
+  - img
+  - img
+  - text: "Python run {}"
+- button "Artifact artifact \"observed-series\" v1 curated":
+  - img
+  - img
+  - text: Artifact artifact "observed-series" v1 curated
+- button "Outcome Outcome published · revision 1":
+  - img
+  - img
+  - text: Outcome Outcome published · revision 1
+- text: "Revise the accepted Science result. Referenced session · observed-series v1 · region 10%,20%: Keep this region legible., observed-series v1 · Series · α No exposure, observed-series v1 · Series · β LLM exposure, observed-series v1 · Series · γ LLM + other technology, observed-series v1 · Annotation · Mean 0.14, observed-series v1 · Annotation · Mean 0.34, observed-series v1 · Annotation · Mean 0.55 {{clock}}"
+- button "Copy":
+  - img
+- paragraph: I will revise the selected chart elements.
+- paragraph: "Artifacts produced this turn: 1"
+- list:
+  - listitem "Missing revision v3"
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation" [disabled]:
+  - img
+- text: Available only on the last message of a completed turn
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- 'button "Python run {}"':
+  - img
+  - img
+  - text: "Python run {}"
+- 'button "Python run {}"':
+  - img
+  - img
+  - text: "Python run {}"
+- button "Artifact artifact \"observed-series\" v3 curated":
+  - img
+  - img
+  - text: Artifact artifact "observed-series" v3 curated
+- button "Outcome Outcome published · revision 2":
+  - img
+  - img
+  - text: Outcome Outcome published · revision 2
+- button "Python run Run stopped":
+  - img
+  - text: Python run Run stopped
+- button "Back to bottom":
+  - img
+- textbox "This model is unavailable — select one to continue" [disabled]
+- button "Commands" [disabled]:
+  - img
+- button "Add attachment" [disabled]:
+  - img
+- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
+- button "Select model, current fixture/fixture":
+  - text: fixture/fixture
+  - img
+- button "Send message" [disabled]
+- button "2 turns 2 steps":
+  - img
+  - text: 2 turns 2 steps
+- text: Latest kernel records python · epoch 1 · interrupted

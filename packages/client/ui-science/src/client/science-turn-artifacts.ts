@@ -2,7 +2,7 @@
 
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ScienceArtifactPresentation, ScienceArtifactPresentationItem } from '@deepseek-ai/dsh-tool-science/types'
 
 /** Latest artifact versions produced by one conversation Turn. */

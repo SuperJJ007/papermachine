@@ -4,6 +4,8 @@ English | [中文](science.zh.md)
 
 Science services own interpreter execution, project artifacts, and artifact-edit admission. The [Science Runtime](../../packages/science/science-runtime/README.md), [artifact store](../../packages/science/science-artifact-store/README.md), and [tool package](../../packages/science/tool-science/README.md) define their configuration and persistence responsibilities. The [Science application bundle](../../packages/bundle/science-app/README.md) controls activation; an unavailable method rejects execution explicitly.
 
+The Science client uses the native right Sidebar: a project-library guide, stable artifact-identity resources and exact-version navigation. Process is a sibling of Trajectory. Public conversation slots handle input targets, turn-end artifacts and tool views; upstream Files owns workspace browsing. See the [client package](../../packages/client/ui-science/README.md) and [decision](../../.agents/notes/implemented/architecture/2026-09-10-science-native-sidebar.md).
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

@@ -24,9 +24,6 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../util/byte-size"
-    },
-    {
       "path": "../locale"
     },
     {
@@ -70,6 +67,24 @@
     },
     {
       "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../resources"
+    },
+    {
+      "path": "../ui-sidebar-right"
+    },
+    {
+      "path": "../ui-chat"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
     }
   ]
 }

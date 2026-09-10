@@ -91,3 +91,5 @@ The JSON validator uses an explicit work stack and tracks only the active ancest
 None.
 
 </details>
+
+`jsonValueSummary` formats a bounded JSON value summary for callers that need compact display text.

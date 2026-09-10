@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { formatBytes } from '@deepseek-ai/dsh-byte-size'
+import { fileSizeText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconChevronDownOutline14, IconCodeOutline16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -130,7 +130,7 @@ function SuccessRow({ title, kernelEpoch, durationMs, sections, truncated, t }: 
   const body = truncated
     ? (
       <>
-        <FoldButton label={t('run.stdoutTruncatedFold', { size: formatBytes(bytes) })} open={open} onToggle={toggle} />
+        <FoldButton label={t('run.stdoutTruncatedFold', { size: fileSizeText(bytes) })} open={open} onToggle={toggle} />
         {open && <pre className={`${css.output} ${css.scrollable}`}>{sections.stdout}</pre>}
         <div className={css.truncatedNotice}>{t('run.truncatedNotice')}</div>
       </>
@@ -139,7 +139,7 @@ function SuccessRow({ title, kernelEpoch, durationMs, sections, truncated, t }: 
       ? null
       : (
         <>
-          <FoldButton label={t('run.stdoutFold', { lines: lineCount, size: formatBytes(bytes) })} open={open} onToggle={toggle} />
+          <FoldButton label={t('run.stdoutFold', { lines: lineCount, size: fileSizeText(bytes) })} open={open} onToggle={toggle} />
           {open && <pre className={`${css.output} ${css.scrollable}`}>{sections.stdout}</pre>}
         </>
       )
@@ -219,7 +219,7 @@ function FallbackRow({ block, toolName, state, inspect, copyLabel, copiedLabel, 
   const stateSummary = state === 'error' ? t('run.failed')
     : state === 'stopped' ? t('run.stopped') : ''
   return (
-    <ScienceToolCell state={state} icon={<IconCodeOutline16 size={14} />} title={title}
+    <ScienceToolCell inspectLabel={t('inspect')} state={state} icon={<IconCodeOutline16 size={14} />} title={title}
       summary={stateSummary || firstLine(code) || firstLine(output ?? '')}
       code={code === '' ? undefined : { text: code, language: toolName === 'run_r' ? 'r' : 'python' }}
       output={output} inspect={inspect} copyLabel={copyLabel} copiedLabel={copiedLabel} toolKind="science-run" />

@@ -1,0 +1,41 @@
+## Center column — collapsed Science transcript cells and Turn-end artifacts
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science artifact types" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - button "Artifact library"
+  - button "Open the sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- text: Summarize the experiment as csv, json, markdown, and a chart. {{clock}}
+- button "Copy":
+  - img
+- 'button "R run {}"':
+  - img
+  - img
+  - text: "R run {}"
+- paragraph: "Artifacts produced this turn: 4"
+- list:
+  - listitem "summary.csv v1"
+  - listitem "metrics.json v1"
+  - listitem "report.md v1"
+  - listitem "plot.png v1"
+- textbox "This model is unavailable — select one to continue" [disabled]
+- button "Commands" [disabled]:
+  - img
+- button "Add attachment" [disabled]:
+  - img
+- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
+- button "Select model, current fixture/fixture":
+  - text: fixture/fixture
+  - img
+- button "Send message" [disabled]
+- button "1 turns 1 steps":
+  - img
+  - text: 1 turns 1 steps
+- text: Latest kernel records r · epoch 1 · interrupted

@@ -26,7 +26,7 @@
 
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsSecretPresence } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsSecretView as SettingsSecretPresence } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /**
@@ -210,7 +210,7 @@ export class ScienceSettingsCardController {
     this.failed = false
     this.publish()
     for (const entry of dirty) {
-      await this.scope.setPath([PROFILE_ID, entry.field], entry.text)
+      await this.scope.mutate([{ op: 'set', path: [PROFILE_ID, entry.field], value: entry.text }])
     }
     for (const entry of dirty) {
       if (this.isSet(entry.field)) this.staged.delete(entry.field)
@@ -231,7 +231,7 @@ export class ScienceSettingsCardController {
     this.saving = true
     this.failed = false
     this.publish()
-    await this.scope.unsetPath([PROFILE_ID])
+    await this.scope.mutate([{ op: 'unset', path: [PROFILE_ID] }])
     const landed = !this.currentlyOverridden()
     this.saving = false
     this.failed = !landed

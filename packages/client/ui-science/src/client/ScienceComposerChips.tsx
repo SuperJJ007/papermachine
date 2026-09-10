@@ -1,9 +1,7 @@
 /** Structured Science targets attached to the main composer. */
 
-import { useSyncExternalStore } from 'react'
 import { IconCloseFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ScienceEditSelection } from '@deepseek-ai/dsh-tool-science/types'
 import { scienceArtifactDisplayTitle } from './artifact-display-title.ts'
 import type { ScienceDisplayTitleFact } from './artifact-display-title.ts'
@@ -12,7 +10,7 @@ import css from './ScienceComposerChips.module.css'
 
 /** Controller face injected for the addressed Session. */
 export interface ScienceComposerChipsProps {
-  readonly selections: SnapshotStore<readonly ScienceEditSelection[]>
+  readonly selections: readonly ScienceEditSelection[]
   /** Live artifact version facts used to resolve each chip's artifact-level display name (C1). */
   readonly artifacts: readonly ScienceDisplayTitleFact[]
   remove: (index: number) => void
@@ -26,7 +24,7 @@ function assertNever(value: never): never {
 }
 
 /** The target-specific portion of the chip label, dispatched by the target's closed `kind`. */
-function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS<'science'>): string {
+export function scienceTargetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS<'science'>): string {
   switch (target.kind) {
     case 'normalized-region':
       return t('edit.regionTarget', { x: Math.round(target.x * 100), y: Math.round(target.y * 100) })
@@ -43,19 +41,16 @@ function targetDescriptor(target: ScienceEditSelection['target'], t: TranslateNS
  * identity Host admission validates, not what the chip shows.
  */
 function targetLabel(selection: ScienceEditSelection, artifacts: readonly ScienceDisplayTitleFact[], t: TranslateNS<'science'>): string {
-  const target = targetDescriptor(selection.target, t)
+  const target = scienceTargetDescriptor(selection.target, t)
   const name = scienceArtifactDisplayTitle(artifacts, selection.artifactId) ?? selection.logicalName
-  return `${name} v${String(selection.version)} · ${target}${selection.comment === undefined ? '' : `: ${selection.comment}`}`
+  return t('display.editTarget', { name, version: selection.version, target,
+    comment: selection.comment === undefined ? '' : `: ${selection.comment}` })
 }
 
 /** Render removable targets; an empty selection contributes no chrome. */
 export function ScienceComposerChips({ selections, artifacts, remove, t }: ScienceComposerChipsProps) {
-  const targets = useSyncExternalStore(
-    notify => selections.subscribe(notify),
-    () => selections.getSnapshot(),
-    /* v8 ignore next -- this browser plugin never renders through React SSR */
-    () => selections.getSnapshot(),
-  )
+  const targets = selections
+
   if (targets.length === 0) return null
   return (
     <div className={css.chips} aria-label={t('edit.composerTargets')}>

@@ -9,6 +9,7 @@
  * @module @deepseek-ai/dsh-tool-science/element-summary
  */
 
+import { jsonValueSummary } from '@deepseek-ai/dsh-util-values'
 import type { ScienceChartElement } from '@deepseek-ai/dsh-science-session/types'
 
 /**
@@ -18,6 +19,5 @@ import type { ScienceChartElement } from '@deepseek-ai/dsh-science-session/types
  * @returns single-line text capped at 60 characters plus an ellipsis.
  */
 export function scienceElementCurrentSummary(current: ScienceChartElement['current']): string {
-  const text = typeof current === 'string' ? current : JSON.stringify(current)
-  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+  return jsonValueSummary(current, 60)
 }

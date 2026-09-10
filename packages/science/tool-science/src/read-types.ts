@@ -1,4 +1,5 @@
 /** Science project-library response metadata. */
+import type {} from '@deepseek-ai/dsh-typert-protocol'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
 /** Science project-library response metadata. */
@@ -56,4 +57,12 @@ export interface ScienceVersionSummary {
     turn?: number
   }
   health?: ScienceVersionHealthFlags
+}
+
+/** Shared read-error reasons carried by the generated Remote transport. */
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'science-artifact-error': { reason: string }
+    'attachment-error': { reason: string }
+  }
 }

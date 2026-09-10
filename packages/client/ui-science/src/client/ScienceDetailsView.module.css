@@ -30,7 +30,7 @@
 }
 
 /* Non-modal T3 reconciliation banner: reconstructed/missing-content counts and an expandable per-artifact list. */
-.reconcileBanner { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); }
+.reconcileBanner { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); }
 .reconcileBannerToggle { align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; text-decoration: underline; }
 .reconcileBannerList { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
 .reconcileBannerList li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
@@ -39,8 +39,8 @@
 
 .libraryHome { display: flex; flex-direction: column; gap: 12px; padding: 8px 2px; }
 .libraryToolbar { display: flex; align-items: center; gap: 6px; }
-.libraryToolbar input { min-width: 0; flex: 1; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); }
-.libraryToolbar select, .libraryToolbar button { padding: 5px 7px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); }
+.libraryToolbar input { min-width: 0; flex: 1; padding: 6px 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-primary); }
+.libraryToolbar select, .libraryToolbar button { padding: 5px 7px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); }
 .libraryToolbar span { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .libraryList { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .libraryCard { width: 100%; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
@@ -49,7 +49,7 @@
 .chartList .libraryCard {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
@@ -68,11 +68,11 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
 }
-.workspaceList { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--dsw-alias-border-l2); }
-.workspaceList button { display: flex; width: 100%; justify-content: space-between; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
+.workspaceList { margin: 0; padding: 0; list-style: none; border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.workspaceList button { display: flex; width: 100%; justify-content: space-between; padding: 8px 4px; border: 0; border-bottom: 0.5px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
 .fileHead { display: flex; align-items: center; gap: 8px; }
 .fileHead button { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 
@@ -102,7 +102,7 @@
   flex: 1;
   min-width: 0;
   padding: 4px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -111,7 +111,7 @@
 
 .saveAsForm button {
   padding: 4px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -243,17 +243,17 @@
 }
 
 /* Review position: private notes stay with the viewer and never enter provenance. */
-.notes { display: flex; min-width: 0; flex-direction: column; gap: 7px; margin-top: 12px; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.notes { display: flex; min-width: 0; flex-direction: column; gap: 7px; margin-top: 12px; padding: 12px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
 .notes h3, .notes p { margin: 0; }
 .notes h3 { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
 .notes ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .notes li { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 7px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
 .notes li span { overflow-wrap: anywhere; }
 .notes small { color: var(--dsw-alias-label-caption); white-space: nowrap; }
-.notes button { padding: 4px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.notes button { padding: 4px 8px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .notes button:disabled { cursor: default; opacity: .45; }
 .notes form { display: flex; align-items: stretch; gap: 6px; }
-.notes textarea { min-width: 0; min-height: 52px; flex: 1; padding: 7px 8px; resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.notes textarea { min-width: 0; min-height: 52px; flex: 1; padding: 7px 8px; resize: vertical; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
 
 /* Plain-text and unparseable-JSON content fallback. */
 
@@ -281,7 +281,7 @@
   gap: 8px;
   margin-top: 12px;
   padding-top: 14px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   container-type: inline-size;
   /* Elevated surface: this panel's own .elementReference chips (and the
      shared .notes textarea) paint the l2 layer, and the panel's content
@@ -350,14 +350,14 @@
 .specComment {
   min-width: 0;
   padding: 4px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
 }
 
 .specAdd {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -367,7 +367,7 @@
 .specTarget,
 .regionButton {
   padding: 4px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -467,7 +467,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
 }
 
@@ -490,7 +490,7 @@
 .styleControl input {
   box-sizing: border-box;
   min-height: 30px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -509,7 +509,7 @@
   min-height: 72px;
   resize: vertical;
   padding: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -564,7 +564,7 @@
 .librarySectionHead span {
   min-width: 16px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: 999px; corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-tertiary);
   text-align: center;
@@ -603,7 +603,7 @@
   width: 100%;
   min-width: 0;
   padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-base);
   text-align: left;
@@ -657,7 +657,7 @@
 .badge {
   align-self: flex-start;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 999px; corner-shape: round;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
@@ -752,7 +752,7 @@
   min-width: 0;
   height: 24px;
   padding: 1px 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 5px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -793,7 +793,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -827,7 +827,7 @@
   width: 12px;
   height: 12px;
   flex: none;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 3px;
   background: transparent;
 }
@@ -839,8 +839,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px; corner-shape: round;
   padding: 0;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);

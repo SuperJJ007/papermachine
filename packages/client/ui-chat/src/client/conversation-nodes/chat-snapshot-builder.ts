@@ -414,9 +414,10 @@ export function orderedVisibleChatNodes(
 
 function referenceMessageSeq(node: ChatConversationViewNode): number | undefined {
   const candidate = node as ChatNode
-  return candidate.kind === 'user' || candidate.kind === 'steering'
-    ? candidate.data.seq
-    : undefined
+  if (candidate.kind !== 'user' && candidate.kind !== 'steering') return undefined
+  const source = candidate.data.source
+  return typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'user'
+    ? candidate.data.seq : undefined
 }
 
 function followingRecall(node: ChatConversationViewNode): {

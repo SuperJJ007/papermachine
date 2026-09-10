@@ -21,6 +21,7 @@ export function createConversationStore(): EngineStoreHandle<ConversationStoreSt
   return defineStore({
     init: (): ConversationStoreState => ({ draft: '', view: null, viewRequest: null }),
     persist: CONVERSATION_STORE_KEY,
+    transient: ['viewRequest'],
     actions: {
       setDraft: (d, text: string) => { d.draft = text },
       setView: (d, view: string) => { d.view = view },

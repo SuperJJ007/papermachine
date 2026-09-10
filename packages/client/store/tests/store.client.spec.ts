@@ -293,3 +293,38 @@ describe('shallowEqual', () => {
     expect(shallowEqual([1, 2], [2, 1])).toBe(false)
   })
 })
+
+
+describe('partial persistence across reconstruction', () => {
+  it('keeps saved preferences, initializes added fields and resets transient fields per session', () => {
+    const rows = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => rows.get(key) ?? null,
+      setItem: (key: string, value: string) => { rows.set(key, value) },
+      removeItem: (key: string) => { rows.delete(key) },
+    })
+    rows.set('preferences.a', JSON.stringify({ width: 600, dialog: true }))
+    const handle = defineStore({
+      init: () => ({ width: 400, dialog: false, added: 'ready' }),
+      persist: 'preferences',
+      transient: ['dialog'],
+      actions: { resize: (draft, width: number) => { draft.width = width; draft.dialog = true } },
+    })
+    const first = handle.create('a')
+    expect(first.getSnapshot()).toEqual({ width: 600, dialog: false, added: 'ready' })
+    first.actions.resize(720)
+    expect(JSON.parse(rows.get('preferences.a')!)).toEqual({ width: 720, added: 'ready' })
+    expect(handle.create('a').getSnapshot()).toEqual({ width: 720, dialog: false, added: 'ready' })
+    expect(handle.create('b').getSnapshot().width).toBe(400)
+    first.clearPersisted()
+    expect(rows.has('preferences.a')).toBe(false)
+  })
+
+  it('rejects a non-object persisted value for an object store and retains its initial state', () => {
+    vi.stubGlobal('localStorage', { getItem: () => 'null', setItem: vi.fn() })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = createSnapshotStore({ width: 400 }, { persist: { name: 'bad' } })
+    expect(store.getSnapshot()).toEqual({ width: 400 })
+    expect(error).toHaveBeenCalledOnce()
+  })
+})

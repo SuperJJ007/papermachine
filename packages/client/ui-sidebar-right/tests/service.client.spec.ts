@@ -490,6 +490,16 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     expect(titles()).toContain('a.txt')
   })
 
+  it('reconciles a restored layout before any new write or mounted-seat effect', () => {
+    const { controller, adopt, instance, layout } = harness()
+    instance.actions.open(SESSION)
+    const restored = layout()
+    const id = Object.keys(restored.tabs)[0]
+    if (id === undefined) throw new Error('restored guide missing')
+    adopt(SESSION, instance)
+    expect(controller.tabDomain.occurrence(SESSION, { id: id as TabId }).navigation.getSnapshot().address).toBe('sidebar://guide')
+  })
+
   it('adoption syncs the Tab domain on each commit of that store: the seeded guide is pinned, a closed tab aborted', () => {
     const { controller, adopt, instance, pin } = harness()
     const first = adopt(SESSION, instance)

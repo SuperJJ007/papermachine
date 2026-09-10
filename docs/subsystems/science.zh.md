@@ -4,6 +4,8 @@
 
 Science 服务负责解释器执行、项目产物和产物编辑准入。[Science Runtime](../../packages/science/science-runtime/README.zh.md)、[产物存储](../../packages/science/science-artifact-store/README.zh.md)和[工具包](../../packages/science/tool-science/README.zh.md)分别定义配置与持久化职责。[Science 应用 bundle](../../packages/bundle/science-app/README.zh.md)控制启用；不可用的方法会明确拒绝执行。
 
+Science 客户端使用原生右侧栏：项目产物库 guide、稳定的产物身份资源及精确版本导航。Process 与 Trajectory 平级。公开对话槽位处理输入目标、轮末产物及工具视图；上游 Files 负责工作区浏览。参见[客户端包](../../packages/client/ui-science/README.zh.md)与[决策](../../.agents/notes/implemented/architecture/2026-09-10-science-native-sidebar.zh.md)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

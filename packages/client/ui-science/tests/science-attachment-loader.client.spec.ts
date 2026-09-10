@@ -1,6 +1,6 @@
 /** Session-scoped Science project-store byte loaders. */
 import { describe, expect, it, vi } from 'vitest'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceArtifactContentRef } from '../src/client/science-attachment-loader.ts'
 import { createScienceImageLoader, createScienceTextLoader } from '../src/client/science-attachment-loader.ts'
@@ -11,12 +11,8 @@ function content(over: Partial<ScienceArtifactContentRef> = {}): ScienceArtifact
   return { versionId: 'version-1', mediaType: 'image/png', byteCount: 4, ...over }
 }
 
-function sessionsOf(readScienceArtifact: unknown): ISessions {
-  return {
-    binding: (id: string) => id === SESSION
-      ? { sessionId: SESSION, session: { readScienceArtifact }, ctx: {} }
-      : undefined,
-  } as unknown as ISessions
+function remoteOf(scienceArtifact: unknown): Context['remote'] {
+  return { science: { scienceArtifact } } as unknown as Context['remote']
 }
 
 describe('createScienceImageLoader', () => {
@@ -24,29 +20,27 @@ describe('createScienceImageLoader', () => {
     const data = Uint8Array.from([1, 2, 3, 4])
     const readScienceArtifact = vi.fn().mockResolvedValue({
       ok: true,
-      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data },
+      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data: Buffer.from(data).toString('base64') },
     })
-    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)
     const url = await load(content())
     expect(url).toBe(`data:image/png;base64,${Buffer.from(data).toString('base64')}`)
-    expect(readScienceArtifact).toHaveBeenCalledWith('version-1')
+    expect(readScienceArtifact).toHaveBeenCalledWith(SESSION, 'version-1')
   })
 
-  it('encodes bytes spanning multiple base64 chunks', async () => {
+  it('preserves a large base64 payload', async () => {
     const data = new Uint8Array(0x8000 + 10).fill(7)
     const readScienceArtifact = vi.fn().mockResolvedValue({
       ok: true,
-      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data },
+      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data: Buffer.from(data).toString('base64') },
     })
-    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)
     await expect(load(content())).resolves.toBe(`data:image/png;base64,${Buffer.from(data).toString('base64')}`)
   })
 
-  it('rejects an unknown binding and a declined read', async () => {
-    const unknown = createScienceImageLoader(sessionsOf(vi.fn()), 'unknown-session' as SessionId)
-    await expect(unknown(content())).rejects.toThrow(/resolved no binding/)
+  it('surfaces an authorization refusal from the host', async () => {
     const readScienceArtifact = vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } })
-    await expect(createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)(content()))
+    await expect(createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)(content()))
       .rejects.toThrow('not-found: gone')
   })
 
@@ -54,9 +48,9 @@ describe('createScienceImageLoader', () => {
     const data = Uint8Array.from([9, 9, 9])
     const readScienceArtifact = vi.fn().mockResolvedValue({
       ok: true,
-      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data },
+      value: { versionId: 'version-1', mediaType: 'image/png', byteCount: data.length, data: Buffer.from(data).toString('base64') },
     })
-    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)
     const [first, second] = await Promise.all([load(content()), load(content())])
     expect(second).toBe(first)
     expect(readScienceArtifact).toHaveBeenCalledTimes(1)
@@ -67,20 +61,20 @@ describe('createScienceImageLoader', () => {
       .mockResolvedValueOnce({ ok: false, error: { code: 'not-found', message: 'gone' } })
       .mockResolvedValueOnce({
         ok: true,
-        value: { versionId: 'version-1', mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(1) },
+        value: { versionId: 'version-1', mediaType: 'image/png', byteCount: 1, data: 'AQ==' },
       })
-    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)
     await expect(load(content())).rejects.toThrow('not-found: gone')
     await expect(load(content())).resolves.toBe(`data:image/png;base64,${Buffer.from([1]).toString('base64')}`)
     expect(readScienceArtifact).toHaveBeenCalledTimes(2)
   })
 
   it('bounds the memoized version count, evicting the oldest entry first', async () => {
-    const readScienceArtifact = vi.fn().mockImplementation((versionId: string) => Promise.resolve({
+    const readScienceArtifact = vi.fn().mockImplementation((_sessionId: SessionId, versionId: string) => Promise.resolve({
       ok: true,
-      value: { versionId, mediaType: 'image/png', byteCount: 1, data: Uint8Array.of(1) },
+      value: { versionId, mediaType: 'image/png', byteCount: 1, data: 'AQ==' },
     }))
-    const load = createScienceImageLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceImageLoader(remoteOf(readScienceArtifact), SESSION)
     const versionIds = Array.from({ length: 65 }, (_, index) => `bounded-${String(index)}`)
     for (const versionId of versionIds) await load(content({ versionId }))
     expect(readScienceArtifact).toHaveBeenCalledTimes(65)
@@ -100,24 +94,22 @@ describe('createScienceTextLoader', () => {
     const data = new TextEncoder().encode('a,b\n1,2\n')
     const readScienceArtifact = vi.fn().mockResolvedValue({
       ok: true,
-      value: { versionId: 'version-2', mediaType: 'text/csv', byteCount: data.length, data },
+      value: { versionId: 'version-2', mediaType: 'text/csv', byteCount: data.length, data: Buffer.from(data).toString('base64') },
     })
-    const load = createScienceTextLoader(sessionsOf(readScienceArtifact), SESSION)
+    const load = createScienceTextLoader(remoteOf(readScienceArtifact), SESSION)
     await expect(load(content({ versionId: 'version-2', mediaType: 'text/csv' }))).resolves.toBe('a,b\n1,2\n')
-    expect(readScienceArtifact).toHaveBeenCalledWith('version-2')
+    expect(readScienceArtifact).toHaveBeenCalledWith(SESSION, 'version-2')
   })
 
-  it('rejects an unknown binding, invalid UTF-8, and a declined read', async () => {
-    const unknown = createScienceTextLoader(sessionsOf(vi.fn()), 'unknown-session' as SessionId)
-    await expect(unknown(content({ mediaType: 'text/plain' }))).rejects.toThrow(/resolved no binding/)
+  it('rejects invalid UTF-8 and a declined read', async () => {
     const invalid = vi.fn().mockResolvedValue({
       ok: true,
-      value: { versionId: 'version-1', mediaType: 'text/plain', byteCount: 1, data: Uint8Array.of(0xff) },
+      value: { versionId: 'version-1', mediaType: 'text/plain', byteCount: 1, data: '/w==' },
     })
-    await expect(createScienceTextLoader(sessionsOf(invalid), SESSION)(content({ mediaType: 'text/plain' })))
+    await expect(createScienceTextLoader(remoteOf(invalid), SESSION)(content({ mediaType: 'text/plain' })))
       .rejects.toThrow()
     const declined = vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } })
-    await expect(createScienceTextLoader(sessionsOf(declined), SESSION)(content({ mediaType: 'text/plain' })))
+    await expect(createScienceTextLoader(remoteOf(declined), SESSION)(content({ mediaType: 'text/plain' })))
       .rejects.toThrow('not-found: gone')
   })
 })

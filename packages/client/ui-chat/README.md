@@ -76,3 +76,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
+
+Source-owned user rows retain their own reference labels. The adjacent session-recall projector derives labels only for ordinary user sources.

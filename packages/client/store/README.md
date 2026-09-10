@@ -45,3 +45,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. The package exports a library engine and creates no process-global state; each store instance is covered by its owning tests.
+
+Persistence merges saved object fields over `init()` so newly introduced fields keep defaults. Declared `transient` keys are omitted from serialization and restored from `init()`, even when older payloads contain them.

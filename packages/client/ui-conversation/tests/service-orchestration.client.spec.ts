@@ -860,3 +860,61 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
     await b.runtime.dispose()
   })
 })
+
+describe('extension submission and view routing', () => {
+  it('passes the exact session and cancellation signal to handlers, and stops at the first claim', async () => {
+    const b = await bench()
+    const session = b.runtime.sessions.binding('s1')!.session
+    const signal = new AbortController().signal
+    const decline = vi.fn(() => undefined)
+    const claim = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
+    const later = vi.fn(() => undefined)
+    b.root.registerSubmissionHandler(decline)
+    const dispose = b.root.registerSubmissionHandler(claim)
+    b.root.registerSubmissionHandler(later)
+    await expect(b.root.sendSession(session, 'edit', [], 'steer', signal)).resolves.toEqual({ kind: 'success' })
+    expect(claim).toHaveBeenCalledWith({ sessionId: session.sessionId, text: 'edit', attachmentIds: [], mode: 'steer', signal })
+    expect(decline).toHaveBeenCalledTimes(1)
+    expect(later).not.toHaveBeenCalled()
+    expect(b.prompt).not.toHaveBeenCalled()
+    dispose()
+    await expect(b.root.sendSession(session, 'ordinary', [], 'queue')).resolves.toEqual({ kind: 'success' })
+    expect(later).toHaveBeenCalledTimes(1)
+    expect(b.prompt).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
+  it('preserves a claimed failure and never falls through to a second model submission', async () => {
+    const b = await bench()
+    const session = b.runtime.sessions.binding('s1')!.session
+    const handler = vi.fn()
+      .mockResolvedValueOnce({ kind: 'error', text: 'edit rejected' })
+      .mockRejectedValueOnce(new Error('transport offline'))
+    b.root.registerSubmissionHandler(handler)
+    await expect(b.root.sendSession(session, 'edit', [], 'queue')).resolves.toEqual({ kind: 'error', text: 'edit rejected' })
+    await expect(b.root.sendSession(session, 'retry', [], 'queue')).rejects.toThrow('transport offline')
+    expect(b.prompt).not.toHaveBeenCalled()
+    await b.runtime.dispose()
+  })
+
+  it('addresses view changes by session and does not let an old disposer remove a replacement binding', async () => {
+    const b = await bench()
+    const first = vi.fn()
+    const replacement = vi.fn()
+    const other = vi.fn()
+    const sid = 's1' as SessionId
+    const second = 's2' as SessionId
+    const disposeOld = b.root.bindViewOpener(sid, first)
+    const disposeNew = b.root.bindViewOpener(sid, replacement)
+    b.root.bindViewOpener(second, other)
+    disposeOld()
+    b.root.openView(sid, 'trajectory', 'call-1')
+    b.root.openView(second, 'chat', 'message-2')
+    expect(first).not.toHaveBeenCalled()
+    expect(replacement).toHaveBeenCalledWith('trajectory', 'call-1')
+    expect(other).toHaveBeenCalledWith('chat', 'message-2')
+    disposeNew()
+    expect(() => { b.root.openView(sid, 'chat', 'message-1') }).toThrow('not mounted')
+    await b.runtime.dispose()
+  })
+})

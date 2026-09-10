@@ -24,7 +24,7 @@ export interface ScienceTraceInjected {
 }
 
 /** Full props for the Science process view. */
-export type ScienceTraceViewProps = PropsRuntime<'trajectory.view'> & PropsLocale<'science'>
+export type ScienceTraceViewProps = PropsRuntime<'conversation.view'> & PropsLocale<'science'>
   & PropsStore<ScienceSelectionStore> & InjectFace<ScienceTraceInjected>
 
 /* v8 ignore next 3 -- exhaustiveness backstop for closed typed unions. */
@@ -119,32 +119,26 @@ function KernelMarker({ marker, profile, t }: {
   </div>
 }
 
-function ArtifactChip({ artifact, open }: {
+function ArtifactChip({ artifact, open, t }: {
   readonly artifact: Pick<ScienceTraceArtifactDelta, 'artifactId' | 'logicalName' | 'version'>
   readonly open: ScienceTraceInjected['openArtifact']
+  readonly t: TranslateNS<'science'>
 }) {
-  return <button type="button" data-anchor={`artifact:${artifact.artifactId}@${String(artifact.version)}`} title={`${artifact.logicalName} v${String(artifact.version)}`}
+  return <button type="button" data-anchor={`artifact:${artifact.artifactId}@${String(artifact.version)}`} title={t('display.artifactVersion', { name: artifact.logicalName, version: artifact.version })}
     onClick={() => { open({ artifactId: artifact.artifactId, version: artifact.version }) }}>
-    <IconFolderOpenOutline16 /> <code>{artifact.logicalName} v{artifact.version}</code>
+    <IconFolderOpenOutline16 /> <code>{t('display.artifactVersion', { name: artifact.logicalName, version: artifact.version })}</code>
   </button>
 }
 
-function toggleSet<T>(previous: ReadonlySet<T>, value: T): ReadonlySet<T> {
-  const next = new Set(previous)
-  if (next.has(value)) next.delete(value)
-  else next.add(value)
-  return next
-}
-
-/** Render process groups; turn and call expansion stay local to this mounted view. */
+/** Render process groups; turn and call disclosures belong to the session. */
 export function ScienceTraceView({
-  useSession, useProjection, actions, openArtifact, loadVersions, t,
+  useChat, useProjection, useStore, actions, openArtifact, loadVersions, t,
 }: ScienceTraceViewProps) {
-  const nodes = useSession(snapshot => snapshot.nodes)
-  const turnTimes = useSession(snapshot => snapshot.turnTimings)
+  const nodes = useChat(snapshot => snapshot.legacy.nodes)
+  const turnTimes = useChat(snapshot => snapshot.legacy.turnTimings)
   const science = useProjection('science')
-  const [expandedTurns, setExpandedTurns] = useState<ReadonlySet<number>>(() => new Set())
-  const [expandedSteps, setExpandedSteps] = useState<ReadonlySet<string>>(() => new Set())
+  const expandedTurns = useStore(state => state.traceExpandedTurns)
+  const expandedSteps = useStore(state => state.traceExpandedSteps)
   const [highlight, setHighlight] = useState<{ turn: number; row: number } | null>(null)
   const highlightedRow = useRef<HTMLLIElement>(null)
   const id = useId()
@@ -163,7 +157,7 @@ export function ScienceTraceView({
     openArtifact(selection)
   }
   const toggleTurn = (turn: number): void => {
-    setExpandedTurns(previous => toggleSet(previous, turn))
+    actions.toggleTraceTurn(turn)
   }
   return (
     <section className={css.root} data-conversation-composer-overlay="" aria-label={t('trace.label')}>
@@ -184,7 +178,7 @@ export function ScienceTraceView({
           const request = model.dialogues.find(item => item.turn === turn)
           const group = model.groups.find(item => item.turn === turn)
           const humanEdits = model.humanEdits.filter(item => item.turn === turn)
-          const expanded = expandedTurns.has(turn)
+          const expanded = expandedTurns.includes(turn)
           const pips = group === undefined ? [] : scienceTracePips(group)
           const latest = new Map<ScienceArtifactId, ScienceTraceArtifactDelta>()
           for (const artifact of group?.artifacts ?? []) {
@@ -219,7 +213,7 @@ export function ScienceTraceView({
                         <button key={index} type="button" className={css.pip} data-kind={pip.kind} data-failed={pip.failed}
                           title={scienceTraceStepTitle(pip.title, t)} aria-label={scienceTraceStepTitle(pip.title, t)}
                           aria-controls={`${id}-${String(turn)}-steps`} onClick={() => {
-                            setExpandedTurns(previous => new Set([...previous, turn]))
+                            actions.expandTraceTurn(turn)
                             setHighlight({ turn, row: pip.rowIndex })
                           }} />
                       ))}
@@ -238,7 +232,7 @@ export function ScienceTraceView({
                         {group.steps.map((step, row) => {
                           const highlighted = highlight?.turn === turn && highlight.row === row
                           const status = scienceTraceStepStatus(step, t)
-                          const detailsOpen = expandedSteps.has(step.anchor)
+                          const detailsOpen = expandedSteps.includes(step.anchor)
                           const preview = scienceTraceCodePreview(step.members[0])
                           return <li key={step.anchor} className={css.step} data-highlight={highlighted}
                             ref={highlighted ? highlightedRow : undefined} data-anchor={step.anchor}>
@@ -248,7 +242,7 @@ export function ScienceTraceView({
                             <div className={css.stepContent}>
                               <button className={css.stepTitle} type="button" aria-expanded={detailsOpen}
                                 aria-controls={`${id}-${step.anchor}-details`}
-                                onClick={() => { setExpandedSteps(previous => toggleSet(previous, step.anchor)) }}>
+                                onClick={() => { actions.toggleTraceStep(step.anchor) }}>
                                 <span aria-hidden="true">{detailsOpen ? '▾' : '▸'}</span> {scienceTraceStepTitle(step.title, t)}
                               </button>
                               {preview !== undefined && preview !== '' && <p className={css.preview} title={preview}>
@@ -258,7 +252,7 @@ export function ScienceTraceView({
                                 {step.members.map(member => scienceTraceStepTitle(member.title, t)).join(' · ')}
                               </p>}
                               <div className={css.chips}>{step.artifacts.map((artifact, index) => (
-                                <ArtifactChip key={index} artifact={artifact} open={open} />
+                                <ArtifactChip key={index} artifact={artifact} open={open} t={t} />
                               ))}</div>
                             </div>
                             <span className={css.result} data-failed={step.failed}>{status}</span>
@@ -270,7 +264,7 @@ export function ScienceTraceView({
                       </ol>
                     )}
                     <div className={css.chips}>{[...latest.values()].map(artifact => (
-                      <ArtifactChip key={artifact.artifactId} artifact={artifact} open={open} />
+                      <ArtifactChip key={artifact.artifactId} artifact={artifact} open={open} t={t} />
                     ))}{group.artifacts.length === 0 && <span>{t('trace.noArtifacts')}</span>}</div>
                   </article>
                 )}

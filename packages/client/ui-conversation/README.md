@@ -125,3 +125,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Conversation Definitions, target builders, and Views are already validated by their owning registries and the Slot ledger.
+
+Submission handlers can claim composer input before ordinary prompt transport. Registration is disposable; an unclaimed input follows the standard path. `openView` routes a session-specific view request, including focus, through the current registered view controller. Event definitions can exclusively own one user source kind per target; duplicate ownership is rejected.

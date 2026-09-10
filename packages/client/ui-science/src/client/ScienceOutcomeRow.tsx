@@ -8,7 +8,7 @@
 // inventing a replacement. A running, failed, stopped, or unrecognized/stale
 // presentation falls back to a plain row.
 
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/src/MessageImage.tsx'
 import { IconGoalOutline16, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -88,7 +88,7 @@ function EvidenceItem({ item, science, summaries, loadScienceImage, t }: {
     return (
       <li className={css.evidenceItem}>
         <span>{label}</span>
-        <ArtifactFileTile mediaType={chart.mediaType} />
+        <ArtifactFileTile t={t} mediaType={chart.mediaType} />
       </li>
     )
   }
@@ -143,19 +143,19 @@ export function ScienceOutcomeRow({ block, loadScienceImage, loadVersions, usePr
         ? t('outcome.failed')
         : state === 'stopped' ? t('outcome.stopped') : null
     const text = scienceToolResultText(block)
-    return <ScienceToolCell state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
+    return <ScienceToolCell inspectLabel={t('inspect')} state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
       summary={status ?? text?.split(/\r?\n/u)[0] ?? ''} output={text} inspect={inspect}
       copyLabel={t('cell.copy')} copiedLabel={t('cell.copied')} toolKind="science-outcome" />
   }
 
   return (
-    <ScienceToolCell state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
+    <ScienceToolCell inspectLabel={t('inspect')} state={state} icon={<IconGoalOutline16 size={14} />} title={t('outcome.title')}
       summary={t('outcome.published', { revision: presentation.revision })} inspect={inspect}
       copyLabel={t('cell.copy')} copiedLabel={t('cell.copied')} toolKind="science-outcome">
       <div className={css.summary}>
         <div className={css.header}><span className={css.title}>{presentation.title}</span>
           <span className={css.badge}>{t('outcome.revision', { revision: presentation.revision })}</span></div>
-        <MarkdownText text={presentation.summaryMarkdown} />
+        <MarkdownText text={presentation.summaryMarkdown} labels={{ code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') }} />
       </div>
       {presentation.evidence.length > 0 && (
         <div className={css.evidenceSection}>

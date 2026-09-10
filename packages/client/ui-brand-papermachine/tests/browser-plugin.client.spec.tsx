@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { en, zh } from '../src/client/locales.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
@@ -20,6 +22,7 @@ const HOLES = [
 
 async function bench(declare = true) {
   const ctx = new Context()
+  ctx.provide('locale', new LocaleRuntime(ctx))
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
   const declareHoles = () => slots.register({
@@ -31,8 +34,8 @@ async function bench(declare = true) {
 }
 
 describe('PaperMachine browser-brand plugin', () => {
-  it('declares only the slot service it uses', () => {
-    expect(inject).toEqual(['slots'])
+  it('declares the slot and locale services it uses', () => {
+    expect(inject).toEqual(['slots', 'locale'])
   })
 
   it('fills declarations before or after apply and removes every occupant on teardown', async () => {
@@ -41,6 +44,12 @@ describe('PaperMachine browser-brand plugin', () => {
     const fiber = before.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(1)
+    expect(before.slots.entries('sidebar.brand.name')[0]?.locale).toBe('brand.papermachine')
+    const t = before.ctx.locale.bind('brand.papermachine')
+    for (const language of ['en', 'zh']) {
+      before.ctx.locale.setLocale(language)
+      expect(t('wordmark.paper') + t('wordmark.machine')).toBe('PaperMachine')
+    }
 
     before.disposeHoles?.()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
@@ -50,6 +59,7 @@ describe('PaperMachine browser-brand plugin', () => {
 
     await fiber.dispose()
     for (const hole of HOLES) expect(before.slots.entries(hole)).toHaveLength(0)
+    expect(t('wordmark.paper')).toBe('wordmark.paper')
 
     const after = await bench(false)
     await after.ctx.plugin({ inject: [...inject], apply }).await()
@@ -69,7 +79,9 @@ describe('PaperMachine browser-brand plugin', () => {
   })
 
   it('renders the wordmark as one word split across two weight classes, independent of both requested mark sizes', () => {
-    const name = render(<PaperMachineBrandName />)
+    const locale = new LocaleRuntime(new Context())
+    locale.register('brand.papermachine', { en, zh })
+    const name = render(<PaperMachineBrandName t={locale.bind('brand.papermachine')} />)
     expect(name.container.textContent).toBe('PaperMachine')
     const [paper, machine] = name.container.querySelectorAll('span > span')
     expect(paper?.textContent).toBe('Paper')

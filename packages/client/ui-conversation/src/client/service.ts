@@ -36,7 +36,23 @@ import type { InputSubmitMode } from './contract/composer-submission.ts'
  * verbs and the input registry other plugins may reach — and exactly what a
  * test fake must supply.
  */
+/** One ordinary composer submission offered to feature handlers before normal prompt admission. */
+export interface ComposerSubmission {
+  readonly sessionId: SessionId
+  readonly text: string
+  readonly attachmentIds: readonly DraftAttachmentId[]
+  readonly mode: InputSubmitMode
+  readonly signal: AbortSignal | undefined
+}
+/** Undefined declines; a returned promise owns the submission outcome. */
+export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
+
 export interface IConversation {
+  /** @param handler - Feature admission handler. @returns Registration disposer. */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
+  /** @param sessionId - Addressed session. @param view - Public view id. @param focus - Target-owned focus key. */
+  openView(sessionId: SessionId, view: string, focus: string): void
+
   /** The per-session input machine registry (SessionInputResolver face). */
   readonly input: SessionInputResolver
   /**
@@ -150,6 +166,26 @@ export class UnsupportedImageMediaTypeError extends Error {
 
 /** Scope-addressed conversation service (root singleton, provided as `conversation`). */
 export class ConversationController extends Service implements IConversation {
+  private readonly submissionHandlers = new Set<ComposerSubmissionHandler>()
+  private readonly viewOpeners = new Map<SessionId, (view: string, focus: string) => void>()
+
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void {
+    this.submissionHandlers.add(handler)
+    return () => { this.submissionHandlers.delete(handler) }
+  }
+
+  openView(sessionId: SessionId, view: string, focus: string): void {
+    const open = this.viewOpeners.get(sessionId)
+    if (open === undefined) throw new Error(`Conversation view is not mounted: ${sessionId}`)
+    open(view, focus)
+  }
+
+  /** @param sessionId - Store owner. @param open - Shell view writer. @returns Registration disposer. */
+  bindViewOpener(sessionId: SessionId, open: (view: string, focus: string) => void): () => void {
+    this.viewOpeners.set(sessionId, open)
+    return () => { if (this.viewOpeners.get(sessionId) === open) this.viewOpeners.delete(sessionId) }
+  }
+
   /** The per-session input machine registry (SessionInputResolver face). */
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
@@ -232,6 +268,10 @@ export class ConversationController extends Service implements IConversation {
     mode: InputSubmitMode,
     signal?: AbortSignal,
   ): Promise<SubmitOutcome> {
+    for (const handler of this.submissionHandlers) {
+      const outcome = handler({ sessionId: session.sessionId, text, attachmentIds, mode, signal })
+      if (outcome !== undefined) return outcome
+    }
     const attachments = this.resolveDraftAttachments(attachmentIds)
     if (attachments.length !== attachmentIds.length) {
       throw new Error('conversation.sendSession: one or more draft attachments are no longer available')

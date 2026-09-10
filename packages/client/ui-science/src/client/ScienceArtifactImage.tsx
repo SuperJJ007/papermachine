@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment/client'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/src/MessageImage.tsx'
 import type { ScienceArtifactContentRef, ScienceImageLoader } from './science-attachment-loader.ts'
 import css from './ScienceDetailsView.module.css'
 

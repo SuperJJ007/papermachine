@@ -68,3 +68,5 @@ export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, Markdown
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'
+
+export { ImageLightbox, type ImageLightboxLabels } from './ImageLightbox.tsx'

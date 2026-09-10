@@ -1,0 +1,24 @@
+- region "Science process view":
+  - text: "Turns 2 · Steps 9 · Runs 3 · Artifacts 1 · {{duration}} Python kernel #1 started · environment science R kernel #2 started · environment science Python kernel #1 exited (idle) · variables cleared R kernel #2 exited (idle) · variables cleared Turn 1"
+  - article:
+    - paragraph: Request unavailable for this turn
+    - group "Step strip":
+      - button "Read session state"
+      - button "Python run"
+      - button "read"
+      - button "read"
+      - button "read"
+      - button "Python run"
+      - button "R run"
+      - button "annotate_artifact"
+    - button "Expand steps · Steps 8 · Runs 3 · 1 failed · {{duration}}": Steps 8 · Runs 3 · 1 failed · {{duration}}
+    - button "scatter_plot.png v1":
+      - img
+      - code: scatter_plot.png v1
+  - text: Turn 2
+  - article:
+    - paragraph: Inspect the latest state.
+    - group "Step strip":
+      - button "Read session state"
+    - button "Expand steps · Steps 1 · Runs 0 · 7.0 s": Steps 1 · Runs 0 · 7.0 s
+    - text: No artifacts

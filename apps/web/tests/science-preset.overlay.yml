@@ -1,0 +1,3 @@
+# The Stop fixture supplies its own real-subprocess Science runtime.
+- id: science-runtime
+  disabled: true

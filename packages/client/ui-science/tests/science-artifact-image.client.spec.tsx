@@ -3,7 +3,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/src/MessageImage.tsx'
 import { ScienceArtifactImage } from '../src/client/ScienceArtifactImage.tsx'
 
 const content = { versionId: 'version-1', mediaType: 'image/png', byteCount: 3 } as const

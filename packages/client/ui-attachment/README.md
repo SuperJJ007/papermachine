@@ -103,3 +103,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. The package contributes only effect-owned slot entries; the slot registry owns their lifecycle and validates their declarations.
+
+The public `ImageLightbox` export forwards the shared implementation in `ui-primitives`.

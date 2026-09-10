@@ -3,11 +3,12 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
 import { en } from '../src/client/locales.ts'
 import {
   formatScienceTraceDuration, scienceTraceStepTitle, scienceTraceStepStatus, ScienceTraceView, type ScienceTraceViewProps,
@@ -138,7 +139,7 @@ function step(seq: number, number: number, tools: readonly Tool[], turn = 1): Co
 }
 function result(callId: string, isError: boolean): ConversationNode {
   return { kind: 'tool-result', seq: 99, time: 99, callId, isError, content: [],
-    call: null, callTime: null, callView: null, resultView: null, subCalls: [] }
+    call: null, callTime: null, subCalls: [] }
 }
 function projection(patch: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
   return { ...fixture().science, environment: null, runs: [], artifacts: [], kernels: [], ...patch }
@@ -150,13 +151,15 @@ function build(nodes: readonly ConversationNode[], patch: Partial<ScienceClientP
 }
 function mount(nodes: readonly ConversationNode[], science: ScienceClientProjection | null | undefined = projection(),
   turnTimings: ReadonlyMap<number, { startTime: number; endTime?: number }> = new Map()) {
+  const store = testScienceSelectionStore()
   const inspectCall = vi.fn(), openArtifact = vi.fn(), selectDetailed = vi.fn(), openTab = vi.fn()
   const summaries = science == null ? new Map() : summariesFor(science.artifacts as unknown as Record<string, unknown>[])
   const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [...summaries.values()] } }))
-  const snapshot = { nodes, turnTimings } as unknown as ConversationSnapshot
+  const snapshot = { legacy: { nodes, turnTimings } } as unknown as ChatSnapshot
   const rendered = render(<ScienceTraceView {...({
-    useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-    useProjection: () => science, inspectCall, actions: { openTab }, openArtifact, selectDetailed, loadVersions, t,
+    useChat: (select: (value: ChatSnapshot) => unknown) => select(snapshot),
+    useProjection: () => science, inspectCall, useStore: store.useStore,
+    actions: { ...store.actions, openTab }, openArtifact, selectDetailed, loadVersions, t,
   } as unknown as ScienceTraceViewProps)} />)
   return { ...rendered, inspectCall, openArtifact, selectDetailed, openTab, loadVersions }
 }
@@ -674,9 +677,9 @@ describe('Science process presentation', () => {
   it.each([null, undefined, projection()])('shows an empty session without copying an assistant answer', (science) => {
     // Pass undefined explicitly to the projection hook rather than the fixture helper default.
     if (science === undefined) {
-      const snapshot = { nodes: [], turnTimings: new Map() } as unknown as ConversationSnapshot
-      render(<ScienceTraceView {...({ useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
-        useProjection: () => undefined, t } as unknown as ScienceTraceViewProps)} />)
+      const snapshot = { legacy: { nodes: [], turnTimings: new Map() } } as unknown as ChatSnapshot
+      render(<ScienceTraceView {...({ useChat: (select: (s: ChatSnapshot) => unknown) => select(snapshot),
+        useProjection: () => undefined, ...testScienceSelectionStore(), t } as unknown as ScienceTraceViewProps)} />)
     } else mount([assistant(1, 1, [], 'Direct conclusion')], science)
     expect(screen.getByText(/Intent groups will appear/u)).toBeTruthy()
     expect(screen.queryByText('Direct conclusion')).toBeNull()

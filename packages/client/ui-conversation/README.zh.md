@@ -125,3 +125,5 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 </details>
 
 **运行时不变式：** 不发布伴生入口。Conversation Definition、target builder 与 View 已由其所属注册表和 Slot ledger 校验。
+
+提交处理器可以在普通 prompt 传输之前接管输入框提交。注册可释放，未被接管的输入走标准路径。`openView` 通过当前注册的视图控制器路由指定会话的视图请求及焦点。事件定义可以独占某个 target 下的一种用户来源，重复所有权会被拒绝。

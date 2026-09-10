@@ -91,3 +91,5 @@ JSON 校验器使用显式工作栈，并只跟踪当前祖先链，因此深层
 无。
 
 </details>
+
+`jsonValueSummary` 为需要紧凑显示文本的调用方格式化有界 JSON 值摘要。

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 /**
  * The Science settings card's rendering: its own collapsed-by-default
  * disclosure (equivalent in behavior and accessible naming to the Plugins
@@ -268,11 +269,12 @@ describe('ScienceSettingsCard: accessible names', () => {
 describe('ScienceSettingsCard: end-to-end through the real controller', () => {
   it('a typed absolute path, saved, lands as pending-restart through the real dispatch path', async () => {
     const stub = stubSettingsScope<ScienceRuntimeSettingsSection>()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       stub.publish({ value: { science: {} }, secrets: [{ path: [...path], set: true }] })
     })
     const controller = new ScienceSettingsCardController(stub.scope)
-    stub.publish({ effective: undefined, secrets: [], status: 'ready', writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' })
+    stub.publish({ effective: undefined, status: 'ready', writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' })
 
     const face = controller.inject()
     const buildProps = (): ScienceSettingsCardProps => ({

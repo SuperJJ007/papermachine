@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp, ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
-import { scienceElementCurrentSummary } from '@deepseek-ai/dsh-tool-science/element-summary'
+import { jsonValueSummary } from '@deepseek-ai/dsh-util-values'
 import type { ScienceKey } from './locales.ts'
 import { scienceElementColor, scienceElementLabel } from './science-element-label.ts'
 import css from './ScienceDetailsView.module.css'
@@ -153,7 +153,7 @@ function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget,
     elementKind: element.kind,
     axes: element.axes,
     label: element.label,
-    current: scienceElementCurrentSummary(element.current),
+    current: jsonValueSummary(element.current, 60),
   }
 }
 
@@ -186,7 +186,7 @@ function LegendControl({ current, onApply, t }: {
     setValue(position)
     onApply(position)
   }}>
-    {initial === undefined && <option value="" disabled>{t('panel.legendCurrent', { current: scienceElementCurrentSummary(current) })}</option>}
+    {initial === undefined && <option value="" disabled>{t('panel.legendCurrent', { current: jsonValueSummary(current, 60) })}</option>}
     {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{t(LEGEND_LABEL_KEY[position])}</option>)}
   </select>
 }

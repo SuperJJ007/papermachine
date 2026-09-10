@@ -28,6 +28,12 @@
     },
     {
       "path": "../ui-renderer"
+    },
+    {
+      "path": "../locale"
+    },
+    {
+      "path": "../ui-slots"
     }
   ]
 }

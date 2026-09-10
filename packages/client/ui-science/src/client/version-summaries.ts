@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactId, ScienceArtifactMediaType, ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
@@ -26,15 +27,13 @@ export type LoadScienceVersions =
  * session binding lazily on every call (never at registration time) so a
  * session that connects after this loader is minted still resolves —
  * mirrors `science-attachment-loader.ts`'s own `readArtifact` binding lookup.
- * @param sessions - the injected runtime sessions service.
+ * @param remote - the generated Science Remote client.
  * @param sessionId - the owning registration's own session mount.
  * @returns a batch reader for `sessions.scienceVersions`.
  */
-export function createLoadScienceVersions(sessions: ISessions, sessionId: SessionId): LoadScienceVersions {
+export function createLoadScienceVersions(remote: Context['remote'], sessionId: SessionId): LoadScienceVersions {
   return async (versionIds) => {
-    const session = sessions.binding(sessionId)?.session
-    if (session === undefined) throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
-    return session.readScienceVersions(versionIds as VersionId[])
+    return remote.science.scienceVersions(sessionId, versionIds as VersionId[])
   }
 }
 

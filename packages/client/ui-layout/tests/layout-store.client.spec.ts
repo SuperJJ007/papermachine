@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLayoutStore } from '../src/client/stores.ts'
 
-beforeEach(() => { vi.stubGlobal('innerWidth', 1920) })
+beforeEach(() => { localStorage.clear(); vi.stubGlobal('innerWidth', 1920) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('createLayoutStore', () => {
@@ -21,15 +21,18 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('creates independent instances without browser persistence', () => {
-    const write = vi.spyOn(Storage.prototype, 'setItem')
+  it('keeps live instances independent and restores only the saved rightbar width', () => {
     const a = createLayoutStore().create()
     const b = createLayoutStore().create()
     a.actions.setSidebar(400)
     a.actions.openRightbar(true, false)
     expect(b.store.getSnapshot().sidebar).toBe(280)
     expect(b.store.getSnapshot().rightbar).toBeNull()
-    expect(write).not.toHaveBeenCalled()
+    const restored = createLayoutStore().create()
+    expect(restored.store.getSnapshot()).toMatchObject({
+      sidebar: 280, rightbar: a.store.getSnapshot().rightbar, rightbarShown: false,
+      rightbarTrack: false, rightbarFullscreen: false,
+    })
   })
 
   it('clamps the sidebar to 264–420px', () => {

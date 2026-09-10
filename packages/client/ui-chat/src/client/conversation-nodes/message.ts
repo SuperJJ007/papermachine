@@ -94,5 +94,12 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
  * @param ctx - owning UI Conversation context.
  */
 export function registerMessageConversationNode(ctx: Context): void {
-  ctx.uiConversation.events.register(messageDefinition)
+  ctx.uiConversation.events.register({
+    ...messageDefinition,
+    match: (event) => {
+      if (event.type === 'user/message' && ctx.uiConversation.events.entries().some(definition =>
+        definition.target === 'chat' && definition.userSourceKind === event.data.source.kind)) return null
+      return messageDefinition.match(event)
+    },
+  })
 }

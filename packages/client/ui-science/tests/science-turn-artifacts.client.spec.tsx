@@ -99,9 +99,9 @@ describe('scienceTurnArtifactsDefinition', () => {
   it('publishes Turn Location data only inside the turn scope, and only once state exists', () => {
     if (scienceTurnArtifactsDefinition.buildLocationData === undefined) throw new Error('expected buildLocationData')
     const state = { turn: 4, artifacts: [v1] }
-    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'step')).toBeNull()
-    expect(scienceTurnArtifactsDefinition.buildLocationData({ state: undefined } as never, 'turn')).toBeNull()
-    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'turn')).toEqual({
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'step', null)).toBeNull()
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state: undefined } as never, 'turn', null)).toBeNull()
+    expect(scienceTurnArtifactsDefinition.buildLocationData({ state } as never, 'turn', null)).toEqual({
       kind: 'turn', turn: 4, key: 'science-turn-artifacts', value: { artifacts: [v1] },
     })
   })
@@ -134,6 +134,7 @@ describe('ScienceTurnArtifacts', () => {
     fireEvent.click(screen.getByRole('listitem', { name: /^Result/u }))
     expect(store.instance.getSnapshot().openArtifacts).toEqual([{ kind: 'artifact', artifactId: 'a-1', version: 2 }])
     expect(openArtifact).toHaveBeenCalledTimes(1)
+    expect(openArtifact).toHaveBeenCalledWith({ artifactId: 'a-1', version: 2 })
   })
 
   it('falls back to the logical name when the kept version has no curated title', () => {

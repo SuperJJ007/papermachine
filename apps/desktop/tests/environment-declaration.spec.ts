@@ -34,6 +34,13 @@ describe('desktop environment declarations', () => {
     expect(parsed.healthChecks.map(check => check.language)).toEqual(['python', 'r'])
   })
 
+  it('accepts the shipped biomedical declaration', async () => {
+    const parsed = parseEnvironmentDeclaration(JSON.parse(await readFile(join(resources, 'biomedical.json'), 'utf8')))
+    expect(parsed.id).toBe('biomedical')
+    expect(parsed.name).toContain('生物医学')
+    expect(parsed.healthChecks.map(check => check.language)).toEqual(['python', 'r'])
+  })
+
   // USTC, not TUNA, is first: TUNA's longer mirror hostname pushes this
   // declaration's deepest transitive dependency 1 character past win32's
   // `MAX_PATH` under the shipped package cache root, confirmed on real

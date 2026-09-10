@@ -25,3 +25,17 @@ may change with the upstream content). Leave `references/`, `scripts/`, and
 `assets/` unmodified. Update the commit and copy date above. Do not hand-edit
 `references/`, `scripts/`, or `assets/` — a local fix belongs upstream, then flows
 back through the next re-copy.
+
+## Biomedical research skills
+
+The eight biomedical domain skill directories:
+- `clinical-prediction-model/`
+- `clinical-trial-analysis/`
+- `diagnostic-test-evaluation/`
+- `epidemiology-observational/`
+- `medical-research-reporting/`
+- `meta-analysis/`
+- `propensity-score-analysis/`
+- `survival-analysis/`
+
+These skills provide structured statistical workflows and clinical analysis routines (e.g. CONSORT, STROBE, TRIPOD, Kaplan-Meier, Cox PH, MatchIt/WeightIt, meta/metafor, ROC/AUC, nomograms, DCA) adhering to PaperMachine's `<= 8,000` character budget, read-only science workspace conventions (`run_python`/`run_r`), and deterministic artifact paths (`SCIENCE_ARTIFACT_DIR`).

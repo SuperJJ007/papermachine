@@ -1180,7 +1180,7 @@ describe('kernelEnvironment', () => {
       // `kernelEnvironment`'s own branch, not for Node/libuv's read of this
       // key) the override does take effect, so the exact-value check still
       // applies there. Either way, this key's presence in `env` still proves
-      // win32AmbientEnvironment carries it through at all.
+      // windowsEnvironment carries it through at all.
       for (const [key, value] of Object.entries(ambient)) {
         if (key === 'NUMBER_OF_PROCESSORS' && hostPlatform === 'win32') {
           expect(env).toHaveProperty(key)

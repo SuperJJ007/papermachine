@@ -45,6 +45,7 @@ function setDom(): void {
       <button id="keep-current"></button>
     </section>
     <section id="install">
+      <div id="offered-environments" class="choices" style="margin-bottom: 14px" hidden></div>
       <div class="actions">
         <span>Install location: <code id="install-location-path"></code></span>
         <button id="change-install-location"></button>
@@ -605,5 +606,36 @@ describe('install location', () => {
     await vi.waitFor(() => { expect(writeText).toHaveBeenCalledTimes(1) })
     const report = writeText.mock.calls[0]?.[0] ?? ''
     expect(report).not.toContain('Full log files')
+  })
+
+  it('renders a radio group when multiple environments are offered and updates selection on change', async () => {
+    const BIOMEDICAL: OfferedEnvironment = {
+      id: 'biomedical',
+      name: 'Biomedical statistics',
+      revision: '2026.09.2',
+      packages: ['python=3.13', 'r-base=4.5', 'lifelines'],
+      estimatedDownloadBytes: 900_000_000,
+      requiredFreeBytes: 9_000_000_000,
+      sources: [{ id: 'tuna', name: 'TUNA mirror' }],
+      defaultSourceId: 'tuna',
+    }
+    const { bridge } = installBridge({ environments: vi.fn(async () => [STANDARD, BIOMEDICAL]) })
+    await loadOnboarding(bridge)
+
+    const offeredContainer = requireElement('#offered-environments') as HTMLDivElement
+    expect(offeredContainer.hidden).toBe(false)
+    const radios = offeredContainer.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+    expect(radios.length).toBe(2)
+    expect(radios[0]?.value).toBe('general')
+    expect(radios[0]?.checked).toBe(true)
+    expect(radios[1]?.value).toBe('biomedical')
+    expect(radios[1]?.checked).toBe(false)
+
+    radios[1]!.checked = true
+    radios[1]!.dispatchEvent(new Event('change', { bubbles: true }))
+
+    const summary = requireElement('#install-summary')
+    expect(summary.textContent).toContain('Biomedical statistics')
+    expect(summary.textContent).toContain('3 packages')
   })
 })

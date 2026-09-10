@@ -157,13 +157,23 @@ async function desktopHostConfig(): Promise<DesktopHostConfig> {
   return parseDesktopHostConfig(JSON.parse(await readFile(join(resourceRoot(), 'host.json'), 'utf8')))
 }
 
-/** The one environment this build ships; disciplines are added as further declarations. */
-const SHIPPED_ENVIRONMENT_ID = 'general'
+/** The environments this build ships; disciplines are added as further declarations. */
+const SHIPPED_ENVIRONMENT_IDS = ['general', 'biomedical'] as const
+
+async function shippedDeclarations(): Promise<readonly EnvironmentDeclaration[]> {
+  return Promise.all(
+    SHIPPED_ENVIRONMENT_IDS.map(async id =>
+      parseEnvironmentDeclaration(
+        JSON.parse(await readFile(join(resourceRoot(), 'environments', `${id}.json`), 'utf8')),
+      ),
+    ),
+  )
+}
 
 /** Read the shipped declaration; the standard package set onboarding offers and the custom editor starts from. */
 async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
   return parseEnvironmentDeclaration(
-    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${SHIPPED_ENVIRONMENT_ID}.json`), 'utf8')),
+    JSON.parse(await readFile(join(resourceRoot(), 'environments', 'general.json'), 'utf8')),
   )
 }
 
@@ -176,7 +186,8 @@ async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
  */
 async function declarations(dshHome: string): Promise<readonly EnvironmentDeclaration[]> {
   const custom = await readCustomDeclaration(desktopEnvironmentsRoot(dshHome))
-  return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
+  const shipped = await shippedDeclarations()
+  return [...shipped, ...(custom === undefined ? [] : [custom])]
 }
 
 /** The bundled micromamba executable for this machine, shared by provisioning and the Host's package installer. */
@@ -265,7 +276,7 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
         event: 'environment.installed',
         sourceId: published.sourceId,
         durationMs: Date.now() - startedAt,
-        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : 'general',
+        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : declaration.id === 'biomedical' ? 'biomedical' : 'general',
       })
       await openWorkspace()
     } catch (error) {
@@ -285,12 +296,9 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
 }
 
 /**
- * Write the Host overlay for `binding`. The install channels are the shipped
- * declaration's sources reordered to start from the bound source, flattened
- * to their channel URLs, so a package install first tries the mirror the
- * environment itself came from; a bound source id the shipped declaration no
- * longer lists (a later build renamed its sources) keeps the declaration's
- * own order, the same rule `orderSourcesFrom` applies to provisioning's
+ * Write the Science Runtime overlay file the Host is launched with.
+ * The overlay pins micromamba, the interpreters, and the channels of the
+ * applied declaration (falling back to shipped general) ordered from the
  * preferred source. A custom package set shares the shipped sources
  * unchanged (`buildCustomDeclaration`), so the shipped declaration is the
  * one source list for both.
@@ -300,7 +308,9 @@ async function startProvisioning(dshHome: string, declaration: EnvironmentDeclar
  */
 async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
   const overlay = join(dshHome, 'desktop-science.cordis.patch.yml')
-  const sources = orderSourcesFrom((await shippedDeclaration()).sources, binding.sourceId)
+  const decls = await declarations(dshHome)
+  const appliedDecl = decls.find(d => d.id === binding.id) ?? await shippedDeclaration()
+  const sources = orderSourcesFrom(appliedDecl.sources, binding.sourceId)
   await writeFile(overlay, renderDesktopRuntimeOverlay({
     ...(binding.pythonPrefix === undefined ? {} : { pythonPrefix: binding.pythonPrefix }),
     ...(binding.rPrefix === undefined ? {} : { rPrefix: binding.rPrefix }),

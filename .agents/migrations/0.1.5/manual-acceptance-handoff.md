@@ -1,10 +1,16 @@
 # 实机验收交接：2026-09-11
 
+Current checkpoint: [step 1 closeout](step-1-closeout.md) records the four local repair commits and the accepted evidence. The observations below retain the original acceptance context; superseded gaps are resolved by the two linked closeout records. Windows/WSL acceptance remains separate.
+
 本记录接续[实机验收清单](manual-acceptance.md)。验收对象为提交 ddccc29695，分支 replant/0.1.5，工作目录 /Users/superjj/ccproj/pm-replant。该提交包含此前迁移代码；本记录不包含产品修复，整体验收尚未完成。
 
-## 用户确认的待修复问题
+## 两项问题收尾：2026-09-11
 
-图表点击“放弃修改”后，标题输入框仍保留临时预览文字。用户已明确确认这是问题，下一窗口优先修复并复测。
+标题取消问题已修复并复验；桌面凭据提示已定位为验收密钥未持久保存，按用户明确授权保存后通过 Finder 重启与真实模型请求。详见[两项问题收尾记录](manual-fixes-closeout.md)。下文保留原始复现及当时观察，不再作为这两项的当前待办。整体迁移验收范围不变。
+
+## 原始标题取消问题
+
+图表点击“放弃修改”后，标题输入框仍保留临时预览文字。用户已明确确认这是问题；修复结果见上方收尾记录。
 
 复现会话为“Python 和 R 变量操作对比”，成果为 xy_line_chart.png。保存标题 Manual acceptance sum ten 为 v2；临时改为 Discard this preview；点击“放弃修改”。实际没有新增版本，但输入框仍显示 Discard this preview，切换版本后才恢复 Manual acceptance sum ten。预期点击放弃即恢复已保存标题，预览及待修改状态同步恢复，旧版本不被覆盖。已有保存内容未丢失。
 
@@ -33,3 +39,5 @@
 中文IME及多行粘贴受自动化字符注入失真、粘贴超时影响，不能判为产品吞字或验收通过。长历史分页、双工作区操作、旧格式副本、文本成果、环境覆盖后待重启状态、恢复页诊断复制等未完成分支仍需补验。远程CI、完整跨版本seed升级和未应用的遥测/workflow事项保留；签名安装包与平台矩阵不属于本次本地GUI验收。
 
 验收home为 /Users/superjj/ccproj/pm-replant/apps/desktop/.desktop-build/acceptance-20260910/home，合成数据工作区为 /private/tmp/pm-p5-acceptance-20260910/gui-workspace。保留这些会话和成果用于复现；不要重新清空home或安装Python/R环境。原始自动化流水记录位于 /private/tmp/pm-manual-acceptance-20260910/results.md，其中工作区故障判断已由本记录更正。
+
+补验收最新结果及粘贴/环境状态修复见 [manual-supplement-closeout.md](manual-supplement-closeout.md)。原生粘贴故障已确认为桌面迁移遗漏编辑菜单，并已实机修复验证。

@@ -12,6 +12,8 @@ Status: implemented
 
 [拉取请求 CI](../../../../.github/workflows/ci.yml) 和[合并后 CI](../../../../.github/workflows/ci-master.yml) 使用普通 GitHub 托管 runner。Linux 静态检查、覆盖率和产物任务限制并发；Windows 任务使用原生 PowerShell。这两个工作流不包含企业 failover 选择器、持久 runner 配置、备用演练或大型 runner 容量基准。fork 没有由操作者选择的备用池。
 
+Linux 准备阶段将经过校验和验证的 bubblewrap 安装到 `/usr/bin/bwrap`，并使用空环境及 `/usr/bin:/bin` PATH 进行功能探测。Science 解释器子进程使用该受限 PATH，因此仅通过 `GITHUB_PATH` 暴露二进制文件并不足够。
+
 必需检查结论保留现有 Linux、Node 兼容性、Python x64 运行时、Windows 构建和 Windows 原生测试输入。Windows 覆盖率和观察性检查保留现有独立状态。新增 Science 任务同样独立报告：失败保持可见，但在平台验收之前不成为新的必需检查。合并后的 Python ARM64/macOS 与 Wine 任务也接受手动触发；原有禁用的 macOS 串行任务继续禁用。
 
 Science 任务从桌面资源清单读取固定版本的 micromamba URL 和 SHA256。环境缓存键与创建命令共用 `.github/science-ci-spec.txt`。Windows 短前缀容纳 conda-forge R 包路径。显式选择 `DSH_SCIENCE_REAL_PREFIX`，防止环境配置不完整时悄然使用其他解释器。配置失败后测试仍可执行，工作流取消后则停止。

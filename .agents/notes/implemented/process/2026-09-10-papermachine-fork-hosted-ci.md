@@ -12,6 +12,8 @@ The upstream CI runner pools and standby machines are unavailable to PaperMachin
 
 [Pull-request CI](../../../../.github/workflows/ci.yml) and [post-merge CI](../../../../.github/workflows/ci-master.yml) use standard GitHub-hosted runners. Linux static, coverage, and artifact jobs have bounded concurrency; Windows jobs use native PowerShell. Enterprise failover selectors, persistent-runner setup, standby drills, and large-runner capacity benchmarks are absent from these workflows. The fork has no operator-selected fallback pool.
 
+Linux setup installs the checksum-verified bubblewrap payload at `/usr/bin/bwrap` and probes it with an empty environment and `/usr/bin:/bin` PATH. Science interpreter children use that restricted PATH, so a binary exposed only through `GITHUB_PATH` is insufficient.
+
 The required verdict retains the existing Linux, Node compatibility, Python x64 runtime, Windows build, and Windows native-test inputs. Windows coverage and observational checks keep their existing independent status. The additional Science job also reports independently: its failure remains visible without becoming a new required check before platform acceptance. Post-merge Python ARM64/macOS and Wine jobs also accept manual dispatch; the existing disabled macOS serial job stays disabled.
 
 The Science job reads the pinned micromamba URL and SHA256 from the desktop resource manifest. The environment cache key and creation command share `.github/science-ci-spec.txt`. Short Windows prefixes accommodate conda-forge R package paths. Explicit `DSH_SCIENCE_REAL_PREFIX` selection prevents an incomplete environment setup from silently choosing another interpreter. Test execution remains eligible after setup failure but stops on workflow cancellation.

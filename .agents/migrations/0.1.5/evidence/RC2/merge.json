@@ -1,5 +1,5 @@
 {
-  "candidate": "6b25641ff7b191ce0ce1dbf00fd74a4aecdd1279",
+  "candidate": "d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a",
   "baseline": "7545be293debb9623e439e2257383bf4b39cf3da",
   "rc1": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
   "rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
@@ -28,7 +28,7 @@
   },
   "retained_private_patch_rows": 52,
   "private_delta_base": "rc.2 (fb2c4b9e698e30edb738bca4cf0618587db7d203)",
-  "private_delta_against_rc2": "1515 files changed, 132011 insertions(+), 2596 deletions(-)",
+  "private_delta_against_rc2": "1515 files changed, 132012 insertions(+), 2596 deletions(-)",
   "private_delta_against_rc2_files": 1515,
   "private_delta_at_code_candidate_0888810bd4": "1508 files changed, 129876 insertions(+), 2596 deletions(-)",
   "product_versions": {

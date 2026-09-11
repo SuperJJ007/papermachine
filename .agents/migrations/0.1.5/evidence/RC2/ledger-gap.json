@@ -1,8 +1,8 @@
 {
  "base": "rc.2",
  "upstream_rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
- "candidate": "6b25641ff7b191ce0ce1dbf00fd74a4aecdd1279",
- "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..6b25641ff7b191ce0ce1dbf00fd74a4aecdd1279",
+ "candidate": "d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a",
+ "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a",
  "changed_total": 1515,
  "covered_by_ledger_rows": 246,
  "gap_total": 1269,

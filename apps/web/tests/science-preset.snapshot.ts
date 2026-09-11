@@ -129,7 +129,7 @@ describe('Science preset recorded session', () => {
       const console = watchConsole(page)
       await page.goto(scaffold!.authenticatedUrl, { waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]')
-      await openScienceSeed(page, prompt)
+      await openScienceSeed(page, prompt, 'ungrouped')
       await page.getByText('SCIENCE_SNAPSHOT_DONE', { exact: true }).waitFor()
       await compareOrRefreshGolden(join(directory, 'ui.expected.md'),
         await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd), mode)

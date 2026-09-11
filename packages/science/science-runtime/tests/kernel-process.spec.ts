@@ -151,11 +151,11 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   capturedReadStreams.length = 0
   capturedStdinStreams.length = 0
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-  vi.restoreAllMocks()
 })
 
 /** Shared probe/kernel adapter with native interpreter paths on each host. */
@@ -406,7 +406,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
     const start = startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, signal: AbortSignal.abort() })
     const rejection = expect(start).rejects.toThrow(transport === 'fifo' ? KernelProtocolError : /response channel/)
     try {
-      await subprocess.observing.promise
+      await Promise.race([subprocess.observing.promise, start])
       expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(transport === 'fifo')
     } finally {
       subprocess.proof.resolve(undefined)

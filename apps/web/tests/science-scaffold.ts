@@ -46,11 +46,20 @@ export function watchConsole(page: Page) {
 /** Open a seeded session by visible request text, independent of cold titles or blank-session insertion.
  * @param page - Isolated browser page.
  * @param request - Unique recorded request text.
+ * @param account - Registered workspace for seeded logs, or Ungrouped for live replay sessions.
  */
-export async function openScienceSeed(page: Page, request: string): Promise<void> {
-  const group = page.getByRole('treeitem').first()
+export async function openScienceSeed(
+  page: Page, request: string, account: 'workspace' | 'ungrouped' = 'workspace',
+): Promise<void> {
+  const groups = page.locator('[role="treeitem"][aria-expanded]')
+  const group = (account === 'workspace'
+    ? groups.filter({ has: page.locator('button[aria-label^="Workspace actions for "]') })
+    : groups.filter({ hasText: 'Ungrouped' })).first()
   await group.waitFor()
-  if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
+  // The provisional Ungrouped row and automatic expansion can change during pointer actionability waits.
+  await group.evaluate((element) => {
+    if (element.getAttribute('aria-expanded') !== 'true') (element as HTMLElement).click()
+  })
   const rows = page.locator('[role="treeitem"][aria-selected]').filter({ hasNotText: 'New Session' })
   await rows.first().waitFor()
   const count = await rows.count()

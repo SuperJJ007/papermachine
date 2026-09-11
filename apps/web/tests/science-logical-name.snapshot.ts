@@ -79,7 +79,7 @@ describe.skipIf(process.platform === 'win32')('Science logical name recorded ses
     try {
       const page = await newEnglishPage(browser)
       await page.goto(scaffold!.authenticatedUrl, { waitUntil: 'load' })
-      await openScienceSeed(page, prompts[0]!)
+      await openScienceSeed(page, prompts[0]!, 'ungrouped')
       await page.getByText('SCIENCE_CAPTURE_FAILURE_DONE', { exact: false }).last().waitFor()
       await page.locator('[data-science-turn-artifacts]').waitFor()
       await compareOrRefreshGolden(join(directory, 'ui.expected.md'),

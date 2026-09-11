@@ -128,7 +128,7 @@ describe('Science mixed recorded outcomes', () => {
       const console = watchConsole(page)
       await page.goto(scaffold!.authenticatedUrl, { waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]')
-      await openScienceSeed(page, prompt)
+      await openScienceSeed(page, prompt, 'ungrouped')
       await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).waitFor()
       const tail = page.locator('[data-turn-tail]').filter({ has: page.locator('[data-science-turn-artifacts]') })
       const assertMixedTail = async (): Promise<void> => {

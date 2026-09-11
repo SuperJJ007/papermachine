@@ -6,11 +6,11 @@ English | [中文](2026-09-11-replant-rc2-patch-ledger.zh.md)
 
 ## Problem
 
-The [rc.1 patch ledger](2026-09-09-replant-upstream-patch-ledger.md) measures a frozen historical slice, `ce76a86204..6528088e9f8c579024124add2642cde5a062ff16`. Those counts are correct for that slice, but they are not the branch's standing delta against upstream, and that ledger is an implemented record whose numbers must not be rewritten in place. After the rc.2 merge-forward the branch needs a ledger measured from the upstream release it now contains, so the next upgrade can plan against what the replant actually adds.
+The [rc.1 patch ledger](2026-09-09-replant-upstream-patch-ledger.md) measures a frozen historical slice, `ce76a86204..42727936501003d214001ef74013a511878c35ae`. Those counts are correct for that slice, but they are not the branch's standing delta against upstream, and that ledger is an implemented record whose numbers must not be rewritten in place. After the rc.2 merge-forward the branch needs a ledger measured from the upstream release it now contains, so the next upgrade can plan against what the replant actually adds.
 
 ## Decision
 
-The private delta is measured from the newest upstream release the branch contains, not from an older release and not from a hand-picked commit pair. After merging rc.2 the upstream baseline is `fb2c4b9e698e30edb738bca4cf0618587db7d203`, so the delta is `fb2c4b9e698e30edb738bca4cf0618587db7d203..d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a` — 1515 changed files, +132011/−2596 with `--no-renames`. At the code candidate before the documentation commit, `0888810bd4c41e6b80495df8bbf1eb0c2de50865`, the same measurement is 1508 files and +129876/−2596.
+The private delta is measured from the newest upstream release the branch contains, not from an older release and not from a hand-picked commit pair. After merging rc.2 the upstream baseline is `fb2c4b9e698e30edb738bca4cf0618587db7d203`, so the delta is `fb2c4b9e698e30edb738bca4cf0618587db7d203..42727936501003d214001ef74013a511878c35ae` — 1515 changed files, +132011/−2596 with `--no-renames`. At the code candidate before the documentation commit, `0888810bd4c41e6b80495df8bbf1eb0c2de50865`, the same measurement is 1508 files and +129876/−2596.
 
 Measuring from rc.1 instead would count rc.2's own release as private work. The two bases differ by 322 files: rc.2 changed 334 files over rc.1, of which 272 are version lines. A path like `packages/workflow/workflow/package.json` has no difference against rc.2 and must not appear as a private modification. Any future upgrade recomputes the base as the upstream release it has merged.
 

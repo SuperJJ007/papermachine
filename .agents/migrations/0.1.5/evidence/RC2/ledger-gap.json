@@ -1,8 +1,8 @@
 {
  "base": "rc.2",
  "upstream_rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
- "candidate": "d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a",
- "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..d3d67a46dca2ca01e4cffc11bca841b5d90d4f7a",
+ "candidate": "42727936501003d214001ef74013a511878c35ae",
+ "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..42727936501003d214001ef74013a511878c35ae",
  "changed_total": 1515,
  "covered_by_ledger_rows": 246,
  "gap_total": 1269,
@@ -13,7 +13,7 @@
  ],
  "gap_new_files_private": 1041,
  "gap_new_total": [
-  121076,
+  121077,
   0
  ],
  "note": "new_files_private mixes replant-owned packages with files that only look new because rc.1 predates them; decide ownership before planning.",

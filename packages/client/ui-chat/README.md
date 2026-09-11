@@ -16,6 +16,7 @@ File-mention providers receive the viewed Session ID with the closing-turn owner
 
 - [System prompt row](#system-prompt-row)
 - [Turn token usage](#turn-token-usage)
+- [Completed-turn footer](#completed-turn-footer)
 - [Turn Process Folding](#turn-process-folding)
 - [Scroll ownership](#scroll-ownership)
 - [Model Experience](#model-experience)
@@ -33,6 +34,11 @@ Each nonempty appended `system/message` owns a collapsed prompt row, including a
 ## Turn token usage
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
+
+<a id="completed-turn-footer"></a>
+## Completed-turn footer
+
+The completed-turn action footer starts 20px below the preceding prose or extension content.
 
 -----
 

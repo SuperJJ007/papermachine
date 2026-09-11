@@ -16,6 +16,7 @@ kind: "package-reference"
 
 - [系统提示词行](#system-prompt-row)
 - [轮次 token 用量](#turn-token-usage)
+- [已完成轮次的页脚](#completed-turn-footer)
 - [轮次过程折叠](#turn-process-folding)
 - [滚动归属](#scroll-ownership)
 - [模型体验](#model-experience)
@@ -35,6 +36,11 @@ kind: "package-reference"
 ## 轮次 token 用量
 
 只有当已加载窗口包含 `turn/start`，且每次已启动的模型尝试都报告安全、精确的用量时，已完成 Turn 才显示可展开的用量行。该行会省略不可用的可选用量桶。记账不完整或相互矛盾时，整个详情都不显示，避免把部分总量冒充完整结果。
+
+<a id="completed-turn-footer"></a>
+## 已完成轮次的页脚
+
+已完成轮次的操作页脚位于前方正文或扩展内容下方 20px。
 
 -----
 

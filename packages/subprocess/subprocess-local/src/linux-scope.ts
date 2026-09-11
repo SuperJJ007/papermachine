@@ -377,7 +377,8 @@ function directOutcome(
           rejectOutcome(deserializeRunnerError(startup.error))
           return
         }
-        if (existsSync(files.requestPath)) {
+        // A signal can terminate systemd-run before the bootstrap reads its request.
+        if (signal === null && existsSync(files.requestPath)) {
           rejectOutcome(new Error('subprocess scope exited before its bootstrap consumed the launch request'))
           return
         }

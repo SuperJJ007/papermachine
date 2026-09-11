@@ -206,7 +206,7 @@ describe('Linux scope establishment and quiescence', () => {
     expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
       'kill', '--kill-whom=all', '--signal=SIGTERM',
     ]), expect.anything())
-    const direct = expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    const direct = expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     child.exit(null, 'SIGTERM')
     await direct
     await expect(waiting).resolves.toBeUndefined()
@@ -247,6 +247,16 @@ describe('Linux scope establishment and quiescence', () => {
     child.exit(null, 'SIGKILL')
     await expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
     result.owner.cleanup?.()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before the bootstrap consumes its request', async (signal) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    child.exit(null, signal)
+    await expect(result.direct).resolves.toEqual({ exitCode: null, signal })
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(existsSync(requestPath)).toBe(true)
+    result.owner.cleanup?.()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
   })
 
   it('uses manager-observed unit existence as establishment proof', async () => {

@@ -155,3 +155,5 @@ None.
 </details>
 
 `SubprocessHandle.interrupt()` requests cooperative interruption without closing streams or starting termination. Local POSIX owners signal the managed range; Windows treats it as a no-op. Calls after direct completion or termination do nothing. `terminate()` and `waitForExit()` retain their range-quiescence semantics.
+
+An ordinary Linux launcher terminated by a signal before consuming its request reports that observed signal; an unsignalled exit with an unconsumed request remains a startup failure.

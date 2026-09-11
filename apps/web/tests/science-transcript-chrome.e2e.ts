@@ -14,6 +14,7 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
+  openScienceSeed,
   seedSession,
   watchConsole,
   webSnapshotMode,
@@ -128,12 +129,7 @@ describe('web e2e: Science transcript uses native Chat process chrome', () => {
 
   it.skipIf(MODE === 'record')('uses native context visibility and turn metrics while retaining kernel status', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-transcript-chrome'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-    const sessionRow = page.getByRole('treeitem').filter({ hasText: 'Science transcript chrome' })
-    await sessionRow.waitFor({ timeout: 10_000 })
-    await sessionRow.click()
+    await openScienceSeed(page, 'Summarize the dataset.')
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     // History observation promotes the Agent asynchronously, potentially before first paint.
     // The cold snapshot above pins the recorded state; the UI must show settled reconciliation.

@@ -12,11 +12,16 @@ import {
   type RegistryIndex,
 } from './benchmark-npm-resolution.ts'
 
+// Resolution cases verify package placement after a real npm child exits.
+// Use the lane's 90s budget and reserve 10s for child and registry cleanup.
+// The separate force-kill case keeps its one-second deadline under test.
+const TEST_TIMEOUT_MS = 90_000
+const NPM_RESOLUTION_TIMEOUT_MS = TEST_TIMEOUT_MS - 10_000
 const roots: string[] = []
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-})
+}, TEST_TIMEOUT_MS)
 
 function writeJson(root: string, path: string, value: unknown): void {
   const absolute = join(root, path)
@@ -42,7 +47,7 @@ function processCanExecute(pid: number): boolean {
   }
 }
 
-describe('npm resolution benchmark', () => {
+describe('npm resolution benchmark', { timeout: TEST_TIMEOUT_MS }, () => {
   it('parses repeat, timeout, threshold, and ref options', () => {
     expect(parseBenchmarkOptions([])).toEqual({ runs: 1, timeoutMs: 300_000 })
     expect(parseBenchmarkOptions([
@@ -94,7 +99,7 @@ describe('npm resolution benchmark', () => {
       '@deepseek-ai/dsh',
       new Map([['0.1.0', { name: '@deepseek-ai/dsh', version: '0.1.0' }]]),
     ]])
-    const result = await benchmarkNpmResolution(index, '0.1.0', 10_000)
+    const result = await benchmarkNpmResolution(index, '0.1.0', NPM_RESOLUTION_TIMEOUT_MS)
 
     expect(result.durationMs).toBeGreaterThan(0)
     expect(result.registryRequests).toBeGreaterThan(0)
@@ -114,7 +119,7 @@ describe('npm resolution benchmark', () => {
     const result = await resolveNpmPackageLock(index, {
       '@deepseek-ai/dsh': '0.2.0',
       'dsh-previous': 'npm:@deepseek-ai/dsh@0.1.0',
-    }, 10_000)
+    }, NPM_RESOLUTION_TIMEOUT_MS)
 
     expect(result.archiveRequests).toBe(0)
     expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh']?.version).toBe('0.2.0')
@@ -150,7 +155,7 @@ describe('npm resolution benchmark', () => {
         }]])],
       ])
 
-      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, 10_000)
+      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, NPM_RESOLUTION_TIMEOUT_MS)
 
       expect(result.archiveRequests).toBe(0)
       expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh-peer']?.version).toBe('1.0.0')

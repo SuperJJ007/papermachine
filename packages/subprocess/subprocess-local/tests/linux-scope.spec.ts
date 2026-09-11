@@ -259,6 +259,62 @@ describe('Linux scope establishment and quiescence', () => {
     expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
   })
 
+  it('stops an empty scope left active after the launcher is killed before bootstrap consumption', async () => {
+    let stopped = false
+    const polling = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) => {
+      if (args.includes('stop')) stopped = true
+      return { status: 0, stdout: '', stderr: '' }
+    })
+    const launched = launch(async () => activeUnit(stopped ? 'inactive' : 'active'), {
+      spawnSync: spawnSync as never,
+      sleep: async () => { polling.resolve(undefined); await release.promise },
+    })
+    launched.child.exit(null, 'SIGTERM')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    const waiting = launched.result.owner.waitForExit()
+    await polling.promise
+    try {
+      launched.result.owner.signal('SIGKILL')
+      expect(spawnSync.mock.calls.map(([command, args]) => ({ command, args }))).toContainEqual({
+        command: '/bin/systemctl',
+        args: ['--user', '--no-block', 'stop', expect.stringMatching(/^dsh-subprocess-.*\.scope$/)],
+      })
+      expect(existsSync(launched.requestPath)).toBe(true)
+    } finally {
+      stopped = true
+      release.resolve(undefined)
+      await waiting
+      launched.result.owner.cleanup?.()
+    }
+  })
+
+  it.each([
+    { status: 1, stdout: '', stderr: 'stop denied' },
+    { status: null, stdout: '', stderr: '', error: new Error('stop unavailable') },
+  ])('rejects an active scope when forced-stop fails: %j', async (failure) => {
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) =>
+      args.includes('stop') ? failure : { status: 0, stdout: '', stderr: '' })
+    const launched = launch(async () => activeUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(null, 'SIGTERM')
+    await launched.result.direct
+    launched.result.owner.signal('SIGKILL')
+    await expect(launched.result.owner.waitForExit()).rejects.toThrow(/stop denied|stop unavailable/)
+    launched.result.owner.cleanup?.()
+  })
+
+  it('accepts collection between the final signal and the stop request', async () => {
+    const spawnSync = vi.fn((_command: string, args: readonly string[]) =>
+      args.includes('stop') ? missingUnit() : { status: 0, stdout: '', stderr: '' })
+    const launched = launch(async () => missingUnit(), { spawnSync: spawnSync as never })
+    launched.child.exit(null, 'SIGTERM')
+    await launched.result.direct
+    launched.result.owner.signal('SIGKILL')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    launched.result.owner.cleanup?.()
+  })
+
   it('uses manager-observed unit existence as establishment proof', async () => {
     const { child, result } = launch(async () => activeUnit('inactive'))
     await expect(result.owner.waitForExit()).resolves.toBeUndefined()
@@ -437,7 +493,7 @@ describe('Linux scope establishment and quiescence', () => {
       .mockReturnValueOnce({ status: 1, stdout: '', stderr: '' })
       .mockReturnValueOnce({ status: 1, stderr: 'Unit dsh.scope could not be found.' })
       .mockReturnValueOnce({ status: 1, stdout: '', stderr: '' })
-      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' })
+      .mockReturnValue({ status: 0, stdout: '', stderr: '' })
     const states = [activeUnit(), activeUnit('failed')]
     const launched = launch(async () => states.shift() ?? missingUnit(), {
       spawnSync: spawnSync as never,
@@ -451,7 +507,7 @@ describe('Linux scope establishment and quiescence', () => {
     await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
     await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
     launched.result.owner.terminateForHostExit()
-    expect(spawnSync).toHaveBeenCalledTimes(4)
+    expect(spawnSync).toHaveBeenCalledTimes(5)
     launched.result.owner.cleanup?.()
   })
 

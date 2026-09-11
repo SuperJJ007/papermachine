@@ -183,13 +183,22 @@ class SystemdScopeOwner implements BoundProcessOwner {
     if (signal === 'SIGINT' && this.establishment === 'pending') return
     const directFallbackRequired = this.establishment === 'pending'
     if (directFallbackRequired && this.direct.running()) this.direct.signal(signal)
-    const result = this.runSync(this.systemctl, [
+    let operation = 'signal'
+    let result = this.runSync(this.systemctl, [
       '--user',
       'kill',
       '--kill-whom=all',
       `--signal=${signal}`,
       this.unit,
     ], { encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS })
+    if (signal === 'SIGKILL' && result.error === undefined && result.status === 0) {
+      // A launcher killed during scope creation can leave an empty unit active.
+      // Stopping the unit drives manager deactivation; the query still proves exit.
+      operation = 'stop'
+      result = this.runSync(this.systemctl, ['--user', '--no-block', 'stop', this.unit], {
+        encoding: 'utf8', env: managerEnvironment(), timeout: SYSTEMCTL_TIMEOUT_MS,
+      })
+    }
     this.wakeObservation()
     if (result.error === undefined && result.status === 0) {
       if (signal === 'SIGKILL') this.killFailure = undefined
@@ -200,7 +209,7 @@ class SystemdScopeOwner implements BoundProcessOwner {
       const output = `${result.stdout}\n${result.stderr}`
       if (!MISSING_UNIT.test(output)) {
         this.killFailure = result.error ?? new Error(
-          `systemctl could not signal ${this.unit}: ${output.trim() || `exit ${String(result.status)}`}`,
+          `systemctl could not ${operation} ${this.unit}: ${output.trim() || `exit ${String(result.status)}`}`,
         )
       }
     }

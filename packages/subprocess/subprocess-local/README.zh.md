@@ -56,7 +56,7 @@ provider 将 `executionWorld` 声明为 `host-local` 或 `remote`。每次收集
 
 ### 关闭行为
 
-正常 dispose 会终止每个仍在运行的受管范围与终端会话并等待其完全停稳。在 JavaScript 可观察的宿主退出期间——直接 `process.exit()`、默认未捕获异常、默认未处理 rejection——同步最终清理会请求 Linux scope 终止其成员，同步终止每个 Windows runner 以关闭其唯一 Job handle，并为 fallback 使用既有 PGID、`taskkill` 或已捕获身份操作。它不创建 Promise 或定时器，也不声称已经完全停稳。同一退出阶段会删除未持有任何已完成 spill 文件的每进程私有 spill 目录；已完成的 spill 文件作为完整输出恢复产物保留，直到外部机制清理。未处理的 `SIGTERM`/`SIGINT`/`SIGHUP`、`SIGKILL`、fatal OOM、native crash 与断电需要外部 supervisor。
+正常 dispose 会终止每个仍在运行的受管范围与终端会话并等待其完全停稳。在 Linux 上，强制终止还会请求 scope 停用；是否完全停稳仍由状态观察证明。在 JavaScript 可观察的宿主退出期间——直接 `process.exit()`、默认未捕获异常、默认未处理 rejection——同步最终清理会请求 Linux scope 终止其成员，同步终止每个 Windows runner 以关闭其唯一 Job handle，并为 fallback 使用既有 PGID、`taskkill` 或已捕获身份操作。它不创建 Promise 或定时器，也不声称已经完全停稳。同一退出阶段会删除未持有任何已完成 spill 文件的每进程私有 spill 目录；已完成的 spill 文件作为完整输出恢复产物保留，直到外部机制清理。未处理的 `SIGTERM`/`SIGINT`/`SIGHUP`、`SIGKILL`、fatal OOM、native crash 与断电需要外部 supervisor。
 
 ### 可能出错的地方
 

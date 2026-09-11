@@ -1,8 +1,8 @@
 {
  "base": "rc.2",
  "upstream_rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
- "candidate": "d07caf626a1e5c8efa484e42cdd9797805072b98",
- "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..d07caf626a1e5c8efa484e42cdd9797805072b98",
+ "candidate": "6b25641ff7b191ce0ce1dbf00fd74a4aecdd1279",
+ "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..6b25641ff7b191ce0ce1dbf00fd74a4aecdd1279",
  "changed_total": 1515,
  "covered_by_ledger_rows": 246,
  "gap_total": 1269,
@@ -13,10 +13,10 @@
  ],
  "gap_new_files_private": 1041,
  "gap_new_total": [
-  121331,
+  121076,
   0
  ],
- "note": "new_files_private includes replant-owned packages as well as rc.2 files that did not exist at rc.1; classify by ownership before planning.",
+ "note": "new_files_private mixes replant-owned packages with files that only look new because rc.1 predates them; decide ownership before planning.",
  "modified_files_present_at_rc2": [
   ".agents/notes/archived/manifest.json",
   ".agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.i18n.yaml",

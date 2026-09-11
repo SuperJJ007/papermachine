@@ -579,8 +579,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await page.getByText('Outcome published · revision 2', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(0)
     expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(0)
-    expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Observed series v1', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Missing revision v3', exact: true }).count()).toBe(1)
     expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
     // Disclosure resizing can leave the transcript at either scroll position.
@@ -602,8 +602,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await page.reload({ waitUntil: 'load' })
     await openSeed()
     expect(await page.locator('[class*="centerCol"]').getByText('Revise the accepted Science result.', { exact: true }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Observed series v1', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Missing revision v3', exact: true }).count()).toBe(1)
     const center = page.locator('[class*="centerCol"]')
     await center.getByRole('tab', { name: 'Trajectory', exact: true }).click()
     await center.getByRole('tab', { name: 'Process', exact: true }).click()
@@ -620,7 +620,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-reference-elements'))
     await openSessionByTitle(SEED_TITLE)
     const center = page.locator('[class*="centerCol"]')
-    await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
+    await center.getByRole('button', { name: 'Observed series v1', exact: true }).click()
     const details = page.locator('[data-rightbar-col]')
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
     const reference = details.getByRole('button', { name: 'Add Annotation · Mean 0.14 to the conversation', exact: true })
@@ -641,7 +641,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
   it('sends one preview for a settled title edit without committing a version', async () => {
     await openSessionByTitle(SEED_TITLE)
     const center = page.locator('[class*="centerCol"]')
-    await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
+    await center.getByRole('button', { name: 'Observed series v1', exact: true }).click()
     const details = page.locator('[data-rightbar-col]')
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
     const originalTitle = await details.getByRole('textbox', { name: 'Enter text', exact: true }).first().inputValue()
@@ -780,9 +780,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
     // "Version" definition, which renders the same compact version text.
     const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
-    await centerCol.getByRole('listitem', { name: /Observed series v1/u }).click()
+    await centerCol.getByRole('button', { name: 'Observed series v1', exact: true }).click()
     await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
-    await centerCol.getByRole('listitem', { name: /Missing revision v3/u }).click()
+    await centerCol.getByRole('button', { name: 'Missing revision v3', exact: true }).click()
     await stepperLabel.getByText('v3', { exact: true }).waitFor({ timeout: 10_000 })
 
     // The v3 run chip opens its exact version directly in the content view —

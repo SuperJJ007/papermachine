@@ -19,7 +19,10 @@
 - paragraph: I will generate the requested chart.
 - paragraph: "Artifacts produced this turn: 1"
 - list:
-  - listitem "Observed series v1"
+  - listitem:
+    - button "Observed series v1"
+    - text: Observed series v1
+    - button "Preview Observed series version 1": Preview
 - button "Copy":
   - img
 - button "Good response":
@@ -51,7 +54,10 @@
 - paragraph: I will revise the selected chart elements.
 - paragraph: "Artifacts produced this turn: 1"
 - list:
-  - listitem "Missing revision v3"
+  - listitem:
+    - button "Missing revision v3"
+    - text: Missing revision v3
+    - button "Preview Missing revision version 3": Preview
 - button "Copy":
   - img
 - button "Good response":

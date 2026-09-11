@@ -6,7 +6,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +18,7 @@ import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-ses
 import type { ArtifactRecord, ProjectId, VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  ScienceArtifactId, ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
+  ScienceEnvironmentProfileId, ScienceRunId, ScienceScratchKey,
 } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session'
 import {
@@ -53,7 +53,9 @@ const RUN_CALL_ID = ToolCallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
 /** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png artifacts. */
-function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[], title = SEED_TITLE, displayTitle?: string): string {
+function scienceFixture(
+  projectId: ProjectId, stored: readonly StoredArtifact[], title = SEED_TITLE, displayTitle?: string, requestText?: string,
+): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
   // own creation-time anchor plus that event's delta from the fixture's
@@ -97,7 +99,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[],
     },
   })
   const user = session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text: displayTitle === undefined ? 'Summarize the experiment as csv, json, markdown, and a chart.' : 'Check long Chinese title layout.' }],
+    content: [{ type: 'text', text: requestText ?? (displayTitle === undefined ? 'Summarize the experiment as csv, json, markdown, and a chart.' : 'Check long Chinese title layout.') }],
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('session/title', {
@@ -152,10 +154,10 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[],
   })
 
   const artifact = (
-    artifactId: ReturnType<typeof ScienceArtifactId>, logicalName: string,
     mediaType: ScienceArtifactMediaType, storedArtifact: StoredArtifact,
   ) => {
     const seenAt = eventTime(runCall.seq + 3)
+    const { artifactId, logicalName } = storedArtifact.artifact
     const { version } = storedArtifact
     const { versionId, sha256, byteCount } = version
     session.append('science/artifact-saved', {
@@ -165,14 +167,15 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[],
         projectId, versionId, sha256, seenAt,
       },
     })
-    return { artifactId, logicalName, version: 1, title: logicalName === 'summary.csv' ? displayTitle ?? logicalName : logicalName, versionId, mediaType, byteCount }
+    return { artifactId, logicalName, version: 1,
+      title: storedArtifact === stored[0] ? displayTitle ?? logicalName : logicalName, versionId, mediaType, byteCount }
   }
 
   const items = [
-    artifact(stored[0]!.artifact.artifactId, 'summary.csv', 'text/csv', stored[0]!),
-    artifact(stored[1]!.artifact.artifactId, 'metrics.json', 'application/json', stored[1]!),
-    artifact(stored[2]!.artifact.artifactId, 'report.md', 'text/markdown', stored[2]!),
-    artifact(stored[3]!.artifact.artifactId, 'plot.png', 'image/png', stored[3]!),
+    artifact('text/csv', stored[0]!),
+    artifact('application/json', stored[1]!),
+    artifact('text/markdown', stored[2]!),
+    artifact('image/png', stored[3]!),
   ]
 
   session.append('tool/result', {
@@ -470,6 +473,41 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     } finally {
       await narrow.setViewportSize({ width: 1680, height: 1000 })
     }
+  })
+
+  it('downloads complete capped JSON and preserves saved bytes after source replacement and removal', async () => {
+    const opened = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
+    const text = JSON.stringify({ text: 'x'.repeat(100_050), tail: 'COMPLETE_DOWNLOAD_TAIL' })
+    const source = join(scaffold.workspaceCwd, 'retained-metrics.json')
+    await writeFile(source, text)
+    const stored: StoredArtifact[] = []
+    for (const [index, mediaType] of ['text/csv', 'application/json', 'text/markdown', 'image/png'].entries()) {
+      stored.push(await scaffold.ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+        logicalName: ['retained-summary.csv', 'retained-metrics.json', 'retained-report.md', 'retained-plot.png'][index]!, data: index === 3 ? PNG : Buffer.from([CSV_TEXT, text, MARKDOWN_TEXT][index]!), mediaType,
+        kind: 'document', originSessionId: SessionId('science-retained'), contentOrigin: 'run-auto',
+      }))
+    }
+    await seedSession(scaffold, scienceFixture(opened.projectId, stored, 'Retained text', undefined, 'Inspect retained long JSON.'), 'science-retained', 'science')
+    await page.reload({ waitUntil: 'load' })
+    await openScienceSeed(page, 'Inspect retained long JSON.')
+    await page.locator('[data-science-turn-artifacts]').getByRole('button', { name: /^retained-metrics\.json/ }).click()
+    const panel = page.locator('[data-rightbar-col]')
+    await expect.poll(() => panel.locator('pre').count()).toBe(1)
+    expect((await panel.locator('pre').innerText()).length).toBe(100_000)
+    expect(await panel.innerText()).not.toContain('COMPLETE_DOWNLOAD_TAIL')
+    const url = `${scaffold.baseUrl}/api/science-artifact?${new URLSearchParams({ sessionId: 'science-retained', versionId: stored[1]!.version.versionId })}`
+    const unauthenticated = await browser.newContext()
+    try { expect((await unauthenticated.request.get(url)).ok()).toBe(false) }
+    finally { await unauthenticated.close() }
+    await writeFile(source, 'overwritten')
+    expect(await (await page.request.get(url)).text()).toBe(text)
+    await rm(source)
+    expect(await (await page.request.get(url)).text()).toBe(text)
+    const downloadEvent = page.waitForEvent('download')
+    await panel.getByRole('button', { name: 'Download', exact: true }).click()
+    const downloadPath = await (await downloadEvent).path()
+    if (downloadPath === null) throw new Error('download file is unavailable')
+    expect(await readFile(downloadPath, 'utf8')).toBe(text)
   })
 
 })

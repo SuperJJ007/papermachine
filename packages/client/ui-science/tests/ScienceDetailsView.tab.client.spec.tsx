@@ -105,6 +105,55 @@ describe('ScienceDetailsView: toolbar version stepper (D9 — store-sourced per-
     expect(screen.getByRole('button', { name: 'Previous version' }).hasAttribute('disabled')).toBe(true)
   })
 
+  it('keeps an old download failure out of the newly selected version', async () => {
+    const { science, summaries, store } = threeVersions()
+    let finish: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { finish = resolve })))
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    await act(async () => { finish?.(new Response(null, { status: 410, headers: { 'x-science-artifact-error': 'missing_content' } })) })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('finishes an already requested download with its original version after navigation', async () => {
+    const { science, summaries, store } = threeVersions()
+    let finish: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { finish = resolve })))
+    const targets: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { targets.push(this.getAttribute('href')!) })
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    await act(async () => { finish?.(new Response(null, { status: 200 })) })
+    expect(targets).toEqual([scienceArtifactUrl(SESSION, 'v2' as never)])
+  })
+
+  it('drops the previous version save-as form when navigating', async () => {
+    const { science, summaries, store } = threeVersions()
+    render(<ScienceDetailsView {...props(science, { store, summaries })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New artifact name' }), { target: { value: 'old-copy.png' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Next version' }))
+    expect(screen.queryByRole('textbox', { name: 'New artifact name' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save as' }))
+    expect(screen.getByRole('textbox', { name: 'New artifact name' })).toHaveProperty('value', '')
+  })
+
+  it('keeps the selected text version when an earlier version resolves late', async () => {
+    const { science, summaries, store } = threeVersions()
+    let finishOld: ((text: string) => void) | undefined
+    const loadText = vi.fn().mockImplementationOnce(() => new Promise<string>((resolve) => { finishOld = resolve }))
+      .mockResolvedValueOnce('new version text')
+    render(<ScienceDetailsView {...props(science, { store,
+      summaries: summaries.map(summary => ({ ...summary, mediaType: 'text/plain' })), loadText })} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next version' }))
+    await screen.findByText('new version text')
+    await act(async () => { finishOld?.('old version text') })
+    expect(screen.queryByText('old version text')).toBeNull()
+    expect(screen.getByText('new version text')).toBeTruthy()
+  })
+
   it('a disabled stepper button never invokes the step callback', async () => {
     const { science, summaries, store } = threeVersions()
     render(<ScienceDetailsView {...props(science, { store, summaries })} />)

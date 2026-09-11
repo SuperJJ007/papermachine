@@ -137,6 +137,8 @@ Science 保留原生上下文可见性、轮次统计和 Turn Process Folding，
 
 环境事实保存在溯源视图的「环境」子标签页中，范围限定为某个产物对应的运行。已记录的 Outcome 保留在折叠的 `publish_outcome` 会话单元格中。
 
+图片失败状态属于当前显示的源 URL。切换到另一个图表预览源可替换失败图片，无需重新读取已保存版本；已移除图片的迟到错误不会使替换后的图片失效。下载提示和另存表单属于选定 Session 及不可变版本；切换版本会清除这些控件。已经发起的下载仍使用原版本 URL 完成。
+
 Artifact 缩略图与内容通过本包自己的会话作用域加载器（`science-artifact-url-loader.ts`）解析，而非会话界面拥有的附件加载器。两者都解析成 `scienceArtifactUrl(sessionId, versionId)`——Host 的原始字节 GET 路由，接受 Session fold 证明的版本、经确认的跨 Session input，或 Session 所属 project 中的精确成员，原样流式传输、不经 base64。`loadImage` 立即解析成这个 URL 本身（作为 `<img src>` 目标）；`loadText` `fetch()` 它并返回解码后的响应文本。两者都不保留第二套持久缓存。`science-attachment-loader.ts` 原来那套 base64 loader（`remote.science.scienceArtifact`）仍在，但本包任何注册都不再接它——见已知限制。
 
 **CSV 表格（`ArtifactTable.tsx`）是本包内部组件，而非 `dsh-client-ui-primitives` 的导出。** 设计阶段对 `packages/client` 的一次全仓库搜索没有发现任何表格组件，也没有会需要它的第二个消费方；`JsonTree`/`MarkdownText` 之所以原样复用 `ui-primitives` 里的实现，是因为它们已经为其他消费方存在于那里。解析逻辑（`csv.ts`）是手写的、类 RFC4180 解析器（带引号字段、字段内嵌逗号/换行、双引号转义），而非一个依赖：这是对自动捕获或模型标注文件的只读预览，从不涉及任意不受信任的上传，"可配置性不能作为提供不受支持……公开操作集的理由"（`packages/AGENTS.md`）对一个投机性共享基础组件同样适用。未来出现真正的第二个消费方，才是把两者提升进 `ui-primitives` 的触发条件，而不是这一个。

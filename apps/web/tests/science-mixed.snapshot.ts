@@ -130,11 +130,11 @@ describe('Science mixed recorded outcomes', () => {
       await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).waitFor()
       const tail = page.locator('[data-turn-tail]').filter({ has: page.locator('[data-science-turn-artifacts]') })
       const assertMixedTail = async (): Promise<void> => {
-        expect(await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).isVisible()).toBe(true)
+        await expect.poll(() => page.getByText('SCIENCE_MIXED_DONE', { exact: true }).isVisible()).toBe(true)
         expect(await tail.count()).toBe(1)
-        expect(await tail.locator('[data-science-turn-artifacts]').isVisible()).toBe(true)
-        expect(await tail.locator('[data-presented-files-row]').isVisible()).toBe(true)
-        expect(await tail.locator('[data-produced-files-row]').isVisible()).toBe(true)
+        await expect.poll(() => tail.locator('[data-science-turn-artifacts]').isVisible()).toBe(true)
+        await expect.poll(() => tail.locator('[data-presented-files-row]').isVisible()).toBe(true)
+        await expect.poll(() => tail.locator('[data-produced-files-row]').isVisible()).toBe(true)
         expect(await tail.locator('[data-science-turn-artifacts]').innerText()).toContain('Mixed outcome chart')
         expect(await tail.locator('[data-science-turn-artifacts]').getByRole('button', { name: 'Preview Mixed outcome chart version 1', exact: true }).isVisible()).toBe(true)
         expect(await tail.locator('[data-presented-files-row]').getByRole('button', { name: 'Open report.txt in sidebar', exact: true }).isVisible()).toBe(true)
@@ -207,6 +207,49 @@ describe('Science mixed recorded outcomes', () => {
       expect(JSON.stringify(await readPersistedEvents(scaffold!, handle!.agent.session.id))).toBe(persistedBefore)
       expect(await readFile(fixture)).toEqual(fixtureBefore)
       expect(await logBytes()).toEqual(logsBefore)
+      await tail.locator('[data-science-turn-artifacts]').getByRole('button', { name: 'Preview Mixed outcome chart version 1', exact: true }).click()
+      const panel = page.locator('[data-rightbar-col]')
+      const artifactImage = panel.getByRole('img', { name: 'Mixed outcome chart', exact: true })
+      await expect.poll(() => artifactImage.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      const src = await artifactImage.getAttribute('src')
+      if (src === null) throw new Error('authorized image URL is absent')
+      expect(src).toContain('/api/science-artifact?')
+      expect(src).not.toMatch(/^(blob:|data:)/)
+      const url = new URL(src, scaffold!.baseUrl).href
+      const original = await page.request.get(url)
+      expect(original.status()).toBe(200)
+      const originalBytes = await original.body()
+      for (const failure of ['network', 'decode'] as const) {
+        let intercepted = false
+        await page.route(url, async (route) => {
+          intercepted = true
+          if (failure === 'network') await route.abort('failed')
+          else {
+            const response = await route.fetch()
+            expect(response.status()).toBe(200)
+            await route.fulfill({ response, body: Buffer.from('invalid PNG bytes'), contentType: 'image/png' })
+          }
+        })
+        await page.reload({ waitUntil: 'load' })
+        const retry = panel.getByRole('button', { name: 'Failed to load, click to retry', exact: true })
+        await retry.waitFor()
+        expect(intercepted).toBe(true)
+        await page.screenshot({ path: join(evidence, `science-preview-${failure}-failed.png`), fullPage: true })
+        await page.unroute(url)
+        await retry.click()
+        await expect.poll(() => artifactImage.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+        expect(await artifactImage.getAttribute('src')).toBe(src)
+      }
+      await page.reload({ waitUntil: 'load' })
+      await expect.poll(() => artifactImage.evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+      await page.screenshot({ path: join(evidence, 'science-preview-recovered.png'), fullPage: true })
+      const downloadEvent = page.waitForEvent('download')
+      await panel.getByRole('button', { name: 'Download', exact: true }).click()
+      const downloaded = await downloadEvent
+      const downloadPath = await downloaded.path()
+      if (downloadPath === null) throw new Error('download file is unavailable')
+      expect(await readFile(downloadPath)).toEqual(originalBytes)
+      await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
 
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
       const dark = page.getByRole('dialog').getByRole('button', { name: 'Dark', exact: true })

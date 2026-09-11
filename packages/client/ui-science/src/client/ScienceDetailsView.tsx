@@ -363,6 +363,7 @@ function ArtifactTab({
   return (
     <>
       <ArtifactToolbar
+        key={`${currentSessionId}:${chart.versionId}`}
         chart={chart}
         versions={versions}
         intermediateVersions={intermediateVersions}
@@ -509,7 +510,7 @@ function ArtifactViewer({
                   : { sourceSessionTitle: libraryProvenance.sourceSessionTitle }}
                 t={t}
               />
-            : <><ArtifactToolbar chart={activeLibraryChart} versions={[activeLibraryChart]} onBack={() => { actions.showLibrary() }}
+            : <><ArtifactToolbar key={`${currentSessionId}:${activeLibraryChart.versionId}`} chart={activeLibraryChart} versions={[activeLibraryChart]} onBack={() => { actions.showLibrary() }}
               /* v8 ignore next -- the library RPC supplies only the latest version, so both step controls are disabled */
               onStepVersion={() => {}} onOpenProvenance={() => { actions.setView('provenance') }}
               onMaximize={() => { actions.setLightboxOpen(true) }}

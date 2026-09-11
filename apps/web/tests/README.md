@@ -8,6 +8,14 @@ the deliberate composition divergences from `dsh web` — are documented in
 [`scaffold.ts`](scaffold.ts) and the
 [browser e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
 
+## Science replay scratch
+
+The Science recorded-session scenarios create their isolated harness homes beneath the repository by default. For checkouts under a temporary directory, set `DSH_WEB_SCIENCE_SCRATCH_PARENT` to an existing writable directory outside canonical `/tmp` and `os.tmpdir()`. The test rejects temporary parents, allocates a unique child, and removes that child during teardown; the selected parent is retained.
+
+## Mixed Science outcomes
+
+`science-mixed.snapshot.ts` records one real model turn through a private test preset containing Science, filesystem, and `present` tools. The Science runtime retains its sandbox rules and uses the exact-operation kernel fixture shared with `science-preset.snapshot.ts`; the filesystem and delivery tools execute normally. Replay checks persisted PNG bytes, the complete workspace oracle, reasoning, and explicit delivery before comparing the browser transcript. The shipped Science preset keeps its independent restricted-tool assertions.
+
 ## Completion observations
 
 State-sensitive cases use Workspace, admission, attachment, and model-stream barriers to separate visible intermediate states from completed operations. Details close waits for frame transitions; archive verification assigns an explicit title to the seeded Session and follows that identity across reload. See the [CI fixture synchronization decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).

@@ -23,7 +23,10 @@
 - paragraph: SCIENCE_SNAPSHOT_DONE
 - paragraph: "Artifacts produced this turn: 1"
 - list:
-  - listitem "Main plot v1"
+  - listitem:
+    - button "Main plot v1"
+    - text: Main plot v1
+    - button "Preview Main plot version 1": Preview
 - button "Copy":
   - img
 - button "Good response":

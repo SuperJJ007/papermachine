@@ -13,8 +13,9 @@ import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
  * @param ctx - owning UI Conversation context.
+ * @param collapsedCount - resolved deployment limit for each output group.
  */
-export function registerChatNodeRenderers(ctx: Context): void {
+export function registerChatNodeRenderers(ctx: Context, collapsedCount: number): void {
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'user', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
@@ -47,8 +48,9 @@ export function registerChatNodeRenderers(ctx: Context): void {
     name: 'conversation.chat.node',
     key: 'turn-tail',
     locale: NS,
+    inject: () => ({ collapsedCount }),
     children: {
-      'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+      'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
       'conversation.chat.assistant-actions': { kind: 'list', scope: 'session' },
     },
   }, TurnTailNodeView))

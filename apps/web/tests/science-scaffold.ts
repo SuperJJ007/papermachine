@@ -1,7 +1,8 @@
 import { errors } from 'playwright'
 import type { Page } from 'playwright'
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, readFile, realpath, writeFile, rm } from 'node:fs/promises'
+import { isAbsolute, join, relative, sep } from 'node:path'
+import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import { tmpdir } from 'node:os'
 /** Science profile over the shared real Web browser harness. */
 import { fileURLToPath } from 'node:url'
@@ -65,4 +66,20 @@ export async function openScienceSeed(page: Page, request: string): Promise<void
     }
   }
   throw new Error(`No seeded session displayed request: ${request}`)
+}
+
+/** Allocate private Science test storage outside generic sandbox temporary grants.
+ * @returns Canonical unique directory owned and removed by the caller.
+ */
+export async function createScienceScratch(): Promise<string> {
+  const repo = fileURLToPath(new URL('../../..', import.meta.url))
+  const parent = await realpath(process.env.DSH_WEB_SCIENCE_SCRATCH_PARENT ?? repo)
+  for (const temp of ['/tmp', tmpdir()]) {
+    const child = relative(canonicalPath(temp), parent)
+    if (child === '' || (!isAbsolute(child) && child !== '..' && !child.startsWith(`..${sep}`))) {
+      throw new Error('DSH_WEB_SCIENCE_SCRATCH_PARENT must name an existing directory outside /tmp and os.tmpdir(); '
+        + `resolved to ${parent}`)
+    }
+  }
+  return mkdtemp(join(parent, '.web-science-preset-'))
 }

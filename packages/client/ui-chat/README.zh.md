@@ -42,6 +42,8 @@ kind: "package-reference"
 
 已完成轮次的操作页脚位于前方正文或扩展内容下方 20px。
 
+`conversation.chat.turnTail` 是 Chat 拥有的有序 `list` slot，位于过程折叠之外、消息操作之前。工作区文件与 Science 产物分别贡献内容，空贡献返回 `null`。Host 配置 `turnOutputCollapsedCount` 必须是正安全整数，默认 `4`，经页面启动数据作为 `collapsedCount` 传给各贡献。缺少启动字段的独立客户端使用 `4`；格式错误的字段会被拒绝。两个交付组均在零项时不渲染，默认一至四项全部显示，五项起先显示四项，并允许展开后再次收起。该部署配置不属于持久化的个人偏好。
+
 -----
 
 <a id="turn-process-folding"></a>

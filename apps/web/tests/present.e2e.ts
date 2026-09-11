@@ -219,7 +219,7 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
         const actionsRect = actions.getBoundingClientRect()
         const firstCard = report.getBoundingClientRect()
         const secondCardRect = secondCard.getBoundingClientRect()
-        const gridStyle = getComputedStyle(presentedGrid)
+        const gridStyle = getComputedStyle(requiredElement(presentedGrid.querySelector<HTMLElement>('[role="list"]'), 'shared file grid'))
         return {
           answerToPresented: presentedRect.top - answerRect.bottom,
           presentedToActions: actionsRect.top - presentedRect.bottom,
@@ -244,6 +244,8 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       expect(geometry.descriptionFontSize).toBe('10px')
       expect(geometry.openFontSize).toBe('12px')
       await page.setViewportSize({ width: 480, height: 900 })
+      const openSidebar = page.getByRole('button', { name: 'Open sidebar', exact: true })
+      if (await openSidebar.isVisible()) await openSidebar.click()
       const row = page.locator('[data-presented-files-row]')
       await row.scrollIntoViewIfNeeded()
       for (const card of await row.getByRole('button').all()) {
@@ -251,8 +253,16 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
         expect(bounds).not.toBeNull()
         expect(bounds!.x).toBeGreaterThanOrEqual(0)
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(480)
+        expect(await card.evaluate((button) => {
+          const parent = button.closest('[data-presented-file]')!.getBoundingClientRect()
+          const action = button.getBoundingClientRect()
+          return action.left >= parent.left && action.right <= parent.right
+        })).toBe(true)
       }
     }
+    const evidence = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+    await mkdir(evidence, { recursive: true })
+    await page.screenshot({ path: join(evidence, 'present-narrow-actions.png') })
     const beforeDelete = (await opened()).length
     await unlink(join(cwd, 'report.txt'))
     const missing = page.waitForResponse(response => response.url().includes('/api/present.open?'))

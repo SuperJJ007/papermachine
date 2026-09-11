@@ -63,18 +63,21 @@
   - code: AFTER_PRESENT
   - text: — no retries, no extra files.
 - paragraph: PRESENT_DONE
-- button "Preview report.txt in sidebar"
-- text: report.txt
-- status: Opened in default app
-- button "Open report.txt in sidebar": Open
-- button "More file actions for report.txt":
-  - img
-- button "Preview 说明.txt in sidebar"
-- text: 说明.txt
-- status: Opened in default app
-- button "Open 说明.txt in sidebar": Open
-- button "More file actions for 说明.txt":
-  - img
+- list:
+  - listitem:
+    - button "Preview report.txt in sidebar"
+    - text: report.txt
+    - status: Opened in default app
+    - button "Open report.txt in sidebar": Open
+    - button "More file actions for report.txt":
+      - img
+  - listitem:
+    - button "Preview 说明.txt in sidebar"
+    - text: 说明.txt
+    - status: Opened in default app
+    - button "Open 说明.txt in sidebar": Open
+    - button "More file actions for 说明.txt":
+      - img
 - button "Copy":
   - img
 - button "Good response":

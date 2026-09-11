@@ -1,6 +1,6 @@
 /** Recorded Science preset execution, durable artifact curation and browser cold replay. */
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -11,7 +11,7 @@ import { Session, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-science-session'
 import { prepareSciencePrefix } from '../../../packages/science/science-runtime/tests/fixtures/snapshot-prefix.ts'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFixtureInventory, captureStableAria, createScienceScratch, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, openScienceSeed, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './science-scaffold.ts'
 import { newEnglishPage } from './support.ts'
@@ -28,7 +28,7 @@ describe('Science preset recorded session', () => {
   let prompt: string
 
   beforeAll(async () => {
-    scratch = await mkdtemp(join(repo, '.web-science-preset-'))
+    scratch = await createScienceScratch()
     const prefix = await prepareSciencePrefix(scratch)
     const overlay = join(scratch, 'runtime.patch.yml')
     await writeFile(overlay, `- id: science-runtime\n  config:\n    profiles:\n      science:\n        pythonPrefix: ${JSON.stringify(prefix)}\n`)

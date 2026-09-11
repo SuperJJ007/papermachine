@@ -73,3 +73,6 @@ export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown
 export * from './icons/index.tsx'
 
 export { ImageLightbox, type ImageLightboxLabels } from './ImageLightbox.tsx'
+
+export { FileDeliveryCard, type FileDeliveryCardProps } from './FileDeliveryCard.tsx'
+export { FileDeliveryGroup, type FileDeliveryGroupProps } from './FileDeliveryGroup.tsx'

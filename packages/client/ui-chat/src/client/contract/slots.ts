@@ -36,7 +36,7 @@ export interface OpenFileOptions {
   readonly line?: number
 }
 
-/** Owner currency of the completed-Turn extension chain. */
+/** Owner currency of Turn-local file selection. */
 export interface TurnTailOwnerProps {
   turn: TurnLocation
   seq: number
@@ -200,11 +200,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.commandview': { kind: 'keyed'; scope: 'session'; owner: CommandRowOwnerProps }
     /**
-     * Selector-routed extension before a completed Turn's action row. The
-     * component receives the Turn, closing sequence, and file opener. The first
-     * selector that accepts the owner renders; an all-declined chain is empty.
+     * Ordered outputs before a Turn's action row. Every registered domain receives
+     * the Turn, closing sequence, file opener and deployment display limit.
+     * Empty domain components return null; stable entry IDs determine identity.
      */
-    'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
+    'conversation.chat.turnTail': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps & { collapsedCount: number } }
     /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces

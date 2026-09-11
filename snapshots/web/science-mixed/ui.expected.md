@@ -1,0 +1,96 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Run exactly the following Python" [disabled]
+  - button "More actions":
+    - img
+  - button "Artifact library"
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: "Run exactly the following Python source once with run_python, declaring plot.png as a raster artifact. Then annotate the captured chart with title \"Mixed outcome chart\" and caption \"Quadratic sample\". Use write to create report.txt with exactly \"SCIENCE_MIXED_REPORT\\nThe chart plots y = x squared at x = 0, 1, 2.\\n\" (interpret the escaped newlines as actual newlines), and call present for report.txt with description \"Analysis report\". Use the relative path report.txt in write and present. Do not run any additional Python code or probe the workspace. Do not create any other workspace files. Complete these actions in this turn. Finish with SCIENCE_MIXED_DONE. ```python import os import matplotlib matplotlib.use(\"Agg\") import matplotlib.pyplot as plt fig, ax = plt.subplots(figsize=(3, 2), dpi=80) ax.plot([0, 1, 2], [0, 1, 4]) ax.set_title(\"Science snapshot\") fig.savefig(os.path.join(os.environ[\"SCIENCE_ARTIFACT_DIR\"], \"plot.png\"), metadata={\"Software\": \"Science snapshot\"}) print(\"SCIENCE_SNAPSHOT_RUN_OK\") ``` {{clock}}"
+- button "Copy":
+  - img
+- button "4 tool calls · 1 message":
+  - text: 4 tool calls · 1 message
+  - img
+- paragraph: "All actions completed:"
+- list:
+  - listitem:
+    - text: Ran the exact Python source once with
+    - code: run_python
+    - text: ", which printed"
+    - code: SCIENCE_SNAPSHOT_RUN_OK
+    - text: and captured
+    - code: plot.png
+    - text: (v1) as a raster artifact.
+  - listitem:
+    - text: Annotated
+    - code: plot.png
+    - text: v1 with title "Mixed outcome chart" and caption "Quadratic sample" (receipt confirms curated).
+  - listitem:
+    - text: Created
+    - code:
+      - button "Open report.txt in default app": report.txt
+    - text: via write with the exact two-line content.
+  - listitem:
+    - text: Called present for
+    - code:
+      - button "Open report.txt in default app": report.txt
+    - text: with description "Analysis report".
+- paragraph: No additional Python was run and no other workspace files were created.
+- paragraph: SCIENCE_MIXED_DONE
+- text: Files changed
+- button "Open report.txt": report.txt
+- list:
+  - listitem:
+    - button "Preview report.txt in sidebar"
+    - text: report.txt Analysis report
+    - button "Open report.txt in sidebar": Open
+    - button "More file actions for report.txt":
+      - img
+- paragraph: "Artifacts produced this turn: 1"
+- list:
+  - listitem:
+    - button "Mixed outcome chart v1"
+    - text: Mixed outcome chart v1
+    - button "Preview Mixed outcome chart version 1": Preview
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Usage 20.9K tok":
+  - img
+  - text: Usage 20.9K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash, reasoning effort high":
+  - text: DeepSeek-V4-Flash high
+  - img
+- button "4% of context used"
+- button "Send message" [disabled]
+- button "1 turns 4 steps · {{throughput}} tok/s":
+  - img
+  - text: 1 turns 4 steps{{throughput}} tok/s
+- button "20.9K tok · Cache hit 79%":
+  - img
+  - text: 20.9K tokCache hit 79%
+- text: Latest kernel records python · epoch 1 · started

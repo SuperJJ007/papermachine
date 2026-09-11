@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, within } from '@testing-library/react'
 import { SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { apply as applyDeliverables, inject as injectDeliverables } from '@deepseek-ai/dsh-client-ui-deliverables/client'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { apply as applyChat, inject as injectChat } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { apply as applyTrajectory, inject as injectTrajectory } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import { apply as applySidebar, inject as injectSidebar } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -33,7 +35,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function bench(fullLayout = false) {
+async function bench(fullLayout = false, outputOrder: 'science' | 'ordinary' | 'science-first' | 'ordinary-first' = 'science') {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
   const ctx = runtime.ctx
@@ -78,9 +80,14 @@ async function bench(fullLayout = false) {
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   await runtime.mount({ inject: [...injectChat], apply: applyChat })
   await runtime.mount({ inject: [...injectTrajectory], apply: applyTrajectory })
-  const scienceHandle = await runtime.mount({ inject: [...injectScience], apply: applyScience })
+  const ordinary = { inject: [...injectDeliverables], apply: applyDeliverables }
+  const sciencePlugin = { inject: [...injectScience], apply: applyScience }
+  const ordinaryBefore = outputOrder === 'ordinary' || outputOrder === 'ordinary-first'
+  let ordinaryHandle = ordinaryBefore ? await runtime.mount(ordinary) : undefined
+  const scienceHandle = outputOrder === 'ordinary' ? undefined : await runtime.mount(sciencePlugin)
+  if (outputOrder === 'science-first') ordinaryHandle = await runtime.mount(ordinary)
   const view = fullLayout ? runtime.renderRoot() : runtime.renderSlot('rightbar', { width: 420, viewportWidth: 1440, canShow: true })
-  return { runtime, ctx, science, scienceHandle, view: within(view.container) }
+  return { runtime, ctx, science, scienceHandle, ordinaryHandle, view: within(view.container) }
 }
 
 describe('Science public composition', () => {
@@ -135,9 +142,40 @@ describe('Science public composition', () => {
 
   it('removes Science registrations while leaving native Sidebar and Conversation available', async () => {
     const b = await bench()
-    await b.scienceHandle.dispose()
+    await b.scienceHandle!.dispose()
     expect(b.runtime.slots.entries('sidebar.right.pane.tab').some(entry => entry.options.key === 'science-artifact')).toBe(false)
     expect(b.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'science')).toBe(false)
     expect(b.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'chat')).toBe(true)
   })
+})
+
+
+it.each(['ordinary', 'science', 'ordinary-first', 'science-first'] as const)('keeps independent outputs in %s composition and remounts without duplicates', async (order) => {
+  const b = await bench(false, order)
+  const entries = () => b.runtime.slots.entries('conversation.chat.turnTail').map(entry => entry.options.id)
+  const expected = order === 'ordinary' ? ['workspace-files'] : order === 'science' ? ['science-artifacts'] : ['workspace-files', 'science-artifacts']
+  expect(entries()).toEqual(expected)
+  const append = async (seq: number, type: string, data: unknown) => b.runtime.sessions.appendEvent(SESSION,
+    { type: 'event', event: { type, seq, time: seq, data, ...(type === 'tool/result' ? { surfaceOp: 'append' } : {}) } as SessionEvent })
+  await append(1, 'turn/start', { turn: 1 })
+  await append(2, 'tool/call', { turn: 1, step: 1, callId: 'write-1', name: 'write', arguments: JSON.stringify({ file_path: 'report.txt', content: 'text' }) })
+  await append(3, 'tool/result', { turn: 1, step: 1, message: { source: { type: 'tool-result', callId: 'write-1' }, content: [{ type: 'tool-result', content: [], isError: false }] } })
+  await append(4, 'deliverables/presented', { turn: 1, callId: 'present-1', files: [{ path: 'report.txt', description: 'Report' }] })
+  await append(5, 'tool/result', { turn: 1, step: 2, message: { source: { type: 'tool-result', callId: 'science-1' }, content: [{ type: 'tool-result', content: [], isError: false }] },
+    meta: { kind: 'science/artifact', version: 2, artifacts: [{ artifactId: 'science-1', logicalName: 'report.txt', title: 'Science report', version: 2,
+      content: { versionId: 'saved-2', mediaType: 'text/plain', byteCount: 4 } }] } })
+  await append(6, 'turn/end', { turn: 1, reason: { kind: 'cancelled' } })
+  const conversation = b.runtime.renderSlot('main', {}, { entryKey: 'conversation' })
+  const query = within(conversation.container)
+  if (order !== 'science') {
+    expect(await query.findByRole('button', { name: 'Preview report.txt in sidebar' })).toBeTruthy()
+    expect(conversation.container.querySelector('[data-produced-files-row]')).not.toBeNull()
+  }
+  if (order !== 'ordinary') expect(await query.findByRole('button', { name: 'Science report v2' })).toBeTruthy()
+  if (b.ordinaryHandle) {
+    await b.ordinaryHandle.dispose()
+    expect(entries()).not.toContain('workspace-files')
+    await b.runtime.mount({ inject: [...injectDeliverables], apply: applyDeliverables })
+    expect(entries()).toEqual(expected)
+  }
 })

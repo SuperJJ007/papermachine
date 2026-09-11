@@ -1,11 +1,11 @@
 /**
  * Deliverables plugin, browser half: registers the produced-files row into
- * the chat view's turn-tail chain, and provides the `chatFileMentions`
+ * the chat view's turn-tail list, and provides the `chatFileMentions`
  * service that links inline-code mentions of produced files in the closing
  * prose. All policy lives here — the supported mutation calls, mention
  * matching, chip cap, and copy — so
  * composing this plugin out of cordis.yml removes both surfaces entirely;
- * the owning view renders an empty chain and inert prose at zero cost.
+ * the owning view renders an empty list and inert prose at zero cost.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { PresentedOpenController } from './present-open.ts'
 import { PresentRow } from './PresentRow.tsx'
-import { Deliverables, selectDeliverables, type DeliverablesInjected } from './Deliverables.tsx'
+import { DeliverablesEntry, type DeliverablesInjected } from './Deliverables.tsx'
 import { en, NS, zh, type DeliverablesKey } from './locales.ts'
 import {
   deliverablesDefinition, presentedForClosing, producedFileMentions, selectProducedFiles,
@@ -49,14 +49,14 @@ export function apply(ctx: ClientContext): void {
     'conversation.chat.turnTail',
     () => ctx.slots.register({
       name: 'conversation.chat.turnTail',
-      select: selectDeliverables,
+      id: 'workspace-files', order: 10,
       locale: NS,
       inject: (): DeliverablesInjected => ({
         hooks: { presentedOpen: opener.state, presentedHost: opener.host },
         reloadPresentedHost: () => opener.loadHost(),
         openPresented: (sessionId, seq, index, action) => opener.open(sessionId, seq, index, action),
       }),
-    }, Deliverables),
+    }, DeliverablesEntry),
   )
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
     { name: 'tool.call.toolview', key: 'present', locale: NS }, PresentRow,
@@ -66,7 +66,7 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const mentions: ChatFileMentions = {
     forClosing(owner, sessionId) {
-      // Same claim test the turn-tail chain entry runs: no produced files,
+      // Same claim test the turn-tail list entry runs: no produced files,
       // no vocabulary — the two surfaces agree by construction.
       const paths = selectProducedFiles(owner)
       const presented = presentedForClosing(owner)

@@ -14,7 +14,7 @@ import type { ScienceDetailsInjected } from '../src/client/ScienceDetailsView.ts
 import { ScienceDetailsView } from '../src/client/ScienceDetailsView.tsx'
 import { ScienceLibrary } from '../src/client/ScienceLibrary.tsx'
 import { ScienceTraceView } from '../src/client/ScienceTraceView.tsx'
-import { ScienceTurnArtifacts } from '../src/client/ScienceTurnArtifacts.tsx'
+import { ScienceTurnArtifactsEntry } from '../src/client/ScienceTurnArtifacts.tsx'
 import { ScienceExecutionRow } from '../src/client/ScienceExecutionRow.tsx'
 import { ScienceAnnotationRow } from '../src/client/ScienceAnnotationRow.tsx'
 import { ScienceOutcomeRow } from '../src/client/ScienceOutcomeRow.tsx'
@@ -33,7 +33,7 @@ async function setup() {
   const slots = new SlotRegistry(ctx)
   slots.register({ name: 'root', children: {
     'tool.call.toolview': { kind: 'keyed', scope: 'session' },
-    'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+    'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
     'conversation.view': { kind: 'list', scope: 'session' },
     'settings.plugin.item': { kind: 'keyed', scope: 'root' },
     'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
@@ -109,7 +109,7 @@ describe('ui-science public composition', () => {
     expect(b.registerTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'science-library', kind: 'science-library', guide: [expect.objectContaining({ order: 0 })] }))
     expect(b.slots.entries('conversation.view')[0]?.component).toBe(ScienceTraceView)
     expect(b.slots.entries('conversation.view')[0]?.options.id).toBe('science')
-    expect(b.slots.entries('conversation.chat.turnTail')[0]?.component).toBe(ScienceTurnArtifacts)
+    expect(b.slots.entries('conversation.chat.turnTail')[0]?.component).toBe(ScienceTurnArtifactsEntry)
     const tools = new Map(b.slots.entries('tool.call.toolview').map(entry => [entry.options.key, entry.component]))
     expect(tools.get('run_python')).toBe(ScienceExecutionRow)
     expect(tools.get('run_r')).toBe(ScienceExecutionRow)

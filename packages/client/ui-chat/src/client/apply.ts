@@ -1,3 +1,4 @@
+import { readTurnOutputCollapsedCount } from '../turn-output-config.ts'
 /** Register the Chat Conversation target, renderers, stats, and details surface. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -68,7 +69,7 @@ export function apply(ctx: Context): void {
     return source
   }
   registerConversationNodes(ctx)
-  registerChatNodeRenderers(ctx)
+  registerChatNodeRenderers(ctx, readTurnOutputCollapsedCount())
   ctx.uiSession.provide({
     hooks: ['chat'],
     resolve: binding => ({ hooks: { chat: chatSource(binding) } }),

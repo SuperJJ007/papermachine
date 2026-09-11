@@ -6,6 +6,8 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 // existing image path — reached through the same tab strip/toolbar every
 // media type shares.
 import { Buffer } from 'node:buffer'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
@@ -51,7 +53,7 @@ const RUN_CALL_ID = ToolCallId('call-run-types')
 type StoredArtifact = { readonly artifact: ArtifactRecord; readonly version: VersionRecord }
 
 /** Build one closed Science session: a single `run_r` call whose auto-capture produced csv/json/md/png artifacts. */
-function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[], title = SEED_TITLE): string {
+function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[], title = SEED_TITLE, displayTitle?: string): string {
   const session = Session.create(SessionId('science-browser-types-source'))
   // `seedSession` materializes each event's envelope time as this fixture's
   // own creation-time anchor plus that event's delta from the fixture's
@@ -95,7 +97,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[],
     },
   })
   const user = session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text: 'Summarize the experiment as csv, json, markdown, and a chart.' }],
+    content: [{ type: 'text', text: displayTitle === undefined ? 'Summarize the experiment as csv, json, markdown, and a chart.' : 'Check long Chinese title layout.' }],
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('session/title', {
@@ -163,7 +165,7 @@ function scienceFixture(projectId: ProjectId, stored: readonly StoredArtifact[],
         projectId, versionId, sha256, seenAt,
       },
     })
-    return { artifactId, logicalName, version: 1, title: logicalName, versionId, mediaType, byteCount }
+    return { artifactId, logicalName, version: 1, title: logicalName === 'summary.csv' ? displayTitle ?? logicalName : logicalName, versionId, mediaType, byteCount }
   }
 
   const items = [
@@ -264,7 +266,7 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     )
 
     // Each Turn-end card opens its artifact's tab directly in the content view.
-    await centerCol.getByRole('listitem', { name: /summary\.csv/ }).click()
+    await centerCol.getByRole('button', { name: /^summary\.csv/ }).click()
     const table = detailsPanel.getByRole('table', { name: 'summary.csv' })
     await table.waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByRole('columnheader', { name: /name/i }).count()).toBe(1)
@@ -277,15 +279,15 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     const rowsAscending = await table.locator('tbody tr').allInnerTexts()
     expect(rowsAscending[0]).toContain('bob')
 
-    await centerCol.getByRole('listitem', { name: /metrics\.json/ }).click()
+    await centerCol.getByRole('button', { name: /^metrics\.json/ }).click()
     await detailsPanel.getByRole('tree').waitFor({ timeout: 10_000 })
     expect(await detailsPanel.innerText()).toContain('accuracy')
 
-    await centerCol.getByRole('listitem', { name: /report\.md/ }).click()
+    await centerCol.getByRole('button', { name: /^report\.md/ }).click()
     await detailsPanel.getByRole('heading', { name: 'Result' }).waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('converged', { exact: false }).count()).toBeGreaterThan(0)
 
-    await centerCol.getByRole('listitem', { name: /plot\.png/ }).click()
+    await centerCol.getByRole('button', { name: /^plot\.png/ }).click()
     await expect.poll(() => detailsPanel.getByRole('img', { name: 'plot.png' }).count(), { timeout: 15_000 }).toBe(1)
 
     // All four document tabs stay open. Scope to the document tab strip, not
@@ -411,4 +413,63 @@ describe('web e2e: Science artifact per-media-type rendering', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
   }, 60_000)
+
+  it('keeps a long Chinese title accessible and actions inside a narrow card', async () => {
+    const opened = await scaffold.ctx.scienceArtifactStore.openProject(scaffold.workspaceCwd)
+    const stored: StoredArtifact[] = []
+    for (const [index, mediaType] of ['text/csv', 'application/json', 'text/markdown', 'image/png'].entries()) {
+      stored.push(await scaffold.ctx.scienceArtifactStore.createArtifact(opened.projectId, {
+        logicalName: `layout-${index}.txt`, data: index === 3 ? PNG : Buffer.from([CSV_TEXT, JSON_TEXT, MARKDOWN_TEXT][index]!), mediaType,
+        kind: 'document', originSessionId: SessionId('science-layout'), contentOrigin: 'run-auto',
+      }))
+    }
+    const name = '跨实验对照 分组结果与长期变化趋势分析 中文标题包含空格并保留完整版本身份'
+    await seedSession(scaffold, scienceFixture(opened.projectId, stored, 'Chinese title layout', name), 'science-layout', 'science')
+    const narrow = page
+    try {
+      await narrow.reload({ waitUntil: 'load' })
+      await openScienceSeed(narrow, 'Check long Chinese title layout.')
+      await narrow.setViewportSize({ width: 480, height: 900 })
+      const card = narrow.locator('[data-science-turn-artifacts]').getByRole('button', { name: `${name} v1`, exact: true })
+      await card.waitFor()
+      await card.scrollIntoViewIfNeeded()
+      const dimensions = await card.evaluate((button) => {
+        const shell = button.parentElement!
+        const title = shell.querySelector<HTMLElement>('span[class*="fileName"]')!
+        const action = shell.querySelector<HTMLButtonElement>('button:not([class*="cardPreview"])')!
+        const bounds = shell.getBoundingClientRect()
+        const target = action.getBoundingClientRect()
+        return { clipped: title.scrollWidth > title.clientWidth, ellipsis: getComputedStyle(title).textOverflow,
+          inside: target.left >= bounds.left && target.right <= bounds.right, right: bounds.right }
+      })
+      expect(dimensions.clipped).toBe(true)
+      expect(dimensions.ellipsis).toBe('ellipsis')
+      expect(dimensions.inside).toBe(true)
+      expect(dimensions.right).toBeLessThanOrEqual(480)
+      await card.focus()
+      expect(await card.evaluate(button => document.activeElement === button)).toBe(true)
+      await narrow.keyboard.press('Tab')
+      expect(await narrow.getByRole('button', { name: `Preview ${name} version 1`, exact: true })
+        .evaluate(button => document.activeElement === button)).toBe(true)
+      const output = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+      await mkdir(output, { recursive: true })
+      await narrow.screenshot({ path: join(output, 'science-long-chinese-narrow.png') })
+      const openSidebar = narrow.getByRole('button', { name: 'Open sidebar', exact: true })
+      if (await openSidebar.isVisible()) await openSidebar.click()
+      await expect.poll(() => card.evaluate(button => button.parentElement!.getBoundingClientRect().width)).toBeLessThan(240)
+      await card.scrollIntoViewIfNeeded()
+      expect(await card.evaluate((button) => {
+        const shell = button.parentElement!
+        const bounds = shell.getBoundingClientRect()
+        return [...shell.querySelectorAll('button')].every((action) => {
+          const target = action.getBoundingClientRect()
+          return target.left >= bounds.left && target.right <= bounds.right
+        })
+      })).toBe(true)
+      await narrow.screenshot({ path: join(output, 'science-long-chinese-extreme.png') })
+    } finally {
+      await narrow.setViewportSize({ width: 1680, height: 1000 })
+    }
+  })
+
 })

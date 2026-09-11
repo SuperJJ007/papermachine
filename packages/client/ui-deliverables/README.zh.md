@@ -30,7 +30,7 @@ kind: "package-reference"
 <a id="explicit-deliveries"></a>
 ### 显式交付
 
-Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交付Session 文件系统可访问的最终文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有文件数量限制和 Session 声明。收尾 turn 把单个交付显示为横向占满内容区的卡片，把多个交付显示为间距 10px 的双列网格。文件超过四个时，列表默认收起，并提供显示或隐藏完整列表的控件。每张卡片高 60px，上下内边距为 8px、左右为 10px；40px 图标框内使用 20px 的共享 `FileTypeIcon`，文件名为 13px、次要文本为 10px，“打开”操作为 12px。卡片显示 basename 与说明；没有说明时显示文件类型，说明末尾的括号后缀会被省略，悬停卡片时该行切换为侧栏预览提示。点击卡片或分段“打开”控件的左侧会在右侧 Sidebar 中预览文件；右侧箭头打开标准菜单，其中提供 Host 默认应用，以及 macOS 上的“在 Finder 中显示”、Windows 和 WSL 上的“在文件资源管理器中显示”或 Linux 默认文件管理器的“打开所在文件夹”。匹配的行内代码引用打开相同源文件，不触发浏览器下载。同一路径重复声明时，选择收尾回复之前最近一次的说明。
+Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交付Session 文件系统可访问的最终文件，包括通过 Bash 创建的文件。创建文件后，以 `files: [{ path, description? }]` 调用。[present 工具](../../fs/tool-present/README.zh.md)拥有文件数量限制和 Session 声明。收尾 turn 把单个交付显示为横向占满内容区的卡片，把多个交付显示为间距 10px 的双列网格。折叠数量由 [Chat 配置](../ui-chat/README.zh.md#completed-turn-footer)决定，列表提供展开与收起控件。每张卡片高 60px，上下内边距为 8px、左右为 10px；40px 图标框内使用 20px 的共享 `FileTypeIcon`，文件名为 13px、次要文本为 10px，“打开”操作为 12px。卡片显示 basename 与说明；没有说明时显示文件类型，说明末尾的括号后缀会被省略，悬停卡片时该行切换为侧栏预览提示。点击卡片或分段“打开”控件的左侧会在右侧 Sidebar 中预览文件；右侧箭头打开标准菜单，其中提供 Host 默认应用，以及 macOS 上的“在 Finder 中显示”、Windows 和 WSL 上的“在文件资源管理器中显示”或 Linux 默认文件管理器的“打开所在文件夹”。匹配的行内代码引用打开相同源文件，不触发浏览器下载。同一路径重复声明时，选择收尾回复之前最近一次的说明。
 
 `present` 工具行显示正在交付、已交付、失败或中断状态；展开已结束的调用可查看其记录的结果。可折叠卡片网格保留全部交付文件。菜单中的两个操作共享等待状态，并显示进度、请求确认或各自可重试的错误。交付卡片出现时读取桌面信息，连接更换时清除缓存，旧连接的响应不能更新元数据。选择原生菜单操作后，键盘焦点回到仍可用的侧边栏“打开”按钮。等待操作完成时关闭菜单，用户再次点击才会打开。Host 没有桌面时禁用“打开”菜单；桌面信息读取失败时提供“重试”。服务 Host 必须具备桌面和合适的默认应用；远程浏览器不会打开其所在设备上的应用。
 
@@ -50,7 +50,7 @@ Web 的 `standard`、`ptc` 与 `cordis` preset 提供 `present` 用于声明交�
 <details>
 <summary>实现细节——点击展开</summary>
 
-Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的包装组件注册进 chat 视图的 `conversation.chat.turnTail` 洞。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，视图的空链以零成本留下。
+Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，要求模型点名成功创建或修改的主要文件，并把这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码。浏览器半部把组合 `ProducedFiles` 与显式交付的组件注册为 `conversation.chat.turnTail` list 的 `workspace-files` 条目，顺序为 `10`；没有文件时返回 `null`。`deliverablesDefinition` 根据 `write`、`edit` 和有修改作用的 `str_replace_editor` 命令中经过校验的原始参数，把每个轮次成功的第一方修改调用折叠进 `DeliverablesTurnData`。读取、删除、不受支持的工具、格式错误的调用和失败结果不贡献任何条目。新的修改工具必须增加显式 Client contribution 才能加入列表。本包还提供 chat 视图按收尾消息查询的 `chatFileMentions` 服务；把插件组合出去会同时移除两个表面，其他 list 贡献仍可独立渲染。
 
 原生打开使用经过认证的 POST，通过当前查看的 Session、事件序号和原始文件索引定位声明。Host 读取声明及当前查看的 Session header，将其中的 cwd 传给 `workspaceFiles.stat`；未记录 cwd 时使用部署的工作目录。它与侧栏预览使用同一组合文件系统，无需启动 Agent，子会话也适用。原生操作要求规范化的进程路径能从 Host 路径映射回同一进程路径。提供方没有这种映射时返回 422，卡片提示使用侧栏预览；Host 上存在同名文件并不足够。同一份桌面可用性配置同时约束信息查询和实际执行。编辑会影响后续打开的内容；删除后返回错误。不创建文件内容副本或附件。插件释放时取消并等待进行中的原生打开请求。
 
@@ -63,7 +63,7 @@ Node 半部注册静态 `ui:deliverable-file-references` 系统提示词段，�
 
 当产出物面不够用时阅读以下页面。它们从该行进入 turn-tail 洞与词表背后的决策。
 
-- [ui-conversation](../ui-conversation/README.zh.md)——声明 `conversation.chat.turnTail` 洞并渲染收尾正文。
+- [ui-chat](../ui-chat/README.zh.md)——拥有 `conversation.chat.turnTail` list 与共享折叠配置。
 - [工作区文件链接](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.zh.md)——产出文件行背后的决策；其 Host 打开路径已被[右侧 Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)取代。
 - [行内文件提及](../../../.agents/notes/archived/feature/2026-08-07-web-inline-file-mentions.md)——收尾正文可点击提及背后的决策。
 - [客户端包映射](../README.zh.md)——相邻的浏览器 UI 包。

@@ -79,7 +79,7 @@ export const scienceTurnArtifactsDefinition: ConversationNodeDefinition<ScienceT
 }
 
 /**
- * Claim the Turn-tail chain only when the completed Turn produced artifacts.
+ * Select this Turn's artifacts independently of other output list entries.
  * @param owner Completed Turn and its projected conversation data.
  * @returns Artifact data for the Turn or null when it produced none.
  */

@@ -61,6 +61,6 @@ describe('ApprovalCommand', () => {
 describe('ui-chat package entries', () => {
   it('keeps the Host half optional', () => {
     const ctx = new Context()
-    expect(() => { nodeApply(ctx) }).not.toThrow()
+    expect(() => { nodeApply(ctx, { turnOutputCollapsedCount: 4 }) }).not.toThrow()
   })
 })

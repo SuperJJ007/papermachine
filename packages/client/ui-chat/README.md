@@ -40,6 +40,8 @@ A completed Turn shows an expandable usage row only when the loaded window inclu
 
 The completed-turn action footer starts 20px below the preceding prose or extension content.
 
+`conversation.chat.turnTail` is a Chat-owned ordered `list` slot outside process folding and before message actions. Workspace files and Science artifacts contribute independently; empty contributions return `null`. Host configuration `turnOutputCollapsedCount` is a positive safe integer, defaults to `4`, and reaches contributions as `collapsedCount` through page boot data. Standalone clients without the boot field use `4`; malformed values are rejected. Both delivery groups render nothing for zero items, show all one to four items by default, and show the first four of five or more with reversible expansion. This deployment setting is separate from persisted personal preferences.
+
 -----
 
 <a id="turn-process-folding"></a>

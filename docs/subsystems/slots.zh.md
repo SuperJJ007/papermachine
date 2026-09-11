@@ -57,6 +57,8 @@ Slot 声明固定两个相互独立的维度。
 
 对于 `single`、`list` 和 `keyed` cell，`priority` 是遮蔽优先级；对于 `chain`，它是选举顺序。数值越小越先运行或渲染。普通增量贡献应选用新的 list `id` 或 keyed `key`；复用已有 cell 表示有意替换其展示。
 
+Chat 的 `conversation.chat.turnTail` 是有序 `list`：每个贡献使用独立 `id` 与 `order`，从 owner 的 Turn 数据选择内容，并在没有内容时返回 `null`。owner 同时提供 `collapsedCount`，其部署配置见 [ui-chat](../../packages/client/ui-chat/README.zh.md#completed-turn-footer)。多个领域成果可同时显示在过程折叠之外、消息操作之前。
+
 ## 组件输入
 
 注册组件会在 binding 位置收到组装后的输入。组件应从这些类型推导 props，不要重新抄写成员。

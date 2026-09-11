@@ -57,6 +57,8 @@ The slot declaration fixes two independent axes.
 
 `priority` is a shadowing rank for `single`, `list`, and `keyed` cells and an election order for `chain`. Lower values run or render first. Ordinary additive contributions should choose a fresh list `id` or keyed `key`; intentionally reusing a shipped cell replaces its presentation.
 
+Chat owns `conversation.chat.turnTail` as an ordered `list`: each contribution uses a distinct `id` and `order`, selects content from owner Turn data, and returns `null` when empty. The owner also supplies `collapsedCount`; [ui-chat](../../packages/client/ui-chat/README.md#completed-turn-footer) owns its deployment configuration. Multiple output domains can appear together outside process folding and before message actions.
+
 ## Component inputs
 
 A registered component receives inputs assembled at its binding site. Components derive these types rather than copying their members.

@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
-  CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, apply,
+  CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, apply, Config,
 } from '../src/index.ts'
 
 class MemorySettings extends SettingsProvider {
@@ -17,7 +17,7 @@ describe('ui-chat Host settings', () => {
   it('registers, validates, and disposes the transcript-view namespace', async () => {
     const ctx = new Context()
     await ctx.plugin(MemorySettings).await()
-    const fiber = ctx.plugin({ apply })
+    const fiber = ctx.plugin({ apply, Config }, { turnOutputCollapsedCount: 4 })
     await fiber.await()
     const ns = CHAT_SETTINGS_NAMESPACE
 
@@ -32,6 +32,6 @@ describe('ui-chat Host settings', () => {
 
   it('loads without a settings provider', async () => {
     const ctx = new Context()
-    await expect(ctx.plugin({ apply }).await()).resolves.toBeDefined()
+    await expect(ctx.plugin({ apply, Config }, { turnOutputCollapsedCount: 4 }).await()).resolves.toBeDefined()
   })
 })

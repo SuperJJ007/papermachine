@@ -128,10 +128,10 @@ describe('ScienceTurnArtifacts', () => {
     render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [v2, second] }, actions: store.actions, useStore: store.useStore,
       loadImage: vi.fn(), openArtifact, t, sessionId: 'session-1',
-    } as unknown as ScienceTurnArtifactsProps)} />)
+    } as unknown as ScienceTurnArtifactsProps)} collapsedCount={4} />)
     expect(screen.getByText('本轮产出 2 个成果')).toBeTruthy()
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('listitem', { name: /^Result/u }))
+    fireEvent.click(screen.getByRole('button', { name: /^Result/u }))
     expect(store.instance.getSnapshot().openArtifacts).toEqual([{ kind: 'artifact', artifactId: 'a-1', version: 2 }])
     expect(openArtifact).toHaveBeenCalledTimes(1)
     expect(openArtifact).toHaveBeenCalledWith({ artifactId: 'a-1', version: 2 })
@@ -142,8 +142,8 @@ describe('ScienceTurnArtifacts', () => {
     render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [{ ...v2, title: '' }] }, actions: store.actions, useStore: store.useStore,
       loadImage: vi.fn(), openArtifact: vi.fn(), t, sessionId: 'session-1',
-    } as unknown as ScienceTurnArtifactsProps)} />)
-    expect(screen.getByRole('listitem', { name: 'result.csv v2' })).toBeTruthy()
+    } as unknown as ScienceTurnArtifactsProps)} collapsedCount={4} />)
+    expect(screen.getByRole('button', { name: 'result.csv v2' })).toBeTruthy()
   })
 
   it('loads a thumbnail for a dimensioned image artifact', async () => {
@@ -154,7 +154,7 @@ describe('ScienceTurnArtifacts', () => {
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,
       loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1',
-    } as unknown as ScienceTurnArtifactsProps)} />)
+    } as unknown as ScienceTurnArtifactsProps)} collapsedCount={4} />)
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
     expect(loadImage).toHaveBeenCalledWith(expect.objectContaining({ versionId: 'version-d' }))
     await waitFor(() => { expect(view.container.querySelector('img')?.getAttribute('src')).toBe('blob:fake-url') })
@@ -168,7 +168,7 @@ describe('ScienceTurnArtifacts', () => {
     const view = render(<ScienceTurnArtifacts {...({
       matched: { artifacts: [chart] }, actions: store.actions, useStore: store.useStore,
       loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1',
-    } as unknown as ScienceTurnArtifactsProps)} />)
+    } as unknown as ScienceTurnArtifactsProps)} collapsedCount={4} />)
     await waitFor(() => { expect(loadImage).toHaveBeenCalledTimes(1) })
     // The component's own .catch() is chained onto this same promise ahead of
     // ours, so once ours settles the fallback tile has already been kept.
@@ -193,34 +193,24 @@ function renderTray(count: number) {
   return render(<ScienceTurnArtifacts {...({
     matched: { artifacts: overflowArtifacts(count) }, actions: store.actions, useStore: store.useStore,
     loadImage: vi.fn(), openArtifact: vi.fn(), t, sessionId: 'session-1',
-  } as unknown as ScienceTurnArtifactsProps)} />)
+  } as unknown as ScienceTurnArtifactsProps)} collapsedCount={4} />)
 }
 
 describe('ScienceTurnArtifacts turn-tail overflow', () => {
-  it('shows all 5 cards with no "+N more" button below the threshold', () => {
-    renderTray(5)
-    expect(screen.getByText('本轮产出 5 个成果')).toBeTruthy()
-    expect(screen.getAllByRole('listitem')).toHaveLength(5)
-    expect(screen.queryByRole('button')).toBeNull()
+  it.each([0, 1, 4])('shows %i cards without a disclosure', (count) => {
+    renderTray(count)
+    expect(screen.queryAllByRole('listitem')).toHaveLength(count)
+    expect(screen.queryByRole('button', { name: /展开全部/ })).toBeNull()
   })
-
-  it('shows all 6 cards uncollapsed at the exact boundary', () => {
-    renderTray(6)
-    expect(screen.getByText('本轮产出 6 个成果')).toBeTruthy()
-    expect(screen.getAllByRole('listitem')).toHaveLength(6)
-    expect(screen.queryByRole('button')).toBeNull()
-  })
-
-  it('collapses 7 cards to 5 plus a "+2 更多" button, and expands to all 7 on click', () => {
-    renderTray(7)
-    expect(screen.getByText('本轮产出 7 个成果')).toBeTruthy()
-    expect(screen.getAllByRole('listitem')).toHaveLength(5)
-    const more = screen.getByRole('button', { name: '+2 更多' })
-    fireEvent.click(more)
-    expect(screen.getAllByRole('listitem')).toHaveLength(7)
-    expect(screen.queryByRole('button')).toBeNull()
-    // The title's count is the total produced this Turn, never the visible slice.
-    expect(screen.getByText('本轮产出 7 个成果')).toBeTruthy()
+  it.each([5, 7])('shows four of %i cards and supports expanding and collapsing', (count) => {
+    renderTray(count)
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    fireEvent.click(screen.getByRole('button', { name: `展开全部 ${count} 个成果` }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(count)
+    const collapse = screen.getByRole('button', { name: `收起 ${count} 个成果` })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(collapse)
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
   })
 })
 
@@ -232,8 +222,8 @@ it('does not show a previous version thumbnail after the tray receives a newer v
   const image = { ...v1, content: { ...v1.content, mediaType: 'image/png' } }
   const input = { matched: { artifacts: [image] }, actions: store.actions, useStore: store.useStore,
     loadImage, openArtifact: vi.fn(), t, sessionId: 'session-1' } as unknown as ScienceTurnArtifactsProps
-  const view = render(<ScienceTurnArtifacts {...input} />)
-  view.rerender(<ScienceTurnArtifacts {...input} matched={{ artifacts: [{ ...image, version: 2, content: { ...image.content, versionId: 'new' } }] } as never} />)
+  const view = render(<ScienceTurnArtifacts {...input} collapsedCount={4} />)
+  view.rerender(<ScienceTurnArtifacts {...input} collapsedCount={4} matched={{ artifacts: [{ ...image, version: 2, content: { ...image.content, versionId: 'new' } }] } as never} />)
   await waitFor(() => { expect(view.container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,new') })
   await act(async () => { resolve('data:image/png;base64,old'); await pending })
   expect(view.container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,new')

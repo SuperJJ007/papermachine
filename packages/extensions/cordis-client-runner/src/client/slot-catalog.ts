@@ -293,20 +293,32 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
   },
   {
     key: 'conversation.chat.turnTail',
-    kind: 'chain',
+    kind: 'list',
     scope: 'session',
-    summary: 'Selector-routed extension before a completed Turn\'s action row.',
-    doc: 'Selector-routed extension before a completed Turn\'s action row. The\ncomponent receives the Turn, closing sequence, and file opener. The first\nselector that accepts the owner renders; an all-declined chain is empty.',
+    summary: 'Ordered outputs before a Turn\'s action row.',
+    doc: 'Ordered outputs before a Turn\'s action row. Every registered domain receives\nthe Turn, closing sequence, file opener and deployment display limit.\nEmpty domain components return null; stable entry IDs determine identity.',
     registerOptions: [
       {
-        name: 'select',
+        name: 'id',
         requirement: 'required',
-        type: '(owner) => unknown | null',
-        doc: 'Pure routing selector. Entries are tried in ascending order; the first non-null result wins and arrives as the component\'s `matched` prop. All-null falls through to the owner\'s fallback.',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
       },
     ],
     ownerProps: [
-      '/** Owner currency of the completed-Turn extension chain. */\nexport interface TurnTailOwnerProps {\n  turn: TurnLocation\n  seq: number\n  openFile: (path: string) => void\n}',
+      '/** Owner currency of Turn-local file selection. */\nexport interface TurnTailOwnerProps {\n  turn: TurnLocation\n  seq: number\n  openFile: (path: string) => void\n}',
     ],
     ownerPropsReferences: [
       'TurnLocation',
@@ -332,11 +344,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-chat), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-deliverables Deliverables',
-      'client-ui-science ScienceTurnArtifacts',
+      'client-ui-deliverables DeliverablesEntry id \'workspace-files\'',
+      'client-ui-science ScienceTurnArtifactsEntry id \'science-artifacts\'',
     ],
     replaceRisk: 'none',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-chat/src/client/contract/slots.ts:207',
   },
   {

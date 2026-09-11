@@ -20,10 +20,22 @@
   - text: "R run {}"
 - paragraph: "Artifacts produced this turn: 4"
 - list:
-  - listitem "summary.csv v1"
-  - listitem "metrics.json v1"
-  - listitem "report.md v1"
-  - listitem "plot.png v1"
+  - listitem:
+    - button "summary.csv v1"
+    - text: summary.csv v1
+    - button "Preview summary.csv version 1": Preview
+  - listitem:
+    - button "metrics.json v1"
+    - text: metrics.json v1
+    - button "Preview metrics.json version 1": Preview
+  - listitem:
+    - button "report.md v1"
+    - text: report.md v1
+    - button "Preview report.md version 1": Preview
+  - listitem:
+    - button "plot.png v1"
+    - text: plot.png v1
+    - button "Preview plot.png version 1": Preview
 - textbox "This model is unavailable — select one to continue" [disabled]
 - button "Commands" [disabled]:
   - img

@@ -515,7 +515,7 @@ describe('plugin registration', () => {
     // The owning view's child declaration, stood up by a bench root entry.
     ctx.slots.register({
       name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' }, 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
+      children: { 'conversation.chat.turnTail': { kind: 'list', scope: 'session' }, 'tool.call.toolview': { kind: 'keyed', scope: 'session' } },
     } as never, () => null)
     // ui-theme's Appearance row binds a durable scope through these two.
     const session = {
@@ -609,7 +609,7 @@ describe('presented files', () => {
     const matched = selectDeliverables(owner)!
     const props = openProps()
     props.openPresented.mockResolvedValue(undefined)
-    const view = render(<Deliverables {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
+    const view = render(<Deliverables collapsedCount={4} {...props} matched={matched} openFile={owner.openFile} sessionId={SessionId('child-session')} t={makeTranslate(en)} />)
     expect(view.container.querySelectorAll('[data-presented-file]')).toHaveLength(4)
     const expand = view.getByRole('button', { name: 'Show all 8 delivered files' })
     expect(expand.getAttribute('aria-expanded')).toBe('false')
@@ -647,13 +647,13 @@ it.each([{}, { turn: '1', callId: 'bad', files: [] },
   ])
   const owner = tailOwner(deliverablesOf(value), 5)
   const matched = selectDeliverables(owner)!
-  const view = render(<Deliverables {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const view = render(<Deliverables collapsedCount={4} {...openProps()} matched={matched} openFile={owner.openFile} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText('Files changed')).toBeTruthy()
   expect(view.queryByText('Deliverables')).toBeNull()
 })
 
 it('shows descriptions and falls back to file metadata without hiding extensionless deliveries', () => {
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+  const view = render(<Deliverables collapsedCount={4} {...openProps()} matched={{ produced: [], presented: [
     { path: 'out/report.txt', description: 'Quarterly summary', seq: 2, index: 0 },
     { path: 'LICENSE', seq: 2, index: 1 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
@@ -666,7 +666,7 @@ it('shows descriptions and falls back to file metadata without hiding extensionl
 it('marks delivery cards that directly follow the produced-files row', () => {
   const shared = { ...openProps(), openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
   const presented = [{ path: 'report.txt', seq: 2, index: 0 }]
-  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented }} />)
+  const view = render(<Deliverables collapsedCount={4} {...shared} matched={{ produced: ['source.ts'], presented }} />)
   expect(view.getByText('Files changed')).toBeTruthy()
   expect(view.container.querySelector('[data-presented-files-row]')?.parentElement
     ?.getAttribute('data-after-produced-files')).toBe('true')
@@ -674,7 +674,7 @@ it('marks delivery cards that directly follow the produced-files row', () => {
 
 it('distinguishes PDF, Word, Markdown, and code files with compact decorative card icons', () => {
   const paths = ['report.pdf', 'report.docx', 'README.md', 'index.tsx']
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented:
+  const view = render(<Deliverables collapsedCount={4} {...openProps()} matched={{ produced: [], presented:
     paths.map((path, index) => ({ path, seq: 2, index })),
   }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   const icons = [...view.container.querySelectorAll('[data-presented-file]')].map((card) => {
@@ -687,10 +687,10 @@ it('distinguishes PDF, Word, Markdown, and code files with compact decorative ca
 })
 
 it('lets one delivered file span the complete row without an expansion control', () => {
-  const view = render(<Deliverables {...openProps()} matched={{ produced: [], presented: [
+  const view = render(<Deliverables collapsedCount={4} {...openProps()} matched={{ produced: [], presented: [
     { path: 'report.pdf', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
-  expect(view.container.querySelector('[data-presented-files-row]')?.getAttribute('data-single')).toBe('true')
+  expect(view.container.querySelector('[data-presented-files-row] [role=list]')?.getAttribute('data-single')).toBe('true')
   expect(view.queryByRole('button', { name: /delivered files/ })).toBeNull()
 })
 
@@ -699,7 +699,7 @@ it.each(['opening', 'opened', 'error'] as const)('shows the %s state and permits
   const controller = new PresentedOpenController()
   controller.state.set({ '/api/present.open?sessionId=session&seq=2&index=0': phase })
   const props = openProps(controller)
-  const view = render(<Deliverables {...props} matched={{ produced: [], presented: [
+  const view = render(<Deliverables collapsedCount={4} {...props} matched={{ produced: [], presented: [
     { path: 'report.txt', seq: 2, index: 0 },
   ] }} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText(en[`presented.${phase}`])).toBeTruthy()
@@ -712,12 +712,12 @@ it('explains a missing desktop and retries failed Host metadata', () => {
   const props = openProps(controller)
   const matched = { produced: [], presented: [{ path: 'file.txt', seq: 2, index: 0 }] }
   controller.host.set('error')
-  const view = render(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  const view = render(<Deliverables collapsedCount={4} {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   props.reloadPresentedHost.mockResolvedValue(undefined)
   fireEvent.click(view.getByRole('button', { name: 'Retry' }))
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
   controller.host.set({ name: 'server', available: false, fileManager: null })
-  view.rerender(<Deliverables {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
+  view.rerender(<Deliverables collapsedCount={4} {...props} matched={matched} openFile={() => {}} sessionId={SessionId('session')} t={makeTranslate(en)} />)
   expect(view.getByText(en['presented.unavailable'])).toBeTruthy()
 })
 
@@ -728,8 +728,8 @@ it('loads desktop information only when delivery cards appear', () => {
   controller.host.set(null)
   props.reloadPresentedHost.mockResolvedValue(undefined)
   const shared = { ...props, openFile: () => {}, sessionId: SessionId('session'), t: makeTranslate(en) }
-  const view = render(<Deliverables {...shared} matched={{ produced: ['source.ts'], presented: [] }} />)
+  const view = render(<Deliverables collapsedCount={4} {...shared} matched={{ produced: ['source.ts'], presented: [] }} />)
   expect(props.reloadPresentedHost).not.toHaveBeenCalled()
-  view.rerender(<Deliverables {...shared} matched={{ produced: [], presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
+  view.rerender(<Deliverables collapsedCount={4} {...shared} matched={{ produced: [], presented: [{ path: 'report.txt', seq: 2, index: 0 }] }} />)
   expect(props.reloadPresentedHost).toHaveBeenCalledOnce()
 })

@@ -21,7 +21,7 @@ import { ScienceLibraryAction, ScienceArtifactTitle, ScienceArtifactMenu, Scienc
 import { ScienceAnnotationRow } from './ScienceAnnotationRow.tsx'
 import { ScienceExecutionRow } from './ScienceExecutionRow.tsx'
 import { ScienceOutcomeRow } from './ScienceOutcomeRow.tsx'
-import { ScienceTurnArtifacts } from './ScienceTurnArtifacts.tsx'
+import { ScienceTurnArtifactsEntry } from './ScienceTurnArtifacts.tsx'
 import { ScienceTraceView } from './ScienceTraceView.tsx'
 import { ScienceKernelStatus } from './ScienceKernelStatus.tsx'
 import { ScienceSettingsCard } from './ScienceSettingsCard.tsx'
@@ -31,7 +31,7 @@ import { createScienceSelectionStore } from './selection-store.ts'
 import { createScienceImageUrlLoader, createScienceTextUrlLoader } from './science-artifact-url-loader.ts'
 import { createScienceChartStateLoader } from './science-chart-state-loader.ts'
 import { createLoadScienceVersions } from './version-summaries.ts'
-import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from './science-turn-artifacts.ts'
+import { scienceTurnArtifactsDefinition } from './science-turn-artifacts.ts'
 import { SCIENCE_RUNTIME_NS, ScienceSettingsCardController, type ScienceRuntimeSettingsSection } from './settings-card-controller.ts'
 import { en, zh, NS, type ScienceKey } from './locales.ts'
 
@@ -127,9 +127,9 @@ export function apply(ctx: Context): void {
     }, ScienceOutcomeRow)
   })
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail', select: selectScienceTurnArtifacts, locale: NS, store,
+    name: 'conversation.chat.turnTail', id: 'science-artifacts', order: 20, locale: NS, store,
     inject: id => ({ loadImage: createScienceImageUrlLoader(id), openArtifact: openArtifact(id) }),
-  }, ScienceTurnArtifacts))
+  }, ScienceTurnArtifactsEntry))
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view', id: 'science', order: 20, label: () => t('trace.view'), locale: NS, store,
     inject: id => ({ openArtifact: openArtifact(id), loadVersions: createLoadScienceVersions(ctx.remote, id) }),

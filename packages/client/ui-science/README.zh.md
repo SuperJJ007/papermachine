@@ -68,7 +68,9 @@ Process 为 Science 会话注册 `process` 对话视图，与 Chat、Trajectory 
 
 Science 跟随应用主题。产物图片在缩略预览与查看器中保持固定浅色画布，不反色或变暗。
 
-Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant 回复之后，一个轮末组为每个逻辑 artifact 渲染一张卡，并仅保留该轮产生的最高版本。卡片显示缩略图或媒体类型磁贴、一个展示名（本轮所保留版本自身的既定标题；标题为空时用逻辑名）与版本；激活卡片会在右侧 Sidebar 中打开该精确版本。`annotate_artifact` 仍是折叠的过程单元格，不在调用处渲染 artifact 卡，因此文件在会话记录中只出现一次。产物数 ≤ 6 时全部显示；≥ 7 时先显 5 个，再加一个「+N 更多」按钮原地展开其余产物。标题计数始终是本轮总数，不是可见数；展开态是组件本地视图状态，刷新后恢复默认折叠。
+Science artifact 展示元数据会聚合到权威 turn 数据中。Assistant 回复之后，一个轮末组为每个逻辑 artifact 渲染一张卡，并仅保留该轮产生的最高版本。卡片显示缩略图或媒体类型磁贴、一个展示名（本轮所保留版本自身的既定标题；标题为空时用逻辑名）与版本；激活卡片会在右侧 Sidebar 中打开该精确版本。`annotate_artifact` 仍是折叠的过程单元格，不在调用处渲染 artifact 卡，因此文件在会话记录中只出现一次。该组遵循 [Chat 折叠配置](../ui-chat/README.zh.md#completed-turn-footer)，使用共享交付卡片与可反复展开、收起的分组控件。标题计数始终是本轮总数，不是可见数；展开态是组件本地视图状态，刷新后恢复默认折叠。
+
+`science-artifacts` 以顺序 `20` 注册到 `conversation.chat.turnTail` list，与工作区文件独立渲染；没有产物时返回 `null`。Science 保留 artifact/version 身份、精确版本 URL 与授权缩略图加载。`ArtifactFileTile` 将媒体类型映射到共享 `FileTypeIcon`，不读取文件，也不提供原生文件菜单。
 
 <a id="package-section-3"></a>
 ## 执行单元格

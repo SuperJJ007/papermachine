@@ -17,6 +17,7 @@ kind: "package-reference"
 - [地址](#addresses)
 - [怎么读](#how-it-reads)
 - [导航](#navigation)
+- [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -59,6 +60,16 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 ## 导航
 
 `ctx.sidebarRight.openResource(address, { params: { line } })` 通过 `file` 参数携带 1 起算的源码行号。在 `text-pages` 模式下，owner 顺序加载到该行或 EOF。纯文本与代码渲染器提供源码行锚点；Markdown 不提供。所选渲染器没有锚点时，导航保持待处理；用户切换到纯文本或代码后执行。代码导航直接滚动内部源码视口。字节模式渲染器不消费源码行导航。每个完成的导航 revision 只响应一次。不带 `revealIfOpened: false` 打开同一文件时聚焦已有 tab，并送达新 revision。
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+<details>
+<summary>实现职责</summary>
+
+`document/` 领域拥有预览 tab 正文，各格式目录拥有对应的 keyed 渲染器。共享渲染器声明位于 `contract/`，注册表服务和源代码行辅助函数是包内共享模块。`index.ts` 装配 tab 与各格式注册。
+
+</details>
 
 <a id="model-experience"></a>
 ## 模型体验

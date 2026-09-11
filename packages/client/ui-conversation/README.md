@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Conversation assembly](#conversation-assembly)
 - [Shell and standard props](#shell-and-standard-props)
 - [Temporary composer entries](#temporary-composer-entries)
+- [Understand the implementation](#understand-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -102,6 +103,16 @@ try {
 ```
 
 The selector must be a pure function of the owner currency. Its non-null return is delivered to the component as `matched`; `PropsRuntime<'conversation.composer'>` supplies the standard Session and global props. Chain order remains ascending `priority`, then registration order, and the first non-null selector wins. The shell keeps the default composer mounted beneath a takeover. Request state, listeners, response encoding, and any request-specific child slots belong to the business package; they are not carried by `SessionSnapshot` or declared by this core package.
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation ownership</summary>
+
+The `input/` domain owns the composer body, its editor, permission selector, and context meter. `skeleton/` owns conversation layout; `apply.ts` registers both domains through their declared slots.
+
+</details>
 
 <a id="model-experience"></a>
 ## Model Experience

@@ -28,8 +28,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
-import { InputBar } from '../src/client/skeleton/InputBar.tsx'
-import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
+import { InputBar } from '../src/client/input/InputBar.tsx'
+import type { InputBarProps } from '../src/client/input/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.

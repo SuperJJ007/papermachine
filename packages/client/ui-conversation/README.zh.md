@@ -17,6 +17,7 @@ kind: "package-reference"
 - [Conversation 组装](#conversation-assembly)
 - [Shell 与标准 props](#shell-and-standard-props)
 - [临时 composer entry](#temporary-composer-entries)
+- [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -102,6 +103,16 @@ try {
 ```
 
 selector 必须是 owner currency 的纯函数。非 null 返回值作为 `matched` 传给组件；`PropsRuntime<'conversation.composer'>` 提供标准 Session 与 global props。Chain 顺序仍按 `priority` 升序，再按注册顺序；首个返回非 null 的 selector 获选。Shell 会在 takeover 下保持默认 composer 挂载。Request 状态、listener、response encoding 和任何 request-specific child slot 都属于业务 package，不进入 `SessionSnapshot`，也不由 core package 声明。
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+<details>
+<summary>实现职责</summary>
+
+`input/` 领域拥有输入框正文、编辑器、权限选择器和上下文用量指示器。`skeleton/` 拥有对话布局；`apply.ts` 通过各自声明的 slot 注册这两个领域。
+
+</details>
 
 <a id="model-experience"></a>
 ## 模型体验

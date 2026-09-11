@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DocumentPreviewProps } from '../document/contract.ts'
+import type { DocumentPreviewProps } from '../contract/document.ts'
 import type {} from './locales.ts'
 import css from './MarkdownBody.module.css'
 

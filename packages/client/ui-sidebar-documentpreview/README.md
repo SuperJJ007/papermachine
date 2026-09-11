@@ -17,6 +17,7 @@ Preview readable files in the right Sidebar and choose among registered renderer
 - [Addresses](#addresses)
 - [How it reads](#how-it-reads)
 - [Navigation](#navigation)
+- [Understand the implementation](#understand-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -59,6 +60,16 @@ Initial reads, additional pages, and HTML/PDF/image preparation share a loading 
 ## Navigation
 
 `ctx.sidebarRight.openResource(address, { params: { line } })` carries a 1-based source line through the `file` parameters. In `text-pages` mode, the owner loads sequential pages until that line or EOF. Plain-text and code renderers expose source-line anchors; Markdown does not. A navigation remains pending while its selected renderer has no anchor and runs if the user switches to plain text or code. Code navigation scrolls the inner source viewport directly. Byte-mode renderers do not consume source-line navigation. Each completed navigation revision is answered once. Opening the same file without `revealIfOpened: false` focuses its existing tab and delivers a new revision.
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation ownership</summary>
+
+The `document/` domain owns the preview tab body; format directories own their keyed renderers. Shared renderer declarations live in `contract/`, while the registry service and source-line helpers remain package-local shared modules. `index.ts` assembles the tab and format registrations.
+
+</details>
 
 <a id="model-experience"></a>
 ## Model Experience

@@ -10,9 +10,9 @@ import { absoluteFileAddress, sessionFileAddress } from '@deepseek-ai/dsh-util-w
 import { apply as resourcesApply, inject as resourcesInject } from '@deepseek-ai/dsh-client-resources/src/client/index.ts'
 import { apply as sidebarApply, inject as sidebarInject } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/index.ts'
 import { apply, inject } from '../src/client/index.ts'
-import type { DocumentPreviewProps } from '../src/client/document/contract.ts'
-import type { DocumentLoadMode } from '../src/client/document/registry.ts'
-import { PLAIN_BODY_ID } from '../src/client/text/index.ts'
+import type { DocumentPreviewProps } from '../src/client/contract/document.ts'
+import type { DocumentLoadMode } from '../src/client/contract/registry.ts'
+import { PLAIN_BODY_ID } from '../src/client/contract/document.ts'
 
 const SESSION = 'documents' as SessionId
 let runtime: SlotTestRuntime | undefined

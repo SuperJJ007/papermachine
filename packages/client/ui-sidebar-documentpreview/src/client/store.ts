@@ -17,7 +17,7 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { WorkspaceFileText } from '@deepseek-ai/dsh-api-workspace-files/types'
 import type { DocumentFileBytes } from './rpc.ts'
-import type { DocumentLoadMode } from './document/registry.ts'
+import type { DocumentLoadMode } from './contract/registry.ts'
 
 /**
  * One page as the store keeps it: its text and the Host's line count, which

@@ -96,7 +96,7 @@ src/client/
   skeleton/    conversation shell and details host
   conversation-nodes/ independently registered business Definitions and Chat builder
   chat/        ordered conversation view
-  input/       composer state machine
+  input/       composer body, editor, state machine, and input controls
   queue/       queued-message presentation
   settings/    conversation settings rows
   apply.ts     cross-domain assembly point
@@ -104,6 +104,8 @@ src/client/
 ```
 
 各领域实现文件不 import 兄弟领域；共享面统一经过 `contract/`。`scripts/verify-client-domain-graph.ts` 把守分层（contract=0、domain=1、apply/index=2；import 只准指向不高于自身的层级；兄弟领域依赖会失败）。Tool 展示已经拆为独立 `ui-tool` 包，只通过 ui-conversation 声明的 slot 到达 chat 与 details。
+
+输入框控件归输入实现所有，因为它们直接绑定编辑器和提交策略；布局消费已注册的输入框 slot。Document Preview 同样将 `contract/` 中的共享渲染器声明与 `document/` tab 正文及各格式领域分开。其注册表服务和源代码行辅助函数是包内共享模块，不导入这些领域的实现。将实现放入 `contract/` 或添加重新导出层，只会隐藏依赖的所有者，同时保留兄弟领域依赖。
 
 ## 怎么开发
 

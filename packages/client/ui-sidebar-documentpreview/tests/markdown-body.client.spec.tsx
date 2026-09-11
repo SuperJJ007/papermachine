@@ -5,7 +5,7 @@ import { cleanup, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { MarkdownBody, type MarkdownBodyProps } from '../src/client/markdown/MarkdownBody.tsx'
 import { en, zh } from '../src/client/markdown/locales.ts'
-import type { DocumentContent } from '../src/client/document/contract.ts'
+import type { DocumentContent } from '../src/client/contract/document.ts'
 
 afterEach(cleanup)
 

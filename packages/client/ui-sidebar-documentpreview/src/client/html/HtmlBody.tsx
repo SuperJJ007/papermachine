@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { DocumentPreviewProps } from '../document/contract.ts'
+import type { DocumentPreviewProps } from '../contract/document.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createHtmlDocument } from './bootstrap.ts'
 import { packHtml } from './pack.ts'

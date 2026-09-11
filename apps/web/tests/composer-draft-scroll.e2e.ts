@@ -2,7 +2,7 @@
 // reveals the caret, and holds no second scroll offset.
 //
 // The composer is ONE contenteditable surface (see
-// packages/client/ui-conversation/src/client/skeleton/InputBar.module.css):
+// packages/client/ui-conversation/src/client/input/InputBar.module.css):
 // the Lexical editor's root carries the glyphs, the selection and the caret
 // together, grows with its content, and `[data-input-scroll]` — the
 // composer's single scrolling box — caps it at 14 lines. With one surface

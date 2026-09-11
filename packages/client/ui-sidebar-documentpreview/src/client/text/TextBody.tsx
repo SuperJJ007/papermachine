@@ -1,8 +1,8 @@
 /** Plain source display for files without a more specific document renderer. */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import type { DocumentPreviewProps } from '../document/contract.ts'
-import { linesOf } from './lines.ts'
+import type { DocumentPreviewProps } from '../contract/document.ts'
+import { linesOf } from '../lines.ts'
 import css from '../TextPreview.module.css'
 
 /** @param props - document contents and standard tab information. @returns source lines with navigation targets. */

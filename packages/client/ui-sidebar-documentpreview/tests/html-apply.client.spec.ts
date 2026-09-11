@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
-import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
+import { DocumentPreviewRegistry } from '../src/client/registry.ts'
 import { apply, HTML_BODY_ID, htmlBodyDefinition } from '../src/client/html/index.ts'
 import { HtmlBody } from '../src/client/html/HtmlBody.tsx'
 import { en, zh } from '../src/client/html/locales.ts'

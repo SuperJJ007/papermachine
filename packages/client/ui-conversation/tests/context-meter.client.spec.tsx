@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn, zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/index.ts'
-import { ContextMeter, type ContextMeterProps } from '../src/client/skeleton/ContextMeter.tsx'
+import { ContextMeter, type ContextMeterProps } from '../src/client/input/ContextMeter.tsx'
 import { contextOccupancy } from '../src/client/context-occupancy.ts'
-import css from '../src/client/skeleton/ContextMeter.module.css'
+import css from '../src/client/input/ContextMeter.module.css'
 import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)

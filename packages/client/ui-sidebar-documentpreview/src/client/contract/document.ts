@@ -55,3 +55,6 @@ export type DocumentPreviewProps = PropsRuntime<'sidebar.right.tab.document'>
  */
 export const documentTabInfoFactory: SlotHookFactory<'sidebar.right.tab.document', UseSidebarRightTabInfo> =
   (_standard, useTabInfo) => useTabInfo
+
+/** Stable plain-text implementation identity within this package. */
+export const PLAIN_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/text'

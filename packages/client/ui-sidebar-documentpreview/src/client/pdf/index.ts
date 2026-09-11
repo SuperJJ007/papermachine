@@ -1,7 +1,7 @@
 /** Builtin PDF registration through document metadata and the keyed body slot. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '../index.ts'
-import type { DocumentPreviewDefinition } from '../document/registry.ts'
+import type { DocumentPreviewDefinition } from '../contract/registry.ts'
 import { PdfBody, type PdfBodyInjected } from './PdfBody.tsx'
 import { createPdfStore } from './store.ts'
 import { en, zh } from './locales.ts'

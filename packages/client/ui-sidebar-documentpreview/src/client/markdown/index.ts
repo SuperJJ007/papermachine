@@ -1,7 +1,7 @@
 /** Builtin Markdown metadata and keyed document-body registration. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '../index.ts'
-import type { DocumentPreviewDefinition } from '../document/registry.ts'
+import type { DocumentPreviewDefinition } from '../contract/registry.ts'
 import { MarkdownBody } from './MarkdownBody.tsx'
 import { en, zh } from './locales.ts'
 

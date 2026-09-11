@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DocumentPreviewRegistry } from '../src/client/document/registry.ts'
-import type { DocumentPreviewDefinition } from '../src/client/document/registry.ts'
+import { DocumentPreviewRegistry } from '../src/client/registry.ts'
+import type { DocumentPreviewDefinition } from '../src/client/contract/registry.ts'
 
 function definition(id: string, overrides: Partial<DocumentPreviewDefinition> = {}): DocumentPreviewDefinition {
   return { id, title: () => id, extensions: ['md'], loading: 'text-pages', ...overrides }

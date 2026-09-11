@@ -96,7 +96,7 @@ src/client/
   skeleton/    conversation shell and details host
   conversation-nodes/ independently registered business Definitions and Chat builder
   chat/        ordered conversation view
-  input/       composer state machine
+  input/       composer body, editor, state machine, and input controls
   queue/       queued-message presentation
   settings/    conversation settings rows
   apply.ts     cross-domain assembly point
@@ -104,6 +104,8 @@ src/client/
 ```
 
 Domain implementation files never import a sibling domain; shared surfaces route through `contract/`. `scripts/verify-client-domain-graph.ts` enforces the layering (contract=0, domains=1, apply/index=2; imports may only point at levels ≤ own; sibling-domain edges fail). Tool presentation is already a separate `ui-tool` package and reaches chat and details only through the slots ui-conversation declares.
+
+Composer controls belong with the input implementation because they directly bind its editor and submission policy; layout consumes the registered composer slot. Document Preview similarly separates shared renderer declarations in `contract/` from its `document/` tab body and format domains. Its registry service and source-line helpers are shared package modules without imports into those domains. Keeping implementations in `contract/` or adding re-export bridges would retain the sibling dependency while hiding its owner.
 
 ## How to develop
 

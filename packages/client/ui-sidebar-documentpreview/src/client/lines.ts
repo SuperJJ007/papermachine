@@ -1,6 +1,6 @@
 /** Source-line helpers shared by the plain renderer and the document scroller. */
-import type { DocumentTextPage } from '../document/contract.ts'
-import type { TextPage } from '../store.ts'
+import type { DocumentTextPage } from './contract/document.ts'
+import type { TextPage } from './store.ts'
 
 /**
  * Split a loaded page into its source lines.

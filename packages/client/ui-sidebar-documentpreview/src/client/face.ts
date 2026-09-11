@@ -22,7 +22,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from './rpc.ts'
 import { documentFileBytes } from './rpc.ts'
 import type { TextStore } from './store.ts'
-import type { DocumentLoadMode } from './document/registry.ts'
+import type { DocumentLoadMode } from './contract/registry.ts'
 
 /** The preview's injected business face, as the body receives it. */
 export interface TextInjected {

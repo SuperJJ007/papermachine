@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SettingsProvider, SettingsConflictError, deepEqualJson, installSettingsSection, settingsNamespace, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
+import { SettingsProvider, SettingsConflictError, type SettingsNamespace, type SettingsScope, type SettingsUpdateSource } from '../src/index.ts'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { MemorySettings } from './memory.ts'
 
 /** A provider implementing only the three primitives: the Service Definition owns initialization. */
@@ -75,20 +76,17 @@ function recordUpdates(ctx: Context) {
   return events
 }
 
-describe('settingsNamespace', () => {
-  it('brands lowercase kebab-case names', () => {
-    expect(settingsNamespace('ui-theme')).toBe('ui-theme')
-  })
-
-  it.each(['', 'UI', '9lives', 'a_b', '-lead'])('rejects %j', (value) => {
-    expect(() => settingsNamespace(value)).toThrow(TypeError)
+describe('settings namespace validation', () => {
+  it.each(['', 'UI', '9lives', 'a_b', '-lead'])('rejects %j at the service', async (value) => {
+    const { ctx } = await boot()
+    expect(() => ctx.settings.register(value, ThemeSchema)).toThrow(TypeError)
   })
 })
 
 describe('registration', () => {
   it('resolves schema defaults, then composition base, then the user layer', async () => {
     const { ctx } = await boot({ doc: { 'ui-theme': { theme: 'light' } } })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema, {
+    const scope = ctx.settings.register('ui-theme', ThemeSchema, {
       base: { fontSize: 16 },
     })
     // theme: user layer wins; fontSize: base wins over the schema default.
@@ -97,7 +95,7 @@ describe('registration', () => {
 
   it('refuses a write its owner could not act on, and keeps the last good value for a stored one', async () => {
     const { ctx } = await boot()
-    const ns = settingsNamespace('ui-theme')
+    const ns = 'ui-theme'
     // A constraint the schema cannot express: this owner cannot serve a size
     // it considers unreadable, whatever the schema admits.
     const scope = ctx.settings.register(ns, ThemeSchema, {
@@ -126,7 +124,7 @@ describe('registration', () => {
     // owner cannot serve therefore refuses the registration rather than
     // mounting an owner over configuration it rejects.
     const { ctx } = await boot({ doc: { 'ui-theme': { fontSize: 4 } } })
-    expect(() => ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema, {
+    expect(() => ctx.settings.register('ui-theme', ThemeSchema, {
       validate: (value) => {
         if (value.fontSize < 10) throw new Error(`font size ${String(value.fontSize)} is unreadable`)
       },
@@ -135,26 +133,26 @@ describe('registration', () => {
 
   it('rejects a duplicate namespace loud', async () => {
     const { ctx } = await boot()
-    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
-    expect(() => ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema))
+    ctx.settings.register('ui-theme', ThemeSchema)
+    expect(() => ctx.settings.register('ui-theme', ThemeSchema))
       .toThrow(/already registered/)
   })
 
   it('fails registration when the stored section is invalid for the schema', async () => {
     const { ctx } = await boot({ doc: { 'ui-theme': { fontSize: 'big' } } })
-    expect(() => ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)).toThrow()
+    expect(() => ctx.settings.register('ui-theme', ThemeSchema)).toThrow()
   })
 
   it('fails registration when the stored section is not an object', async () => {
     const { ctx } = await boot({ doc: { 'ui-theme': 'dark' } })
-    expect(() => ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema))
+    expect(() => ctx.settings.register('ui-theme', ThemeSchema))
       .toThrow(/must be an object/)
   })
 
   it('describes registered namespaces with schema JSON, value, and applies', async () => {
     const { ctx } = await boot()
-    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
-    ctx.settings.register(settingsNamespace('workspace'), NestedSchema, { applies: 'restart' })
+    ctx.settings.register('ui-theme', ThemeSchema)
+    ctx.settings.register('workspace', NestedSchema, { applies: 'restart' })
     const descriptors = ctx.settings.describe()
     expect(descriptors.map(entry => [entry.ns, entry.applies])).toEqual([
       ['ui-theme', 'live'],
@@ -169,7 +167,7 @@ describe('registration', () => {
 
   it('freezes `effective` at registration for a restart-applies namespace, unaffected by a later write', async () => {
     const { ctx } = await boot()
-    const ns = settingsNamespace('workspace')
+    const ns = 'workspace'
     const scope = ctx.settings.register(ns, NestedSchema, { applies: 'restart' })
     const before = ctx.settings.describe().find(entry => entry.ns === ns)!
     expect(before.effective).toEqual(before.value)
@@ -189,7 +187,7 @@ describe('registration', () => {
 
   it('tracks `effective` with every write for a live-applies namespace', async () => {
     const { ctx } = await boot()
-    const ns = settingsNamespace('ui-theme')
+    const ns = 'ui-theme'
     ctx.settings.register(ns, ThemeSchema)
 
     await ctx.settings.update(ns, { fontSize: 20 })
@@ -202,7 +200,7 @@ describe('registration', () => {
   it('redacts `effective` independently of `value` once they diverge for a restart-applies namespace', async () => {
     interface SecretConfig { token: string }
     const SecretSchema: z<SecretConfig> = z.object({ token: z.string().role('secret') })
-    const ns = settingsNamespace('guarded')
+    const ns = 'guarded'
     const { ctx } = await boot({ doc: { guarded: { token: 'first' } } })
     ctx.settings.register(ns, SecretSchema, { applies: 'restart' })
 
@@ -215,16 +213,19 @@ describe('registration', () => {
     expect(redacted.value).toEqual({})
     expect(redacted.effective).toEqual({})
     expect(redacted.secrets).toEqual([{ path: ['token'], set: true }])
+    expect(redacted.pendingRestart).toBe(true)
+    await ctx.settings.update(ns, { token: 'first' })
+    expect(ctx.settings.describe({ redactSecrets: true }).find(entry => entry.ns === ns)!.pendingRestart).toBe(false)
   })
 
   it('reads undefined for an unregistered namespace', async () => {
     const { ctx } = await boot()
-    expect(ctx.settings.get(settingsNamespace('missing'))).toBeUndefined()
+    expect(ctx.settings.get('missing')).toBeUndefined()
   })
 
   it('hands out frozen resolved values', async () => {
     const { ctx } = await boot({ doc: { workspace: { retry: { attempts: 5 } } } })
-    const scope = ctx.settings.register(settingsNamespace('workspace'), NestedSchema)
+    const scope = ctx.settings.register('workspace', NestedSchema)
     const value = scope.get()
     expect(Object.isFrozen(value)).toBe(true)
     expect(Object.isFrozen(value.retry)).toBe(true)
@@ -238,22 +239,22 @@ describe('registration', () => {
     const fiber = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+        scope = child.settings.register('ui-theme', ThemeSchema)
         scope.watch((next) => { seen.push(next) })
       },
     })
     await fiber
-    expect(ctx.settings.get(settingsNamespace('ui-theme'))).toEqual({ theme: 'dark', fontSize: 14 })
+    expect(ctx.settings.get('ui-theme')).toEqual({ theme: 'dark', fontSize: 14 })
 
     await fiber.dispose()
-    expect(ctx.settings.get(settingsNamespace('ui-theme'))).toBeUndefined()
+    expect(ctx.settings.get('ui-theme')).toBeUndefined()
     expect(ctx.settings.describe()).toEqual([])
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
     expect(seen).toEqual([])
 
     // The namespace is free again, and re-registration resolves the user layer
     // that kept living in storage while nobody owned the namespace.
-    const again = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const again = ctx.settings.register('ui-theme', ThemeSchema)
     expect(again.get()).toEqual({ theme: 'light', fontSize: 14 })
   })
 })
@@ -261,7 +262,7 @@ describe('registration', () => {
 describe('update', () => {
   it('persists the merged user section without baking in the base layer', async () => {
     const { ctx, provider } = await boot({ doc: { 'ui-theme': { theme: 'light' } } })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema, {
+    const scope = ctx.settings.register('ui-theme', ThemeSchema, {
       base: { fontSize: 16 },
     })
     await scope.update({ theme: 'dark' })
@@ -275,7 +276,7 @@ describe('update', () => {
     const { ctx, provider } = await boot({
       doc: { workspace: { retry: { attempts: 5, delayMs: 300 }, tags: ['a', 'b'] } },
     })
-    const scope = ctx.settings.register(settingsNamespace('workspace'), NestedSchema)
+    const scope = ctx.settings.register('workspace', NestedSchema)
     await scope.update({ retry: { attempts: 7 }, tags: ['c'] })
     expect(provider.persisted[0]!.section).toEqual({
       retry: { attempts: 7, delayMs: 300 },
@@ -287,7 +288,7 @@ describe('update', () => {
   it('commits, notifies watchers, and emits with source update', async () => {
     const { ctx } = await boot()
     const events = recordUpdates(ctx)
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const watcher = vi.fn()
     scope.watch(watcher)
     await scope.update({ theme: 'light' })
@@ -306,7 +307,7 @@ describe('update', () => {
   it('rejects an invalid patch before persisting anything', async () => {
     const { ctx, provider } = await boot()
     const events = recordUpdates(ctx)
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await expect(scope.update({ fontSize: 'big' })).rejects.toThrow()
     expect(provider.persisted).toEqual([])
     expect(events).toEqual([])
@@ -318,7 +319,7 @@ describe('update', () => {
 
   it('ignores explicit undefined entries so a sparse patch cannot erase keys', async () => {
     const { ctx, provider } = await boot({ doc: { 'ui-theme': { theme: 'light' } } })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await scope.update({ theme: undefined, fontSize: 18 })
     expect(provider.persisted[0]!.section).toEqual({ theme: 'light', fontSize: 18 })
     expect(scope.get()).toEqual({ theme: 'light', fontSize: 18 })
@@ -326,7 +327,7 @@ describe('update', () => {
 
   it('rejects a non-object patch', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await expect(scope.update([1])).rejects.toThrow(TypeError)
     await expect(scope.update(new Date() as unknown as object)).rejects.toThrow(TypeError)
     await expect(scope.replace([1])).rejects.toThrow(/replace for "ui-theme"/)
@@ -334,7 +335,7 @@ describe('update', () => {
 
   it('accepts a null-prototype patch object', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const patch: { fontSize?: number } = Object.create(null) as { fontSize?: number }
     patch.fontSize = 18
     await scope.update(patch)
@@ -343,13 +344,13 @@ describe('update', () => {
 
   it('rejects an unregistered namespace', async () => {
     const { ctx } = await boot()
-    await expect(ctx.settings.update(settingsNamespace('missing'), {}))
+    await expect(ctx.settings.update('missing', {}))
       .rejects.toThrow(/not registered/)
   })
 
   it('rejects on a read-only provider before reaching persist', async () => {
     const { ctx, provider } = await boot({ writable: false })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await expect(scope.update({ theme: 'light' })).rejects.toThrow(/read-only/)
     expect(provider.persisted).toEqual([])
   })
@@ -375,14 +376,14 @@ describe('review regressions', () => {
     ctx.on('settings/updated', () => {
       throw Object.assign(new Error('forged relation'), { code: 'INVARIANT' })
     })
-    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    ctx.settings.register('ui-theme', ThemeSchema)
     expect(() => { provider.pushExternal({ 'ui-theme': { theme: 'light' } }) })
       .toThrow(/forged relation/)
   })
 
   it('serializes concurrent updates so neither patch is lost', async () => {
     const { ctx, provider } = await boot({ persistDelayMs: 10 })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await Promise.all([
       scope.update({ theme: 'light' }),
       scope.update({ fontSize: 20 }),
@@ -396,7 +397,7 @@ describe('review regressions', () => {
     ctx.on('settings/updated', () => {
       throw new Error('listener boom')
     })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     expect(() => { provider.pushExternal({ 'ui-theme': { theme: 'light' } }) }).not.toThrow()
     expect(scope.get().theme).toBe('light')
     provider.pushExternal({ 'ui-theme': { theme: 'dark' } })
@@ -405,7 +406,7 @@ describe('review regressions', () => {
 
   it('contains an async watcher rejection', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     scope.watch(async () => {
       throw new Error('async watcher boom')
     })
@@ -419,13 +420,13 @@ describe('review regressions', () => {
   it('loads the provider document through the base init without provider boilerplate', async () => {
     const ctx = new Context()
     await ctx.plugin(BareProvider, { doc: { 'ui-theme': { fontSize: 7 } } })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     expect(scope.get()).toEqual({ theme: 'dark', fontSize: 7 })
   })
 
   it('replaces the user section wholesale so overrides can be removed', async () => {
     const { ctx, provider } = await boot({ doc: { 'ui-theme': { theme: 'light', fontSize: 20 } } })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema, {
+    const scope = ctx.settings.register('ui-theme', ThemeSchema, {
       base: { fontSize: 16 },
     })
     await scope.replace({ theme: 'light' })
@@ -446,7 +447,7 @@ describe('second review regressions', () => {
     })
     const second = vi.fn()
     ctx.on('settings/updated', second)
-    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    ctx.settings.register('ui-theme', ThemeSchema)
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
     expect(second).toHaveBeenCalledTimes(1)
   })
@@ -457,7 +458,7 @@ describe('second review regressions', () => {
     const fiber = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+        scope = child.settings.register('ui-theme', ThemeSchema)
       },
     })
     await fiber
@@ -473,7 +474,7 @@ describe('second review regressions', () => {
     const fiber = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+        scope = child.settings.register('ui-theme', ThemeSchema)
         scope.watch(watcher)
       },
     })
@@ -493,7 +494,7 @@ describe('second review regressions', () => {
   it('drains in-flight writes at service dispose and rejects later ones', async () => {
     const { ctx, provider, fiber } = await boot({ persistDelayMs: 20 })
     const service = ctx.settings
-    const scope = service.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = service.register('ui-theme', ThemeSchema)
     const pending = scope.update({ theme: 'light' })
     await new Promise(resolve => setTimeout(resolve, 5))
     await fiber.dispose()
@@ -502,7 +503,7 @@ describe('second review regressions', () => {
     const persistedAtDispose = provider.persisted.length
     expect(persistedAtDispose).toBe(1)
     // …and afterwards nothing writes and new writes reject.
-    await expect(service.update(settingsNamespace('ui-theme'), { theme: 'dark' }))
+    await expect(service.update('ui-theme', { theme: 'dark' }))
       .rejects.toThrow(/disposed|not registered/)
     await new Promise(resolve => setTimeout(resolve, 40))
     expect(provider.persisted.length).toBe(persistedAtDispose)
@@ -510,7 +511,7 @@ describe('second review regressions', () => {
 
   it('serializes invocations of one async watcher in commit order', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const applied: number[] = []
     let firstCall = true
     scope.watch(async (next) => {
@@ -531,14 +532,14 @@ describe('second review regressions', () => {
 
   it('rejects a function value as not JSON-compatible', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     await expect(scope.update({ theme: () => 'dark' }))
       .rejects.toThrow(/JSON-compatible.*function at \$\.theme/)
   })
 
   it('rejects a write still queued when the service disposes', async () => {
     const { ctx, fiber } = await boot({ persistDelayMs: 20 })
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const first = scope.update({ theme: 'light' })
     const second = scope.update({ fontSize: 20 })
     await new Promise(resolve => setTimeout(resolve, 5))
@@ -553,7 +554,7 @@ describe('second review regressions', () => {
     const fiber = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+        scope = child.settings.register('ui-theme', ThemeSchema)
       },
     })
     await fiber
@@ -567,7 +568,7 @@ describe('second review regressions', () => {
 
   it('snapshots the patch at call time so caller mutation cannot leak in', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const patch = { fontSize: 18 }
     const pending = scope.update(patch)
     patch.fontSize = 99
@@ -580,7 +581,7 @@ describe('publish', () => {
   it('notifies watchers of an external change with source provider', async () => {
     const { ctx, provider } = await boot()
     const events = recordUpdates(ctx)
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const watcher = vi.fn()
     scope.watch(watcher)
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
@@ -596,7 +597,7 @@ describe('publish', () => {
   it('stays silent when the resolved value is deep-equal', async () => {
     const { ctx, provider } = await boot({ doc: { 'ui-theme': { theme: 'light' } } })
     const events = recordUpdates(ctx)
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const watcher = vi.fn()
     scope.watch(watcher)
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
@@ -607,8 +608,8 @@ describe('publish', () => {
   it('keeps the last good value for an invalid section while other namespaces commit', async () => {
     const { ctx, provider } = await boot()
     const events = recordUpdates(ctx)
-    const theme = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
-    const workspace = ctx.settings.register(settingsNamespace('workspace'), NestedSchema)
+    const theme = ctx.settings.register('ui-theme', ThemeSchema)
+    const workspace = ctx.settings.register('workspace', NestedSchema)
     provider.pushExternal({
       'ui-theme': { fontSize: 'broken' },
       workspace: { retry: { attempts: 9 } },
@@ -620,7 +621,7 @@ describe('publish', () => {
 
   it('recovers from a bad section once storage turns valid again', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     provider.pushExternal({ 'ui-theme': { fontSize: 'broken' } })
     expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
     provider.pushExternal({ 'ui-theme': { fontSize: 18 } })
@@ -631,7 +632,7 @@ describe('publish', () => {
 describe('third review regressions', () => {
   it('skips a queued watch invocation whose disposer ran before it started', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const watcher = vi.fn()
     const dispose = scope.watch(watcher)
     // The commit chains the invocation as a microtask; the disposer runs in
@@ -644,7 +645,7 @@ describe('third review regressions', () => {
 
   it('waits for an in-flight watch invocation at service dispose', async () => {
     const { ctx, provider, fiber } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     let release: (() => void) | undefined
     let finished = false
     scope.watch(async () => {
@@ -664,7 +665,7 @@ describe('third review regressions', () => {
 
   it('rejects a Date at its path before anything persists', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), z.object({ value: z.any() }))
+    const scope = ctx.settings.register('ui-theme', z.object({ value: z.any() }))
     await expect(scope.update({ value: { at: new Date(0) } }))
       .rejects.toThrow(/JSON-compatible.*Date at \$\.value\.at/)
     expect(provider.persisted).toEqual([])
@@ -679,13 +680,13 @@ describe('third review regressions', () => {
     ['a class instance', { value: Object.create({ marker: true }) as object }, /non-plain object at \$\.value/],
   ])('rejects %s that structuredClone would admit', async (_label, patch, message) => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), z.object({ value: z.any() }))
+    const scope = ctx.settings.register('ui-theme', z.object({ value: z.any() }))
     await expect(scope.update(patch)).rejects.toThrow(message)
   })
 
   it('rejects a circular patch instead of storing an alias-looped document', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), z.object({ value: z.any() }))
+    const scope = ctx.settings.register('ui-theme', z.object({ value: z.any() }))
     const cyclic: Record<string, unknown> = {}
     cyclic['self'] = cyclic
     await expect(scope.update({ value: cyclic })).rejects.toThrow(/circular reference at \$\.value\.self/)
@@ -696,7 +697,7 @@ describe('third review regressions', () => {
 
   it('accepts one object referenced twice without a cycle', async () => {
     const { ctx } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), z.object({ value: z.any() }))
+    const scope = ctx.settings.register('ui-theme', z.object({ value: z.any() }))
     const shared = { leaf: 1 }
     await scope.update({ value: { left: shared, right: shared } })
     expect(scope.get()).toEqual({ value: { left: { leaf: 1 }, right: { leaf: 1 } } })
@@ -713,7 +714,7 @@ describe('third review regressions', () => {
     ctx.on('settings/updated', boom)
     const second = vi.fn()
     ctx.on('settings/updated', second)
-    ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    ctx.settings.register('ui-theme', ThemeSchema)
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
     expect(second).toHaveBeenCalledTimes(1)
     // Containment gives the rejection a handler; vitest observes no unhandled
@@ -725,7 +726,7 @@ describe('third review regressions', () => {
 describe('watch', () => {
   it('stops after its disposer runs', async () => {
     const { ctx, provider } = await boot()
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     const watcher = vi.fn()
     const dispose = scope.watch(watcher)
     dispose()
@@ -736,7 +737,7 @@ describe('watch', () => {
   it('contains a throwing watcher without blocking the commit or other watchers', async () => {
     const { ctx, provider } = await boot()
     const events = recordUpdates(ctx)
-    const scope = ctx.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+    const scope = ctx.settings.register('ui-theme', ThemeSchema)
     scope.watch(() => { throw new Error('watcher boom') })
     const second = vi.fn()
     scope.watch(second)
@@ -749,7 +750,7 @@ describe('watch', () => {
   })
 })
 
-describe('installSettingsSection', () => {
+describe('SettingsProvider.installSection', () => {
   const HelperSchema: z<{ theme: string }> = z.object({
     theme: z.string().default('default'),
   })
@@ -759,13 +760,15 @@ describe('installSettingsSection', () => {
     const entry = { theme: 'entry' }
     let current: () => { theme: string } = () => entry
     let changes = 0
-    installSettingsSection(ctx, settingsNamespace('helper-ns'), HelperSchema, entry, {
-      setSource: (source) => {
-        current = source
-      },
-      onChange: () => {
-        changes += 1
-      },
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, 'helper-ns', HelperSchema, entry, {
+        setSource: (source) => {
+          current = source
+        },
+        onChange: () => {
+          changes += 1
+        },
+      })
     })
     // No settings service mounted: nothing ran, the entry stays authoritative.
     expect(current()).toEqual({ theme: 'entry' })
@@ -778,7 +781,7 @@ describe('installSettingsSection', () => {
     })
     expect(changes).toBe(1)
 
-    await ctx.settings.update(settingsNamespace('helper-ns'), { theme: 'live' })
+    await ctx.settings.update('helper-ns', { theme: 'live' })
     await vi.waitFor(() => {
       expect(changes).toBe(2)
     })
@@ -799,7 +802,7 @@ describe('installSettingsSection', () => {
     const consumer = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        installSettingsSection(child, settingsNamespace('helper-ns'), HelperSchema, entry, {
+        child.settings.installSection(child, 'helper-ns', HelperSchema, entry, {
           setSource: (source) => {
             current = source
           },
@@ -832,7 +835,7 @@ describe('installSettingsSection', () => {
     const consumer = ctx.plugin({
       inject: ['settings'],
       apply: (child: Context) => {
-        installSettingsSection(child, settingsNamespace('helper-ns'), HelperSchema, entry, {
+        child.settings.installSection(child, 'helper-ns', HelperSchema, entry, {
           setSource: (source) => {
             current = source
           },
@@ -867,8 +870,8 @@ describe('mutate (path-addressed writes)', () => {
     reasoning: z.string(),
   })
 
-  const KEYED = settingsNamespace('keyed')
-  const NESTED = settingsNamespace('workspace')
+  const KEYED = 'keyed'
+  const NESTED = 'workspace'
 
   async function mounted(doc: Record<string, unknown>) {
     const ctx = new Context()
@@ -972,7 +975,7 @@ describe('mutate (path-addressed writes)', () => {
 })
 
 describe('revision and conflict detection', () => {
-  const REV = settingsNamespace('rev')
+  const REV = 'rev'
   const RevSchema: z<{ a: string; b: string }> = z.object({
     a: z.string().default('base-a'),
     b: z.string(),

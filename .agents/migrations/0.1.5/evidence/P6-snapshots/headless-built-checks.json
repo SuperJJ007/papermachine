@@ -1,0 +1,30 @@
+{
+  "command": "DSH_EXAMPLE_MODE=lib DSH_SNAPSHOT=replay node node_modules/vitest/vitest.mjs run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts",
+  "passed": 95,
+  "skipped": 2,
+  "skipReason": "pwsh unavailable",
+  "translationPairing": {
+    "checked": 878,
+    "failed": 0
+  },
+  "manifestChanges": false,
+  "buildInstallRun": false,
+  "logs": [
+    {
+      "file": "pm-p6-headless-built-full.log",
+      "sha256": "6b5bdfc1aa62d58da79219c4e1e7c7977becf66f2fafa06be6cd97e8619b0de4"
+    },
+    {
+      "file": "pm-p6-overlay-built-pairing-record.log",
+      "sha256": "23e1cd56e7016f90ebcc90b99a210115c381584ac7fce6aab42346115d6f9e56"
+    },
+    {
+      "file": "pm-p6-overlay-built-pairing-check.log",
+      "sha256": "92bbf7c8aa8c9d426508894e66881d0b48fa0fcd2c1f5d7f01ddc3d14dc030f1"
+    },
+    {
+      "file": "pm-p6-headless-built-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

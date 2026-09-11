@@ -3,7 +3,6 @@ import { join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import {
@@ -14,10 +13,12 @@ import {
 import TerminalSessionService, { TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import { BashTerminalBackend } from '@deepseek-ai/dsh-terminal-bash'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import E2BSubprocessRuntime from '@deepseek-ai/dsh-subprocess-e2b'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
-const fixtureRoot = fileURLToPath(new URL('../../../../examples/headless-agent/tests/fixtures/e2b/e2b/', import.meta.url))
+const fixtureRoot = fileURLToPath(new URL('./fixtures/composition/', import.meta.url))
 const binScript = join(fixtureRoot, 'bin.ts')
 const configPath = join(fixtureRoot, 'cordis.yml')
 const tsconfigPath = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
@@ -52,6 +53,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         runtimeRoot: '/home/user/.dsh-e2b',
         getSandbox: async () => sandbox,
       } as never)
+      await ctx.plugin(SessionProjectionRegistry)
       const sandboxPolicyFiber = await ctx.plugin(SandboxPolicyService, {
         mode: 'danger-full-access',
         workspaceRoot: '/home/user',
@@ -63,6 +65,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
       await expect(ctx.subprocess.resolveExecutable('node', { PATH: relativeNodePath })).resolves.toBe(node)
       await expect(sandbox.files.read(profileLeakPath)).rejects.toBeInstanceOf(FileNotFoundError)
       const environmentProbe = ctx.subprocess.spawn({
+        environmentBase: 'scrubbed-parent' as const,
         argv: ['/bin/bash', '-c', [
           'dsh_leak=0',
           'for dsh_pid in "$PPID" $(ps -o pid= --ppid "$PPID"); do',
@@ -74,7 +77,6 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         cwd: '/home/user',
         stdio: { stdin: 'ignore', stdout: { maxBytes: 1_024 }, stderr: { maxBytes: 1_024 } },
         graceMs: 500,
-        environmentBase: 'scrubbed-parent',
         env: {},
       })
       await expect(environmentProbe.done).resolves.toEqual({ exitCode: 0, signal: null })
@@ -86,7 +88,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         id: ownerId,
         options: {},
         session: ownerSession,
-        inbox: new Inbox(ownerSession, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+        inbox: unsupportedInbox(),
         status: 'idle',
         ctx,
         send() {},

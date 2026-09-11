@@ -53,7 +53,7 @@ const STATIC_GUIDANCE = [
 /** Register the Science Consumer's prompt, context, and tool contributions. */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
-  ctx.systemPrompt.section({ name: 'tool:science', order: 110, text: STATIC_GUIDANCE })
+  ctx.systemPrompt.section({ name: 'tool:science', order: 1100, text: STATIC_GUIDANCE })
   applyScienceContext(ctx, resolved)
   applyScienceStateTool(ctx, resolved.stateHistoryLimit)
   applyRunTool(ctx, 'python', resolved.stateHistoryLimit)

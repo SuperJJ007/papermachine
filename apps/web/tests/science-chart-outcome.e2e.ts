@@ -1,3 +1,5 @@
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 /** Assembled Web replay of versioned references, chart location, stored PNGs, and missing content. */
 import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -5,12 +7,12 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
   Session,
   SessionId,
-  type JsonValue,
+  type SessionSeq,
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
@@ -29,17 +31,18 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
+  openScienceSeed,
   seedSession,
   watchConsole,
   webSnapshotMode,
   type WebScaffold,
-} from './scaffold.ts'
+} from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const ARTIFACTS_EXPECTED = fileURLToPath(
-  new URL('./snapshots/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
+  new URL('./expected/science-artifacts/panel-and-provenance.expected.md', import.meta.url),
 )
-const INPUT_EXPECTED = fileURLToPath(new URL('./snapshots/science-artifacts/reference-input.expected.md', import.meta.url))
+const INPUT_EXPECTED = fileURLToPath(new URL('./expected/science-artifacts/reference-input.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-chart-outcome-web-e2e'
 const SEED_TITLE = 'Science chart replay'
@@ -47,7 +50,7 @@ const SEED_TITLE = 'Science chart replay'
 // details-session-lifecycle.e2e.ts and others): a closed session with no
 // agentPreset, giving the header-action test a real non-Science Session
 // without inventing a second recording.
-const STANDARD_FIXTURE = fileURLToPath(new URL('./snapshots/seeded-history/seed.jsonl', import.meta.url))
+const STANDARD_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const STANDARD_SEED_ID = 'science-chart-outcome-standard-web-e2e'
 const STANDARD_SEED_TITLE = 'Use the read tool twice'
 const PNG = new Uint8Array(await readFile(new URL('./fixtures/chart-references/plot.png', import.meta.url)))
@@ -58,20 +61,20 @@ const RUN_ID = ScienceRunId('run-browser-1')
 const SECOND_RUN_ID = ScienceRunId('run-browser-2')
 const FINAL_RUN_ID = ScienceRunId('run-browser-3')
 const CANCELLED_RUN_ID = ScienceRunId('run-browser-cancelled')
-const RUN_CALL_ID = CallId('call-run-browser')
-const SECOND_RUN_CALL_ID = CallId('call-run-browser-2')
-const FINAL_RUN_CALL_ID = CallId('call-run-browser-3')
-const CANCELLED_RUN_CALL_ID = CallId('call-run-browser-cancelled')
-const FIRST_CHART_CALL_ID = CallId('call-chart-browser-1')
-const SECOND_CHART_CALL_ID = CallId('call-chart-browser-2')
-const FIRST_OUTCOME_CALL_ID = CallId('call-outcome-browser-1')
-const SECOND_OUTCOME_CALL_ID = CallId('call-outcome-browser-2')
+const RUN_CALL_ID = ToolCallId('call-run-browser')
+const SECOND_RUN_CALL_ID = ToolCallId('call-run-browser-2')
+const FINAL_RUN_CALL_ID = ToolCallId('call-run-browser-3')
+const CANCELLED_RUN_CALL_ID = ToolCallId('call-run-browser-cancelled')
+const FIRST_CHART_CALL_ID = ToolCallId('call-chart-browser-1')
+const SECOND_CHART_CALL_ID = ToolCallId('call-chart-browser-2')
+const FIRST_OUTCOME_CALL_ID = ToolCallId('call-outcome-browser-1')
+const SECOND_OUTCOME_CALL_ID = ToolCallId('call-outcome-browser-2')
 
 /** Append one settled tool result with the exact durable presentation value. */
 function appendToolResult(
   session: Session,
-  callId: ReturnType<typeof CallId>,
-  callSeq: number,
+  callId: ReturnType<typeof ToolCallId>,
+  callSeq: SessionSeq,
   text: string,
   meta?: JsonValue,
   turn = 1,
@@ -172,7 +175,7 @@ function scienceFixture(
       at: eventTime(request.seq + 1),
     },
   })
-  session.append('assistant/message', {
+  session.append('assistant/message', { stream: [],
     turn: 1, step: 1,
     message: createAssistantMessage({
       content: [
@@ -232,8 +235,8 @@ function scienceFixture(
   const appendCapturedChart = (
     version: number,
     content: ChartContent,
-    sourceCallId: ReturnType<typeof CallId>,
-    sourceCallSeq: number,
+    sourceCallId: ReturnType<typeof ToolCallId>,
+    sourceCallSeq: SessionSeq,
     resultText: string,
     turn: number,
   ): void => {
@@ -256,7 +259,7 @@ function scienceFixture(
 
   const appendChart = (
     version: number,
-    callId: ReturnType<typeof CallId>,
+    callId: ReturnType<typeof ToolCallId>,
     content: ChartContent,
     turn: number,
   ): void => {
@@ -284,7 +287,7 @@ function scienceFixture(
 
   const appendOutcome = (
     revision: number,
-    callId: ReturnType<typeof CallId>,
+    callId: ReturnType<typeof ToolCallId>,
     chartVersion: number,
     turn: number,
   ): void => {
@@ -342,7 +345,7 @@ function scienceFixture(
     }))] },
   }), { surfaceOp: 'append' })
   session.append('step/start', { turn: 2, step: 1 })
-  session.append('assistant/message', {
+  session.append('assistant/message', { stream: [],
     turn: 2, step: 1,
     message: createAssistantMessage({
       content: [
@@ -445,7 +448,7 @@ function scienceFixture(
 
   const header = {
     type: 'session',
-    version: SESSION_FORMAT_VERSION,
+    version: SESSION_FORMAT_VERSION, isSeeded: false, delegationDepth: 0,
     id: '{{sessionId}}',
     createdAt: 0,
     cwd: '{{cwd}}',
@@ -453,7 +456,7 @@ function scienceFixture(
   }
   return [
     JSON.stringify(header),
-    ...session.events.map(event => JSON.stringify({ ...event, time: eventTime(event.seq) })),
+    ...session.snapshotEvents().map(event => JSON.stringify({ ...event, time: eventTime(event.seq) })),
     '',
   ].join('\n')
 }
@@ -511,7 +514,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -520,47 +523,15 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await scaffold?.close()
   })
 
-  /**
-   * Center-column content uniquely identifies which of the two seeded
-   * Sessions is current (a freshly seeded row's sidebar label falls back to
-   * the shared workspace basename until opened once, and selecting a row
-   * also promotes it to most-recently-used — reordering the list — so
-   * neither the label nor the row's position is a stable selector).
-   */
-  async function currentSeedIdentity(): Promise<'science' | 'standard' | 'unknown'> {
-    if (await page.getByText('Replay the accepted Science result.', { exact: true }).count() > 0) return 'science'
-    if (await page.getByText('DONE', { exact: true }).count() > 0) return 'standard'
-    return 'unknown'
-  }
-
-  /**
-   * Select the Session named `title` (one of {@link SEED_TITLE},
-   * {@link STANDARD_SEED_TITLE}) — the only two rows this scaffold ever
-   * seeds — by content rather than position: while the wrong one is current,
-   * click whichever sibling row is not `aria-selected` to reach the other.
-   */
+  /** Open either seed by its recorded request after the workspace catalog is ready. */
   async function openSessionByTitle(title: string): Promise<void> {
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
-    const want = title === SEED_TITLE ? 'science' : 'standard'
-    await expect.poll(async () => {
-      if (await currentSeedIdentity() === want) return true
-      const rows = page.locator('[role="treeitem"]')
-      const rowCount = await rows.count()
-      for (let index = 1; index < rowCount; index += 1) {
-        const row = rows.nth(index)
-        if (await row.getAttribute('aria-selected') !== 'true') {
-          await row.click()
-          break
-        }
-      }
-      return false
-    }, { timeout: 20_000, interval: 500 }).toBe(true)
+    await openScienceSeed(page, title === SEED_TITLE
+      ? 'Replay the accepted Science result.'
+      : 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.')
   }
 
   async function expandProcessGroups(): Promise<void> {
-    const groups = page.locator('[data-tool-group] > button[aria-expanded="false"]')
+    const groups = page.locator('[data-turn-process][aria-expanded="false"]')
     while (await groups.count() > 0) await groups.first().click()
   }
 
@@ -577,8 +548,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await page.getByText('Outcome published · revision 2', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Initial finding', { exact: true }).count()).toBe(0)
     expect(await page.getByText('Updated finding', { exact: true }).count()).toBe(0)
-    expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Observed series v1', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Missing revision v3', exact: true }).count()).toBe(1)
     expect(await page.locator('[data-tool="science-artifact"]').count()).toBe(0)
 
     // Disclosure resizing can leave the transcript at either scroll position.
@@ -600,16 +571,15 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await page.reload({ waitUntil: 'load' })
     await openSeed()
     expect(await page.locator('[class*="centerCol"]').getByText('Revise the accepted Science result.', { exact: true }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Observed series v1/u }).count()).toBe(1)
-    expect(await page.getByRole('listitem', { name: /Missing revision v3/u }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Observed series v1', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: 'Missing revision v3', exact: true }).count()).toBe(1)
     const center = page.locator('[class*="centerCol"]')
     await center.getByRole('tab', { name: 'Trajectory', exact: true }).click()
     await center.getByRole('tab', { name: 'Process', exact: true }).click()
     expect(await center.getByRole('region', { name: 'Science process view', exact: true }).count()).toBe(1)
     expect(await center.getByRole('tab', { name: 'Swimlane', exact: true }).count()).toBe(0)
-    await center.getByRole('tab', { name: 'Detailed', exact: true }).click()
-    expect(await center.getByRole('tabpanel', { name: 'Detailed', exact: true })
-      .getByText('Revise the accepted Science result.', { exact: true }).count()).toBe(1)
+    await center.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await expect.poll(() => center.getByText('Revise the accepted Science result.', { exact: true }).count()).toBe(1)
     await center.getByRole('tab', { name: 'Chat', exact: true }).click()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
@@ -619,8 +589,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-reference-elements'))
     await openSessionByTitle(SEED_TITLE)
     const center = page.locator('[class*="centerCol"]')
-    await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
-    const details = page.locator('[class*="detailsCol"]')
+    await center.getByRole('button', { name: 'Observed series v1', exact: true }).click()
+    const details = page.locator('[data-rightbar-col]')
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
     const reference = details.getByRole('button', { name: 'Add Annotation · Mean 0.14 to the conversation', exact: true })
     await reference.hover()
@@ -631,8 +601,8 @@ describe('web e2e: Science chart and Outcome replay', () => {
     expect(await details.getByText('Series · α No exposure', { exact: true }).count()).toBe(1)
     expect(await details.getByText('#006ba2', { exact: true }).count()).toBe(2)
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-artifacts/reference-elements.expected.md', import.meta.url)),
-      await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
+      fileURLToPath(new URL('./expected/science-artifacts/reference-elements.expected.md', import.meta.url)),
+      await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
     )
     await saveFailureShot(page, 'science-reference-elements-verified')
   })
@@ -640,9 +610,14 @@ describe('web e2e: Science chart and Outcome replay', () => {
   it('sends one preview for a settled title edit without committing a version', async () => {
     await openSessionByTitle(SEED_TITLE)
     const center = page.locator('[class*="centerCol"]')
-    await center.getByRole('listitem', { name: 'Observed series v1', exact: true }).click()
-    const details = page.locator('[class*="detailsCol"]')
+    await center.getByRole('button', { name: 'Observed series v1', exact: true }).click()
+    const details = page.locator('[data-rightbar-col]')
     await details.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
+    const originalTitle = await details.getByRole('textbox', { name: 'Enter text', exact: true }).first().inputValue()
+    const originalImage = await details.getByRole('img', { name: 'Observed series', exact: true }).getAttribute('src')
+    const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
+    if (session === undefined) throw new Error('Science chart fixture was not seeded')
+    const originalEvents = session.snapshotEvents()
     const preview = vi.spyOn(scaffold.ctx.scienceRuntime, 'previewChartEdit')
       .mockResolvedValue({ png: PNG, chart: CHART, failedOps: [] })
     try {
@@ -655,12 +630,22 @@ describe('web e2e: Science chart and Outcome replay', () => {
         version: 1, ops: [{ op: 'set_title', axes: 0, text: 'Preview title' }],
       })
       await compareOrRefreshGolden(
-        fileURLToPath(new URL('./snapshots/science-artifacts/title-preview.expected.md', import.meta.url)),
-        await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
+        fileURLToPath(new URL('./expected/science-artifacts/title-preview.expected.md', import.meta.url)),
+        await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
+      )
+      await details.getByRole('button', { name: 'Discard changes', exact: true }).click()
+      await expect.poll(() => details.getByRole('textbox', { name: 'Enter text', exact: true }).first().inputValue()).toBe(originalTitle)
+      await expect.poll(() => details.getByRole('img', { name: 'Observed series', exact: true }).getAttribute('src')).toBe(originalImage)
+      expect(await details.getByRole('button', { name: 'Commit as new version', exact: true }).isDisabled()).toBe(true)
+      expect(session.snapshotEvents()).toEqual(originalEvents)
+      await compareOrRefreshGolden(
+        fileURLToPath(new URL('./expected/science-artifacts/title-discard.expected.md', import.meta.url)),
+        await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
       )
     } finally {
       preview.mockRestore()
-      await details.getByRole('button', { name: 'Discard changes', exact: true }).click()
+      const discard = details.getByRole('button', { name: 'Discard changes', exact: true })
+      if (await discard.isEnabled()) await discard.click()
     }
   })
 
@@ -677,19 +662,19 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
     const session = scaffold.ctx.sessions.get(SessionId(SEED_ID))
     if (session === undefined) throw new Error('Science cancelled-run fixture was not seeded')
-    expect(replayScience(session.events)?.runs.find(run => run.runId === CANCELLED_RUN_ID))
+    expect(replayScience(session.snapshotEvents())?.runs.find(run => run.runId === CANCELLED_RUN_ID))
       .toMatchObject({ status: 'cancelled', failureCode: 'CANCELLED' })
   })
 
-  it('shows the Science header action only for the Science session and opens the client-safe landing view', async () => {
+  it('opens the project library from both session kinds and shows client-safe provenance', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-header-details'))
-    const detailsPanel = page.locator('[class*="detailsCol"]')
-    const scienceAction = page.getByRole('button', { name: 'Science details' })
+    const detailsPanel = page.locator('[data-rightbar-col]')
+    const scienceAction = page.locator('[class*="centerCol"]').getByRole('button', { name: 'Artifact library', exact: true })
 
     // A Standard (non-Science) Session shows no action at all.
     await openSessionByTitle(STANDARD_SEED_TITLE)
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await scienceAction.count()).toBe(0)
+    expect(await scienceAction.count()).toBe(1)
 
     // The Science action restores the viewer; Artifact library opens the latest-artifact gallery.
     await openSessionByTitle(SEED_TITLE)
@@ -697,7 +682,6 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await page.getByText('Outcome published · revision 2', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => scienceAction.count(), { timeout: 10_000 }).toBe(1)
     await scienceAction.click()
-    await detailsPanel.getByRole('button', { name: 'Artifact library', exact: true }).click()
 
     // Only the latest accepted chart version renders in the gallery (v3, the missing object).
     await detailsPanel.getByRole('button', { name: 'Open Missing revision, version 3' }).waitFor()
@@ -738,7 +722,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
     // Switching to a non-Science Session shows no action either.
     await openSessionByTitle(STANDARD_SEED_TITLE)
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
-    expect(await scienceAction.count()).toBe(0)
+    expect(await scienceAction.count()).toBe(1)
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings.filter(warning => !/connection lost/i.test(warning))).toEqual([])
@@ -746,7 +730,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
 
   it('activating a transcript chart row opens its tab, the toolbar steps versions, and the provenance drill-in jumps to the transcript', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-provenance'))
-    const detailsPanel = page.locator('[class*="detailsCol"]')
+    const detailsPanel = page.locator('[data-rightbar-col]')
     const centerCol = page.locator('[class*="centerCol"]')
 
     await openSessionByTitle(SEED_TITLE)
@@ -765,9 +749,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     // Scoped to the toolbar's stepper label, not the ArtifactMetaRail's own
     // "Version" definition, which renders the same compact version text.
     const stepperLabel = detailsPanel.locator('[class*="stepperLabel"]')
-    await centerCol.getByRole('listitem', { name: /Observed series v1/u }).click()
+    await centerCol.getByRole('button', { name: 'Observed series v1', exact: true }).click()
     await stepperLabel.getByText('v1', { exact: true }).waitFor({ timeout: 10_000 })
-    await centerCol.getByRole('listitem', { name: /Missing revision v3/u }).click()
+    await centerCol.getByRole('button', { name: 'Missing revision v3', exact: true }).click()
     await stepperLabel.getByText('v3', { exact: true }).waitFor({ timeout: 10_000 })
 
     // The v3 run chip opens its exact version directly in the content view —
@@ -787,6 +771,9 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await detailsPanel.getByRole('img', { name: 'Observed series', exact: true }).waitFor({ timeout: 10_000 })
     expect(await detailsPanel.getByText('Durable browser fixture', { exact: true }).count()).toBe(1)
     expect(await prevVersion.isDisabled()).toBe(true)
+    await page.reload({ waitUntil: 'load' })
+    await stepperLabel.getByText('v1', { exact: true }).waitFor()
+    await detailsPanel.getByRole('img', { name: 'Observed series', exact: true }).waitFor()
 
     // Maximize opens the shared lightbox from the toolbar (not the image's
     // own click-to-open state) — v1's attachment is stored, so the load
@@ -829,7 +816,7 @@ describe('web e2e: Science chart and Outcome replay', () => {
       ARTIFACTS_EXPECTED,
       [
         '## Details column — artifact viewer',
-        await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd),
+        await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd),
       ].join('\n'),
       MODE,
     )

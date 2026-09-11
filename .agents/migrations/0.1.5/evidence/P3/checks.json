@@ -1,0 +1,123 @@
+{
+  "base": "37b324ab70437e54a2d363c6f6d343ef625dd4af",
+  "cwd": "/Users/superjj/ccproj/pm-replant",
+  "work": "/Users/superjj/Documents/Codex/2026-09-10/upstream-0-1-5-p3-users/work",
+  "environment": {
+    "PATH_prefix": "/private/tmp/pm-node-v24.14.0/bin:/opt/miniconda3/bin",
+    "npm_config_nodedir_for_build": "/private/tmp/pm-node-v24.14.0"
+  },
+  "commands": [
+    {
+      "command": "pnpm install --lockfile-only",
+      "exitCode": 0,
+      "log": "install-lockfile.log"
+    },
+    {
+      "command": "pnpm run gen-persistence-catalog",
+      "exitCode": 0,
+      "log": "gen-persistence-catalog.log"
+    },
+    {
+      "command": "pnpm run build",
+      "exitCode": 0,
+      "log": "build.log"
+    },
+    {
+      "command": "pnpm exec vitest run --coverage packages/science/science-session packages/science/tool-science --coverage.include=packages/science/science-session/src/**/*.ts --coverage.include=packages/science/tool-science/src/**/*.ts --coverage.reportsDirectory=/private/tmp/pm-p3-coverage",
+      "exitCode": 0,
+      "log": "science-tests-final.log"
+    },
+    {
+      "command": "pnpm exec vitest run packages/session/session-format-catalog packages/session/session-persistence-jsonl packages/session/session-format-v0-to-v1 packages/session/session-format-v1-to-v2 packages/session/session-format-v2-to-v3",
+      "exitCode": 0,
+      "log": "adjacent-tests.log"
+    },
+    {
+      "command": "pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts",
+      "exitCode": 0,
+      "log": "sdk-refresh.log"
+    },
+    {
+      "command": "pnpm run test:snapshot",
+      "exitCode": 1,
+      "log": "snapshots.log"
+    },
+    {
+      "command": "pnpm run test:snapshot:refresh snapshots/session/headless.snapshot.ts -t 'compaction-recovery|cordis-inspect-jsdoc'",
+      "exitCode": 0,
+      "log": "headless-refresh.log"
+    },
+    {
+      "command": "pnpm run test:snapshot",
+      "exitCode": 0,
+      "log": "snapshots-final.log"
+    },
+    {
+      "command": "node $WORK/real-v0.mjs",
+      "exitCode": 0,
+      "log": "real-v0.log"
+    },
+    {
+      "command": "pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=node24-macos-arm64 --skip-build",
+      "exitCode": 1,
+      "log": "python-build.log"
+    },
+    {
+      "command": "pnpm_config_allow_unused_patches=true pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=node24-macos-arm64 --skip-build",
+      "exitCode": 1,
+      "log": "python-build-retry.log"
+    },
+    {
+      "command": "npm_execpath=$WORK/p3-pnpm.mjs node --import tsx scripts/build-exe-for-python-sdk.ts --targets=node24-macos-arm64 --skip-build [deploy-only wrapper]",
+      "exitCode": 1,
+      "log": "python-build-final.log"
+    },
+    {
+      "command": "npm_execpath=$WORK/p3-pnpm.mjs node --import tsx scripts/build-exe-for-python-sdk.ts --targets=node24-macos-arm64 --skip-build [deploy option + verifyDepsBeforeRun=false wrapper]",
+      "exitCode": 0,
+      "log": "python-build-accepted.log"
+    },
+    {
+      "command": "CI=true pnpm install --frozen-lockfile --prod=false",
+      "exitCode": 0,
+      "log": "install-final.log"
+    },
+    {
+      "command": "pnpm run lint:contracts-ready",
+      "exitCode": 1,
+      "log": "lint.log"
+    },
+    {
+      "command": "pnpm exec tsx scripts/run-oxlint.ts <five changed TypeScript files>",
+      "exitCode": 0,
+      "log": "focused-lint.log"
+    },
+    {
+      "command": "pnpm exec tsx scripts/gen-persistence-catalog.ts --check",
+      "exitCode": 0,
+      "log": "persistence-catalog-accepted.log"
+    },
+    {
+      "command": "pnpm exec tsx scripts/gen-session-format-catalog.ts --check",
+      "exitCode": 0,
+      "log": "session-format-catalog-accepted.log"
+    },
+    {
+      "command": "pnpm exec tsx scripts/verify-package-dependencies.ts",
+      "exitCode": 0,
+      "log": "package-dependencies-accepted.log"
+    },
+    {
+      "command": "pnpm run doc-sync",
+      "exitCode": 1,
+      "log": "doc-sync-closeout.log"
+    },
+    {
+      "command": "pnpm run test:docs",
+      "exitCode": 1,
+      "log": "test-docs-closeout.log"
+    }
+  ],
+  "pythonRefresh": "python-refresh-checks.json",
+  "pythonReplay": "python-replay-checks.json"
+}

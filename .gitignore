@@ -11,9 +11,9 @@ examples/*/*.jsonl
 .sessions/
 examples/*/.sessions/
 coverage/
+.coverage-times.json
 .doc-typecheck-*/
 .node-next-types-*/
-.dsh-built-invariant-*/
 .oxlint-contract-*/
 .oxlintrc.contract-*.json
 oxlint-contract-*.ts
@@ -27,10 +27,13 @@ tmp/
 .idea
 mise.toml
 dist-exe/
-python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*
+/dist/
+apps/desktop/.desktop-build/
+python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
 python/**/__pycache__/
 python/**/.pytest_cache/
+packages/**/__pycache__/
 apps/web/dist/
 .artifacts/
 .dsh-build/
@@ -40,3 +43,5 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+native/system/test/bin/
+.dsh-built-invariant-*/

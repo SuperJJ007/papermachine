@@ -120,12 +120,11 @@ export class E2BOutputReader implements SubprocessOutputReader {
     const firstRetained = this.totalBytes - this.retainedBytes
     const lossy = fromByte < firstRetained
     const start = lossy ? 0 : Math.min(retained.length, Math.max(0, fromByte - firstRetained))
-    const slice = retained.subarray(start)
     return {
-      text: slice.toString('utf8'),
+      text: retained.subarray(start).toString('utf8'),
+      utf8Validity: utf8ValidityOf(retained.subarray(start)),
       nextOffset: this.totalBytes,
       lossy,
-      utf8Validity: utf8ValidityOf(slice),
       ...(lossy && this.spillValid && this.maxSpillBytes !== undefined && this.totalBytes <= this.maxSpillBytes
         ? { spillPath: this.spillPath }
         : {}),

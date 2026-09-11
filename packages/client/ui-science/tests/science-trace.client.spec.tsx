@@ -3,12 +3,14 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConversationNode, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import type { ConversationNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { en } from '../src/client/locales.ts'
+import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
+import { en, zh } from '../src/client/locales.ts'
+import { ScienceTraceStepDetails, scienceTraceCodePreview } from '../src/client/ScienceTraceStepDetails.tsx'
 import {
   formatScienceTraceDuration, scienceTraceStepTitle, scienceTraceStepStatus, ScienceTraceView, type ScienceTraceViewProps,
 } from '../src/client/ScienceTraceView.tsx'
@@ -64,13 +66,14 @@ function assistant(turn: number, seq: number, calls: readonly string[], text = '
 function run(
   callId: string,
   index: number,
-  status: 'running' | 'success' | 'failed' | 'timed-out' | 'cancelled' = 'success',
+  status: 'running' | 'success' | 'failed' | 'timed-out' | 'cancelled' | 'interrupted' = 'success',
 ): ScienceClientRun {
   const base = {
     runId: ScienceRunId(`run-${String(index)}`), language: 'python' as const, toolCallId: callId as never,
     requestHeaderSeq: index, environmentRevision: 1, environmentFingerprintPreview: 'abc',
     startedAt: index * 1_000, codeSha256: 'a'.repeat(64), kernelEpoch: 1,
   }
+  if (status === 'interrupted') return { ...base, status, finishedAt: index * 1_000 + 500, interruptedAtSeq: 10 }
   return status === 'running' ? { ...base, status } : {
     ...base, status, finishedAt: index * 1_000 + 500, stdoutBytes: 0, stderrBytes: 0,
     stdoutTruncated: false, stderrTruncated: false,
@@ -138,7 +141,7 @@ function step(seq: number, number: number, tools: readonly Tool[], turn = 1): Co
 }
 function result(callId: string, isError: boolean): ConversationNode {
   return { kind: 'tool-result', seq: 99, time: 99, callId, isError, content: [],
-    call: null, callTime: null, callView: null, resultView: null, subCalls: [] }
+    call: null, callTime: null, subCalls: [] }
 }
 function projection(patch: Partial<ScienceClientProjection> = {}): ScienceClientProjection {
   return { ...fixture().science, environment: null, runs: [], artifacts: [], kernels: [], ...patch }
@@ -150,13 +153,15 @@ function build(nodes: readonly ConversationNode[], patch: Partial<ScienceClientP
 }
 function mount(nodes: readonly ConversationNode[], science: ScienceClientProjection | null | undefined = projection(),
   turnTimings: ReadonlyMap<number, { startTime: number; endTime?: number }> = new Map()) {
+  const store = testScienceSelectionStore()
   const inspectCall = vi.fn(), openArtifact = vi.fn(), selectDetailed = vi.fn(), openTab = vi.fn()
   const summaries = science == null ? new Map() : summariesFor(science.artifacts as unknown as Record<string, unknown>[])
   const loadVersions = vi.fn(async () => ({ ok: true, value: { versions: [...summaries.values()] } }))
-  const snapshot = { nodes, turnTimings } as unknown as ConversationSnapshot
+  const snapshot = { legacy: { nodes, turnTimings } } as unknown as ChatSnapshot
   const rendered = render(<ScienceTraceView {...({
-    useSession: (select: (value: ConversationSnapshot) => unknown) => select(snapshot),
-    useProjection: () => science, inspectCall, actions: { openTab }, openArtifact, selectDetailed, loadVersions, t,
+    useChat: (select: (value: ChatSnapshot) => unknown) => select(snapshot),
+    useProjection: () => science, inspectCall, useStore: store.useStore,
+    actions: { ...store.actions, openTab }, openArtifact, selectDetailed, loadVersions, t,
   } as unknown as ScienceTraceViewProps)} />)
   return { ...rendered, inspectCall, openArtifact, selectDetailed, openTab, loadVersions }
 }
@@ -183,6 +188,27 @@ const tools = [
 ] as const
 
 describe('Science process model', () => {
+  it('assigns requests by recorded turn sequences after failed turns and partial history', () => {
+    const user = (seq: number, text: string): Extract<ConversationNode, { kind: 'user' }> => ({
+      kind: 'user', seq, time: 1, source: { kind: 'user' }, content: [{ type: 'text', text }],
+    })
+    const nodes: ConversationNode[] = [
+      user(5, 'Outside retained turns'), user(11, 'First request'), { ...user(12, 'Recorded edit'), source: { kind: 'science-edit' } },
+      { kind: 'steering', seq: 13, time: 1, messageId: 'steer' as never, source: { kind: 'user' },
+        content: [{ type: 'text', text: 'Steer this turn' }] },
+      user(25, 'Between closed turns'), user(31, 'Later request'),
+    ]
+    const science = projection({ trace: { turns: [
+      { turn: 2, startSeq: 10, startTime: 1, endSeq: 20, endTime: 1 },
+      { turn: 4, startSeq: 30, startTime: 1 },
+    ], calls: [] } })
+    const model = buildScienceTraceModel(nodes, science, new Map(), new Map())
+    expect(model.dialogues.map(({ turn, text }) => ({ turn, text }))).toEqual([
+      { turn: 2, text: 'First request' }, { turn: 2, text: 'Recorded edit' },
+      { turn: 2, text: 'Steer this turn' }, { turn: 4, text: 'Later request' },
+    ])
+  })
+
   it('uses projection trace coordinates when the loaded conversation is only a cold tail', () => {
     const early = { ...run('early', 1), turn: 1, step: 1 }
     const current = { ...run('current', 2), turn: 2, step: 1 }
@@ -193,8 +219,8 @@ describe('Science process model', () => {
         { turn: 2, startSeq: 10, startTime: 10_000 },
       ],
       calls: [
-        { seq: 3, time: 3_000, callId: CallId('early'), turn: 1, step: 1, name: 'run_python' },
-        { seq: 12, time: 12_000, callId: CallId('current'), turn: 2, step: 1, name: 'run_python' },
+        { seq: 3, time: 3_000, callId: ToolCallId('early'), turn: 1, step: 1, name: 'run_python' },
+        { seq: 12, time: 12_000, callId: ToolCallId('current'), turn: 2, step: 1, name: 'run_python' },
       ],
     } }
 
@@ -212,6 +238,82 @@ describe('Science process model', () => {
     expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
   })
 
+  it('restores raw input and results independently without changing projected call or artifact ownership', () => {
+    const artifact = { ...fixture().science.artifacts[0]!, turn: 3, step: 2 }
+    const science = projection({ artifacts: [artifact], runs: [{ ...run('early', 1), turn: 3, step: 2 }], trace: {
+      turns: [{ turn: 3, startSeq: 10, startTime: 1, endSeq: 20, endTime: 10 }],
+      calls: [{ seq: 12, time: 2, callId: ToolCallId('early'), turn: 3, step: 2, name: 'run_python' }],
+    } })
+    const make = (nodes: readonly ConversationNode[]) => buildScienceTraceModel(nodes, science, new Map(),
+      summariesFor(science.artifacts as unknown as Record<string, unknown>[])).groups[0]!
+    const missing = make([])
+    expect(missing.steps[0]!.members[0]).toMatchObject({ argsRaw: undefined, result: undefined,
+      title: { kind: 'run', language: 'python' }, callId: 'early', anchor: 'call:early' })
+    const view = (nodes: readonly ConversationNode[]) => <ScienceTraceStepDetails
+      step={make(nodes).steps[0]!} titleOf={scienceTraceStepTitle} t={t} />
+    const rendered = render(view([]))
+    expect(screen.getByText('Input arguments unavailable in loaded history')).toBeTruthy()
+    expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Input arguments' })).toBeNull()
+    expect(scienceTraceCodePreview(missing.steps[0]!.members[0])).toBeUndefined()
+
+    rendered.rerender(view([result('early', false)]))
+    expect(screen.getByText('Input arguments unavailable in loaded history')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('(empty)')
+    expect(screen.queryByText('Result unavailable in loaded history')).toBeNull()
+
+    for (const argsRaw of ['{}', '']) {
+      rendered.rerender(view([step(11, 9, [{ name: 'run_python', callId: 'early', argsRaw }], 8)]))
+      expect(screen.queryByText('Input arguments unavailable in loaded history')).toBeNull()
+      expect(screen.getByRole('region', { name: 'Input arguments' }).querySelector('pre')?.textContent).toBe(argsRaw || '(empty)')
+      expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
+    }
+    const restored = [step(11, 9, [{ name: 'run_python', callId: 'early', argsRaw: '{"code":"print(42)","timeout":30}' }], 8), result('early', false)]
+    rendered.rerender(view(restored))
+    expect(screen.getByRole('region', { name: 'Code' }).textContent).toContain('print(42)')
+    expect(screen.getByRole('region', { name: 'Input arguments' }).textContent).toContain('"timeout": 30')
+    expect(screen.queryByText('Input arguments unavailable in loaded history')).toBeNull()
+    const loaded = make(restored)
+    expect(loaded.turn).toBe(3)
+    expect(loaded.steps[0]).toMatchObject({ step: 2, anchor: 'call:early' })
+    expect(loaded.steps[0]!.artifacts).toEqual(missing.steps[0]!.artifacts)
+    expect(loaded.steps[0]!.artifacts).toMatchObject([{ artifactId: artifact.artifactId, version: artifact.version }])
+  })
+
+  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled', 'interrupted'] as const)(
+    'retains the recorded %s status independently of unavailable results', (status) => {
+      const model = build([], { runs: [run('early', 1, status)], trace: { turns: [], calls: [
+        { seq: 1, time: 1, callId: ToolCallId('early'), turn: 1, step: 1, name: 'run_r' },
+      ] } })
+      const row = model.groups[0]!.steps[0]!
+      expect(row.runStatus).toBe(status)
+      expect(row.members[0].result).toBeUndefined()
+      expect(row.title).toEqual({ kind: 'run', language: 'python' })
+    },
+  )
+  it.each([['en', en], ['zh', zh]] as const)('localizes missing payloads independently from loaded empty values in %s', (_locale, dictionary) => {
+    const localT = ((key: keyof typeof en) => dictionary[key]) as TranslateNS<'science'>
+    const model = build([], { trace: { turns: [], calls: [
+      { seq: 1, time: 1, callId: ToolCallId('missing'), turn: 1, step: 1, name: 'run_python' },
+    ] } })
+    const row = model.groups[0]!.steps[0]!
+    const rendered = render(<ScienceTraceStepDetails step={row} titleOf={scienceTraceStepTitle} t={localT} />)
+    expect(screen.getByText(dictionary['trace.detail.inputUnavailable'])).toBeTruthy()
+    expect(screen.getByText(dictionary['trace.detail.resultUnavailable'])).toBeTruthy()
+    const loaded = build([step(1, 1, [{ name: 'run_python', argsRaw: '{}', callId: 'empty' }]), result('empty', false)])
+    rendered.rerender(<ScienceTraceStepDetails step={loaded.groups[0]!.steps[0]!} titleOf={scienceTraceStepTitle} t={localT} />)
+    expect(screen.queryByText(dictionary['trace.detail.inputUnavailable'])).toBeNull()
+    expect(screen.queryByText(dictionary['trace.detail.resultUnavailable'])).toBeNull()
+    expect(screen.getByRole('region', { name: dictionary['trace.detail.input'] }).textContent).toContain('{}')
+    expect(screen.getByRole('region', { name: dictionary['trace.detail.output'] }).textContent).toContain(dictionary['trace.detail.empty'])
+  })
+
+  it('keeps an unloaded R call recognizable before a run record exists', () => {
+    expect(build([], { trace: { turns: [], calls: [
+      { seq: 1, time: 1, callId: ToolCallId('r'), turn: 1, step: 1, name: 'run_r' },
+    ] } }).groups[0]!.steps[0]!.title).toEqual({ kind: 'run', language: 'r' })
+  })
+
   it('places a run-auto artifact version without an owning call by its store time instead of leaving it unassigned', () => {
     // `saveArtifactAs` ("Save a copy") commits a run-auto version between
     // turns, when no run_python/run_r/annotate_artifact call is open: the
@@ -225,7 +327,7 @@ describe('Science process model', () => {
     } as unknown as Record<string, unknown>
     const science: ScienceClientProjection = { ...projection({ artifacts: [artifact as never], runs: [] }), trace: {
       turns: [{ turn: 2, startSeq: 10, startTime: 10_001, endSeq: 19, endTime: 30_000 }],
-      calls: [{ seq: 12, time: 12_000, callId: CallId('unrelated'), turn: 2, step: 1, name: 'run_python' }],
+      calls: [{ seq: 12, time: 12_000, callId: ToolCallId('unrelated'), turn: 2, step: 1, name: 'run_python' }],
     } }
 
     const model = buildScienceTraceModel(
@@ -237,6 +339,12 @@ describe('Science process model', () => {
 
     expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
     expect(model.groups.find(group => group.turn === 2)?.artifacts).toMatchObject([{ version: 4 }])
+  })
+
+  it('keeps the tool name when a cold trace has no loaded arguments', () => {
+    const model = build([], { trace: { turns: [{ turn: 1, startSeq: 1, startTime: 1 }],
+      calls: [{ seq: 2, time: 2, callId: ToolCallId('cold-read'), turn: 1, step: 1, name: 'read' }] } })
+    expect(model.groups[0]?.steps[0]?.title).toEqual({ kind: 'tool', name: 'read' })
   })
 
   it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {
@@ -288,7 +396,7 @@ describe('Science process model', () => {
     expect(scienceTracePips(group)[1]?.title).toEqual({ kind: 'read', name: 'b' })
     expect(model.groups[1]?.steps).toHaveLength(1)
   })
-  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled'] as const)('uses authoritative run %s over the result error flag', (status) => {
+  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled', 'interrupted'] as const)('uses authoritative run %s over the result error flag', (status) => {
     const model = build([step(1, 1, [{ name: 'run_python', callId: 'r' }]), result('r', true)], { runs: [run('r', 1, status)] })
     expect(model.groups[0]?.steps[0]).toMatchObject({ runStatus: status, failed: status !== 'running' && status !== 'success',
       durationMs: status === 'running' ? undefined : 500 })
@@ -496,7 +604,7 @@ describe('Science process presentation', () => {
     mount([step(1, 1, [{ name, argsRaw }])])
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: label }))
-    expect(screen.getByText('Result not yet recorded')).toBeTruthy()
+    expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
     const code = screen.queryByRole('region', { name: 'Code' })
     if (argsRaw.includes('"code":"')) {
       expect(code).toBeTruthy()
@@ -519,12 +627,12 @@ describe('Science process presentation', () => {
     expect(screen.getByText('1 non-text result blocks (image)')).toBeTruthy()
     expect(screen.queryByText(/PRIVATE_IMAGE_REF/u)).toBeNull()
   })
-  it('shows an empty recorded output distinctly from a result that has not arrived', () => {
+  it('shows an empty recorded output distinctly from an unavailable result', () => {
     mount([step(1, 1, [{ name: 'run_python', callId: 'empty', argsRaw: '{"code":"pass"}' }]), result('empty', false)])
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: 'Python run' }))
     expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('(empty)')
-    expect(screen.queryByText('Result not yet recorded')).toBeNull()
+    expect(screen.queryByText('Result unavailable in loaded history')).toBeNull()
   })
 
   it('toggles the whole card while preserving independent controls and text selection', async () => {
@@ -622,7 +730,7 @@ describe('Science process presentation', () => {
     expect(inspectCall).not.toHaveBeenCalled()
     expect(screen.getByRole('region', { name: 'Read file a' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Read file b' })).toBeTruthy()
-    expect(screen.getAllByText('Result not yet recorded')).toHaveLength(2)
+    expect(screen.getAllByText('Result unavailable in loaded history')).toHaveLength(2)
     expect(selectDetailed).not.toHaveBeenCalled()
     expect(screen.getByText('No artifacts')).toBeTruthy()
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()
@@ -674,9 +782,9 @@ describe('Science process presentation', () => {
   it.each([null, undefined, projection()])('shows an empty session without copying an assistant answer', (science) => {
     // Pass undefined explicitly to the projection hook rather than the fixture helper default.
     if (science === undefined) {
-      const snapshot = { nodes: [], turnTimings: new Map() } as unknown as ConversationSnapshot
-      render(<ScienceTraceView {...({ useSession: (select: (s: ConversationSnapshot) => unknown) => select(snapshot),
-        useProjection: () => undefined, t } as unknown as ScienceTraceViewProps)} />)
+      const snapshot = { legacy: { nodes: [], turnTimings: new Map() } } as unknown as ChatSnapshot
+      render(<ScienceTraceView {...({ useChat: (select: (s: ChatSnapshot) => unknown) => select(snapshot),
+        useProjection: () => undefined, ...testScienceSelectionStore(), t } as unknown as ScienceTraceViewProps)} />)
     } else mount([assistant(1, 1, [], 'Direct conclusion')], science)
     expect(screen.getByText(/Intent groups will appear/u)).toBeTruthy()
     expect(screen.queryByText('Direct conclusion')).toBeNull()

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -7,8 +8,13 @@ import {
   assertClientBuildEnvironment,
   clientBuildEnvironmentDefines,
   clientBuildProcessEnvironment,
+  officialClientBuildEnvironment,
+  paperMachineClientBuildEnvironment,
   readClientBuildRecord,
+  repositoryClientBuildEnvironment,
   repositoryCommitHash,
+  repositoryGitDirty,
+  repositoryVersion,
   resolveClientBuildEnvironment,
   writeClientBuildRecord,
 } from './client-build-environment.ts'
@@ -51,12 +57,35 @@ function buildFixture(environment: Record<string, string>): string {
   return fixtureRoot
 }
 
+function git(root: string, args: readonly string[]): string {
+  return execFileSync('git', [...args], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim()
+}
+
+function repositoryFixture(version = '1.2.3-rc.4'): string {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-build-repository-'))
+  roots.push(fixtureRoot)
+  write(join(fixtureRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
+  write(join(fixtureRoot, 'tracked.txt'), 'committed\n')
+  git(fixtureRoot, ['init'])
+  git(fixtureRoot, ['config', 'user.name', 'DSH test'])
+  git(fixtureRoot, ['config', 'user.email', 'dsh-test@example.invalid'])
+  git(fixtureRoot, ['config', 'commit.gpgsign', 'false'])
+  git(fixtureRoot, ['add', 'package.json', 'tracked.txt'])
+  git(fixtureRoot, ['commit', '-m', 'fixture'])
+  return fixtureRoot
+}
+
 describe('client build environment', () => {
   it('requires an exact public environment for a named artifact profile', () => {
     const expected = {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     } as const
 
     expect(() => { assertClientBuildEnvironment({ PATH: '/bin', ...expected }, expected) }).not.toThrow()
@@ -73,7 +102,9 @@ describe('client build environment', () => {
       DSH_BUILD_CLIENT_PROFILE: 'official',
       DSH_CLIENT_BUILD_PROFILE: 'local',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_GIT_DIRTY: 'true',
       DSH_CLIENT_TITLE: 'Local title',
+      DSH_CLIENT_VERSION: '1.2.3',
       DSH_CLIENT_EXTRA: 'local-extra',
     }
 
@@ -84,22 +115,106 @@ describe('client build environment', () => {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })
     expect(() => {
       resolveClientBuildEnvironment({ DSH_BUILD_CLIENT_PROFILE: 'official' })
     }).toThrow(/DSH_CLIENT_COMMIT_HASH/)
+    expect(() => {
+      resolveClientBuildEnvironment({
+        DSH_BUILD_CLIENT_PROFILE: 'official',
+        DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      })
+    }).toThrow(/DSH_CLIENT_VERSION/)
     expect(() => { resolveClientBuildEnvironment({}, 'unknown') }).toThrow(/unknown client build profile/)
     expect(clientBuildProcessEnvironment(parent, {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })).toEqual({
       PATH: '/bin',
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })
     expect(repositoryCommitHash('/unused', { DSH_CLIENT_COMMIT_HASH: COMMIT_HASH })).toBe(COMMIT_HASH.slice(0, 7))
+  })
+
+  it('owns repository version, commit, and dirty metadata for complete builds', () => {
+    const fixtureRoot = repositoryFixture()
+    const commit = git(fixtureRoot, ['rev-parse', '--short=7', 'HEAD'])
+
+    expect(repositoryVersion(fixtureRoot)).toBe('1.2.3-rc.4')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+      DSH_CLIENT_EXTRA: 'preserved',
+      DSH_CLIENT_GIT_DIRTY: 'true',
+      DSH_CLIENT_VERSION: 'spoofed',
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_EXTRA: 'preserved',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+    expect(officialClientBuildEnvironment(fixtureRoot)).toEqual({
+      DSH_CLIENT_BUILD_PROFILE: 'official',
+      DSH_CLIENT_COMMIT_HASH: commit,
+      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+
+    write(join(fixtureRoot, '.gitignore'), 'ignored.txt\n')
+    git(fixtureRoot, ['add', '.gitignore'])
+    git(fixtureRoot, ['commit', '-m', 'ignore fixture'])
+    write(join(fixtureRoot, 'ignored.txt'), 'ignored\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    rmSync(join(fixtureRoot, 'ignored.txt'))
+
+    write(join(fixtureRoot, 'tracked.txt'), 'unstaged\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    write(join(fixtureRoot, 'tracked.txt'), 'committed\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+
+    write(join(fixtureRoot, 'tracked.txt'), 'staged\n')
+    git(fixtureRoot, ['add', 'tracked.txt'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    git(fixtureRoot, ['commit', '-m', 'staged fixture'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+
+    write(join(fixtureRoot, 'untracked.txt'), 'untracked\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_GIT_DIRTY: 'true',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+
+    rmSync(join(fixtureRoot, 'untracked.txt'))
+    const submoduleSource = repositoryFixture('9.8.7')
+    git(fixtureRoot, ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleSource, 'submodule'])
+    git(fixtureRoot, ['commit', '-am', 'submodule fixture'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    write(join(fixtureRoot, 'submodule/tracked.txt'), 'modified submodule\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+  })
+
+  it('omits dirty metadata when repository metadata is unavailable', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-build-no-git-'))
+    roots.push(fixtureRoot)
+    write(join(fixtureRoot, 'package.json'), '{"version":"2.0.0"}\n')
+
+    expect(repositoryGitDirty(fixtureRoot)).toBeUndefined()
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+      DSH_CLIENT_GIT_DIRTY: 'true',
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_VERSION: '2.0.0',
+    })
   })
 
   it('defines only public client values over a non-enumerable fallback', () => {
@@ -151,6 +266,7 @@ describe('client build environment', () => {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     }
     const official = buildFixture(officialEnvironment)
     const defaultBuild = buildFixture({})
@@ -172,5 +288,24 @@ describe('client build environment', () => {
       }
       expect(JSON.stringify(document), path).not.toContain('DSH_CLIENT_')
     }
+  })
+})
+
+
+describe('PaperMachine client build selection', () => {
+  it('selects exact product values without inheriting an official title or arbitrary public extensions', () => {
+    const environment = {
+      DSH_CLIENT_COMMIT_HASH: '0123456', DSH_CLIENT_VERSION: '0.1.5-rc.1',
+      DSH_CLIENT_TITLE: 'DeepSeek Harness', DSH_CLIENT_EXTRA: 'unreviewed',
+    }
+    expect(resolveClientBuildEnvironment(environment, 'papermachine')).toEqual({
+      DSH_CLIENT_COMMIT_HASH: '0123456', DSH_CLIENT_VERSION: '0.1.5-rc.1',
+      DSH_CLIENT_BUILD_PROFILE: 'papermachine', DSH_CLIENT_TITLE: 'PaperMachine',
+    })
+    const repository = repositoryFixture('0.1.5-rc.1')
+    expect(paperMachineClientBuildEnvironment(repository, { DSH_CLIENT_COMMIT_HASH: COMMIT_HASH }))
+      .toEqual(resolveClientBuildEnvironment(environment, 'papermachine'))
+    expect(() => resolveClientBuildEnvironment({}, 'papermachine')).toThrow('COMMIT_HASH')
+    expect(() => resolveClientBuildEnvironment({ DSH_CLIENT_COMMIT_HASH: '0123456' }, 'papermachine')).toThrow('VERSION')
   })
 })

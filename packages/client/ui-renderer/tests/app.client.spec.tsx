@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { buildRenderApp } from '../src/client/app.tsx'
 
 let runtime: SlotTestRuntime | undefined
@@ -12,20 +11,18 @@ afterEach(async () => {
   cleanup()
   await runtime?.dispose()
   runtime = undefined
-  document.title = ''
-  vi.unstubAllEnvs()
 })
 
-async function bench(setup?: (ctx: Context) => void) {
+async function bench() {
   runtime = await SlotTestRuntime.create()
   await runtime.root.declare({}, () => <div data-testid="frame" />)
-  setup?.(runtime.ctx)
   return { runtime, renderApp: buildRenderApp({ ctx: runtime.ctx }) }
 }
 
 describe('buildRenderApp', () => {
-  it('fails loud when the sessions service is unavailable', () => {
-    expect(() => buildRenderApp({ ctx: new Context() })).toThrow('sessions service unavailable')
+  it('fails loud when the slot registry is unavailable', () => {
+    const renderApp = buildRenderApp({ ctx: new Context() })
+    expect(() => renderApp()).toThrow()
   })
 
   it('renders the root slot tree', async () => {
@@ -34,34 +31,4 @@ describe('buildRenderApp', () => {
     expect(view.getByTestId('frame')).toBeTruthy()
   })
 
-  it('projects the selected durable session title', async () => {
-    document.title = 'stale title'
-    const b = await bench((ctx) => { ctx.provide('clientBrand', { productName: 'Product' }) })
-    render(<>{b.renderApp()}</>)
-    expect(document.title).toBe('Product')
-    await b.runtime.sessions.add({ id: 's1', summary: { title: 'First' } })
-    expect(document.title).toBe('First — Product')
-    await b.runtime.sessions.setCurrent(undefined)
-    expect(document.title).toBe('Product')
-    await b.runtime.sessions.add({ id: 's2' })
-    expect(document.title).toBe('Product')
-  })
-
-  it('falls back when the selected id has no list row', async () => {
-    document.title = 'stale title'
-    const b = await bench((ctx) => { ctx.provide('clientBrand', { productName: 'Product' }) })
-    await b.runtime.sessions.add({ id: 's1', summary: { title: 'First' } })
-    render(<>{b.renderApp()}</>)
-    expect(document.title).toBe('First — Product')
-    b.runtime.sessions.list.update((draft) => { draft.current = 'ghost' as SessionId })
-    await b.runtime.flush()
-    expect(document.title).toBe('Product')
-  })
-
-  it('falls back to the generic title when no brand plugin provides a product name', async () => {
-    document.title = 'stale title'
-    const b = await bench()
-    render(<>{b.renderApp()}</>)
-    expect(document.title).toBe('DSH Local Build')
-  })
 })

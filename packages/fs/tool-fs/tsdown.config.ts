@@ -4,7 +4,7 @@ import { defineConfig } from 'tsdown'
 // plugin and invariant companion, matching their flat `lib/` layout instead
 // of the default workspace glob (which only bundles index/invariant/startup).
 export default defineConfig({
-  entry: { index: 'lib/types/index.js', invariant: 'lib/types/invariant.js', 'read-only': 'lib/types/read-only.js' },
+  entry: { index: 'lib/types/index.js', 'read-only': 'lib/types/read-only.js' },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

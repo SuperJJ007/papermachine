@@ -25,3 +25,7 @@ The [persistent-kernel decision](../architecture/2026-08-20-science-persistent-k
 ## Consequences
 
 Every live kernel adds one small forwarding process and requires POSIX `cat` alongside `mkfifo`. Host file I/O no longer depends on the number of idle interpreters. The communication tests cover four idle kernels, startup failure, protocol EOF, interrupts, and disposal; real acceptance keeps Python and R alive in two sessions while reading unrelated files, completing runs, cancelling, and proving test-owned process cleanup. The runnable Science snapshot keeps four kernels alive through artifact reads and session persistence.
+
+## Related
+
+Related owners: [win32-kernel-response-transport](../feature/2026-09-05-win32-kernel-response-transport.md); [managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.md).

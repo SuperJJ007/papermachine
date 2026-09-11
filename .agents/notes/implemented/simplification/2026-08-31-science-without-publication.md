@@ -10,7 +10,7 @@ A separate conclusion publication tool prompts the agent to publish a result aft
 
 ## Decision
 
-Science offers execution, state inspection, and artifact annotation. Results belong in ordinary assistant replies. The publication tool, its guidance, and Outcome fields in model-facing state are absent. Recorded Outcome events and their read-only presentation remain readable; this decision does not erase session history.
+Science offers execution, state inspection, and artifact annotation. Results belong in ordinary assistant replies. The publication tool, its guidance, and Outcome fields in model-facing state are absent. Recorded Outcome events retain read-only presentation in admitted native V3 sessions; this does not promise that old V0/V1/V2 Science sessions can be opened.
 
 Element references preserve exact identities without drawing over the PNG. Only elements with a recorded color display a swatch, after the name. Explicit region selection remains available. Empty private-note inputs contain both the entry hint and privacy notice, separated by a newline; neither is submitted as note text.
 
@@ -26,4 +26,8 @@ Element references preserve exact identities without drawing over the PNG. Only 
 
 There is no new evidence-backed publication revision. Reintroduction requires a deliberate product decision covering producer, model guidance, and presentation together. Component tests and artifact-viewer snapshots pin unobscured images, conditional trailing swatches, and placeholder-only privacy text; the tool catalog, assembled CLI preset, real Web preset, and headless snapshot pin the model tool roster without publication.
 
-This partially supersedes [R5 publication](../feature/2026-08-16-dsh-science-v01-r5-charts-outcome.md) and qualifies [transcript Outcome placement](../feature/2026-08-25-science-trajectory-and-transcript-ia.md) as recorded-history presentation. Both records retain independent attachment-authorization, replay, and transcript-layout rationale.
+The former R5 and transcript-layout records are frozen history. Current read authorization, required-event admission, and native layout have separate owners.
+
+## Related
+
+Related owners: [science-required-session-events](../architecture/2026-09-10-science-required-session-events.md); [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.md).

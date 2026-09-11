@@ -1,0 +1,42 @@
+{
+  "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "chart": {
+    "runtime": "matplotlib",
+    "figureKey": "plot.png",
+    "png": {
+      "width": 1,
+      "height": 1,
+      "dpi": 120
+    },
+    "elements": [
+      {
+        "id": "title",
+        "kind": "title",
+        "axes": null,
+        "label": null,
+        "current": "Edited"
+      }
+    ],
+    "ops": [
+      {
+        "op": "set_title",
+        "axes": null,
+        "text": "Edited"
+      }
+    ],
+    "hitmap": [
+      {
+        "id": "title",
+        "bbox": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "z": 1
+      }
+    ],
+    "hitmapStatus": "ok"
+  },
+  "failedOps": []
+}

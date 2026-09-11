@@ -1,29 +1,155 @@
+---
+description: "Local storage for your attached images below DSH_HOME, for users and maintainers choosing or debugging where image attachments are kept."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-attachment-local
 
 English | [中文](README.zh.md)
 
-The private local implementation of [`@deepseek-ai/dsh-attachment`](../attachment). Objects land at `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>` and are addressed by an opaque `sha256:` id; storage is fully shared across media families — content addressing never encodes media type in the path, so an image and a text file with identical bytes publish to the same object. Each process proves a home durable once by syncing every ancestor entry to the filesystem root, so a directory another process created but has not yet synced is never mistaken for a safe boundary. Writes then use a private staging directory, owner-only files, a synced temporary file, an atomic exclusive hard-link publish, and directory syncs on the publication path (POSIX; Windows relies on filesystem metadata journaling) so the reported reference survives a crash.
+## Summary
 
-Admission accepts at most 20 images and 200MiB of encoded source bytes per message. Each source may use up to 20MiB, 64,000,000 pixels, and 8192px per side. It then prepares a provider-independent normalized attachment. EXIF orientation is applied, metadata and color profiles are removed, pixels become 8-bit sRGB/sRGBA, and the long edge is reduced proportionally to `normalizedImageMaxDimension` (2048px by default). The normalized attachment has its own `normalizedImageMaxBytes` safety cap (4MiB by default). Transparent pixels are retained; Sharp/libvips may omit an alpha plane whose samples are all opaque. A nearest-neighbour bounded sample classifies color complexity without averaging high-frequency pixels. Confirmed low-color images try PNG, using a palette only when the input has no alpha channel, then WebP at qualities 85, 80, and 75. Other alpha images try WebP at those qualities; other opaque images try JPEG. Each candidate runs only after the preceding candidate exceeds the cap. Dimensions shrink only after every candidate at one size exceeds the cap. A clean, single-frame 8-bit sRGB/sRGBA PNG, JPEG, or WebP already within both normalization limits passes through byte-identically; 16-bit PNG, GIF, animated input, metadata, orientation, and incompatible color spaces force conversion. The source and converted attachment are each fully decoded once. `saveImages` prepares and verifies every normalized attachment once before publishing the batch, so validation failure leaves no partial references and commit does not repeat full image encoding. A submission carrying `normalization: 'verbatim'` skips the pipeline after the same decode verification and source admission limits: the submitted bytes are stored exactly as given (metadata and encoding untouched, the normalized byte cap not applied), and its reference never carries `originalDimensions` — for callers whose stored bytes are evidence that must read back byte-identical, such as Science artifact capture.
+Store images and generic file attachments durably below `DSH_HOME` on the machine running DSH. Images are validated, normalized for model requests, and cached per route; generic files are preserved byte-for-byte without admission limits. Identical bytes are stored once even when uploads use different display names, reads verify file length and content, and admitted images remain readable if limits later tighten. The shipped `dsh` composition uses this package without configuration. Objects remain local to one machine and are never deleted automatically.
 
-Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readImageRequest` scales the stored normalized attachment under a total-pixel budget without enlargement, then enforces a separate encoded-byte cap. The request encoder uses the same color branches, with PNG (palette only without alpha) before WebP 85 and 80 for low-color images, WebP 85 then 80 for other alpha images, and JPEG 85 then 80 for other opaque images. It executes candidates lazily and reduces dimensions only after both quality attempts exceed the request cap. Its cache identity includes the attachment id, transform version, pixel and byte budgets, and fixed encoder settings. Cached bytes are fully decoded and checked as 8-bit sRGB/sRGBA before use. Concurrent calls for one identity share one transform and cache write; cancelling one waiter does not cancel the shared work. Callers compose ordered batches from singular reads, while the service's FIFO limiter applies `imageCompressionConcurrency` to simultaneous normalization and request transforms. The setting ranges from 1 through 8 and defaults to 2; file publication remains ordered after preparation.
+## Table of Contents
 
-Text write admission checks only the byte cap and UTF-8 validity — no raster-style decode, no content-format check — and reads re-check the digest and byte length. Byte and pixel limits are write-time admission policy, so a later policy reduction does not make already-admitted history unreadable.
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-`DSH_HOME` resolves through the shared path policy: explicit config, `$DSH_HOME`, then `~/.dsh`. Session logs contain only the reference and verified metadata, never this host path. `readImage` and `readText` forward optional cancellation into the filesystem read, observe it around verification, and preserve it instead of wrapping it as `ATTACHMENT_READ_FAILED`. `Config.maxTextBytes` (default `DEFAULT_MAX_TEXT_BYTES`, 5 MiB, matching `DEFAULT_MAX_IMAGE_BYTES`) is the only text admission bound; the accepted `TextMediaType` set (`text/csv`, `application/json`, `text/markdown`, `text/plain`) is a fixed constant, not a Loader-exposed knob, mirroring `imageLimits.mediaTypes`.
+-----
 
+<a id="use-this-package"></a>
+## Use this package
+
+In the default composition, images and generic files attached to prompts or commands are stored on this machine automatically. If you compose your own setup, mounting this plugin provides durable attachments.
+
+### Minimal configuration
+
+Mount the plugin with no required configuration. The defaults below define what you can attach; the generated configuration catalog is the exhaustive source for every field.
+
+```yaml
+- name: '@deepseek-ai/dsh-attachment-local'
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `dshHome` | resolved | Explicit harness home; omitted follows `$DSH_HOME`, then `~/.dsh` |
+| `maxImageBytes` | `20 MiB` | Maximum encoded source bytes accepted for one image |
+| `maxImagesPerMessage` | `20` | Maximum image count accepted in one submitted message |
+| `maxMessageImageBytes` | `200 MiB` | Maximum aggregate encoded source bytes in one submitted message |
+| `maxImagePixels` | `64,000,000` | Maximum source width multiplied by height |
+| `maxImageDimension` | `8192` | Maximum source width or height |
+| `normalizedImageMaxPixels` | `2048 × 2048` | Total-pixel budget of the stored normalized image |
+| `normalizedImageMaxDimension` | `8192` | Maximum long edge after applying the total-pixel budget |
+| `normalizedImageMaxBytes` | `4 MiB` | Encoded-byte target; the smallest quality-ladder output is kept when none fits |
+| `imageCompressionConcurrency` | `2` | FIFO limit for concurrent normalization and request transforms |
+
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-attachment-local) is the exhaustive source for every accepted field and its JSDoc.
+
+### Where your images are stored and how long they last
+
+Attached images are kept below `<DSH_HOME>/attachments/v1` on this machine. Stored images are never deleted automatically, identical images are stored only once, and a later tightening of the limits never makes already-saved images unreadable. If your images must be readable from another machine, this package is not the right fit.
+
+### What happens when you attach an image
+
+Attach an image and its source limits, media, dimensions, and pixels are checked before it is normalized and saved. EXIF orientation is applied, metadata and color profiles are removed, transparency is preserved, and the raster is reduced under a total-pixel budget plus a long-edge cap. Alpha images use WebP and opaque images use JPEG on the shared 85/75/60 quality ladder; the smallest output is retained when every candidate exceeds the byte target. An accepted image reappears in history and later turns, including after restart; the selected model route receives a cached request version and, when its filesystem maps the host object, a read-only execution-world path.
+
+### What can go wrong
+
+An image can be refused when you attach it: unsupported format, over the byte, pixel, or per-side dimension limits, or bytes that do not match their declared type. On a later read, an image that was deleted or corrupted on disk fails with a clear error. Each failure carries a stable code so the client and protocol adapters can explain it in their own words.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains the durability and verification design behind the storage, and the write and read paths that realize it; observable behavior is fully covered in [Use this package](#use-this-package).
+
+### Design decisions
+
+- **Durability by fsync chain, not existence.** A synced file alone does not survive a crash when its directory entry never reached storage, so the write path syncs every ancestor entry to a process-proven boundary before a reference can reach a session checkpoint.
+- **Normalize once, project per route.** Admission persists one provider-independent normalized attachment; request projection derives deterministic variants without rewriting durable history.
+- **Lazy alpha-routed encoding.** Alpha images use WebP and opaque images use JPEG; quality candidates run in 85/75/60 order, and the smallest output is retained when none meets the encoded-byte target.
+- **Limits are write-time policy.** Byte, total-pixel, and per-side dimension limits bind admission only, so tightening them later never makes admitted history unreadable.
+
+### Write and read paths
+
+Objects land at `<DSH_HOME>/attachments/v1/objects/<sha256-prefix>/<sha256>`; equal bytes deduplicate to one object and one `sha256:` id. Before the first write, the process syncs every ancestor directory of the home down to the filesystem root once, so a directory another process created but has not yet synced is never mistaken for a safe boundary. Writes then stage bytes in `v1/tmp`, sync the temporary file, publish with an atomic exclusive hard link, and sync the publication directories — on Windows, filesystem metadata journaling owns entry durability. Once the save resolves, the reported reference is durable.
+
+Admission accepts up to 20 images and 200 MiB of source bytes per message; one source may use up to 20 MiB, 64 million pixels, and 8192 pixels per side. It applies orientation, removes metadata and color profiles, and normalizes under a 2048×2048 total-pixel budget, an 8192-pixel long edge, and a 4 MiB encoded-byte target. Extreme aspect ratios therefore retain their short-edge resolution. Clean single-frame 8-bit sRGB/sRGBA PNG, JPEG, or WebP input already within those limits passes through byte-identically; GIF, animation, metadata, orientation, 16-bit PNG, and incompatible color spaces force conversion.
+
+Request versions live below `<DSH_HOME>/attachments/v1/request-images/`. `readImageRequest` scales without enlargement to a route pixel budget, then applies a separate encoded-byte target through the same alpha routing and quality ladder. Its cache identity includes the attachment id, transform version, budgets, and fixed encoder settings; cached bytes are header-probed for format, 8-bit sRGB/sRGBA, dimensions, and alpha facts, and a mismatch regenerates the entry. Concurrent callers share one transform and cache write, while cancellation stops shared work only when no waiter remains. `imageHostPath` derives the normalized object's host path, and the mounted filesystem may map that path into its execution world without writing it to durable history.
+
+Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`. Each reference path at `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` is a read-only hard link, so different names for equal bytes do not duplicate disk content. `readFileStream` reads the reference path in bounded chunks and verifies the complete digest and recorded byte count before a consumer can finish successfully. A missing, changed, or truncated object fails its consumer instead of producing a complete export with different bytes.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | Plugin entry: `LocalAttachmentStore`, `Config` schema, defaults |
+| [`src/store.ts`](src/store.ts) | Content-addressed write and verified read: staging, hard-link publish, fsync chain, digest verification |
+| [`src/file-store.ts`](src/file-store.ts) | Verbatim streamed file writes, verified streamed reads, and safe stored filenames |
+| [`src/normalization.ts`](src/normalization.ts) + [`src/encoding.ts`](src/encoding.ts) | Provider-independent normalization and bounded format/quality candidates |
+| [`src/request-image.ts`](src/request-image.ts) | Route-specific request transforms, cache identity, and singleflight |
+| [`src/image.ts`](src/image.ts) | Full raster decode and metadata verification |
+| — | No runtime invariant companion is published; immutable writes and verified reads are enforced directly at the backend boundary. |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+For the full service contract and payload types, read the subsystem reference; for the capability this storage backs, read the seam package.
+
+- [Attachment subsystem reference](../../../docs/subsystems/attachment.md) — service contract, payload types, and the `ctx.attachments` cordis surface.
+- [Attachment seam package](../attachment/README.md) — the image attachment capability this storage backs.
+- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-attachment-local) — every accepted config field and its source declaration.
+- [Home paths resolution](../../util/home-paths/README.md) — how `DSH_HOME` resolves from explicit config, environment, and the user home.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through durable replay of historical user images and structured model image output after restart and fork.
+Indirectly, through request descriptors. A mapped execution filesystem lets the model see each image's identity, dimensions, media type, read-only process path, writable-copy extension, and normalization warning alongside the request bytes. Generic files project as text handles naming their identity and read-only process path; when no mapping exists, the handle states that the execution environment cannot read the file.
 
 #### KV Cache effect
 
-Normalization and request projection are deterministic. An unchanged attachment and route policy reuse identical cached request bytes on later turns.
+Normalization and request projection are deterministic. An unchanged attachment and route policy reuse identical cached request bytes on later turns; execution-world path mapping can change descriptor text without changing those bytes or their `variantId`.
 
 ## Known Limitations and Deferred Work
 
-- Objects are retained indefinitely; reference-aware garbage collection is deferred.
-- The local backend assumes the host and provider adapter share this filesystem service.
-- Animated GIF sources keep only their first frame; animation is outside the version-one image contract.
-- The normalization and request encoders are pinned by the installed sharp/libvips build; an encoder or transform-version upgrade re-addresses future normalized attachments or request variants while existing objects stay valid.
-- A text file's declared `mediaType` is never verified against its content: `text/csv`, `application/json`, `text/markdown`, and `text/plain` carry no distinguishing byte-level signature the way a raster header does, so admission trusts the caller's declaration.
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits describe what this storage can and cannot do; they are current package constraints.
+
+- **Images are kept forever** — stored images are never deleted automatically, and nothing collects unreferenced objects.
+- **Local to this machine** — images live on the machine that runs the harness; other hosts cannot read them.
+- **Animated GIF becomes static** — normalization retains only the first frame; animation is outside the version-one image contract.
+- **Encoder output is versioned** — the installed Sharp/libvips build pins normalization and request bytes; an encoder or transform-version upgrade re-addresses future variants while existing objects remain valid.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+This Dev Note is working context for maintainers: undecided directions and open questions. It is explicitly non-authoritative — shipped behavior and limits live in the sections above and the package code.
+
+#### Future: retention and remote storage
+
+Retention and garbage collection are deferred because resumed and forked sessions may share immutable objects, and a backend serving remote runtimes or shared storage would need its own durability proof. Both directions are undecided; the local storage currently retains every object under `DSH_HOME`.
+
+</details>
+
+`saveImage({ normalization: "verbatim", ... })` preserves the submitted image bytes after decode verification and source limits. It performs no resizing or re-encoding, and returns no `originalDimensions`. This route supports image evidence that must match an existing stored artifact exactly.

@@ -1,9 +1,11 @@
 /** Strict decoders for the durable Science event vocabulary. */
 
+import { isScienceLogicalName } from '@deepseek-ai/dsh-science-artifact-store/logical-name'
 import { Buffer } from 'node:buffer'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { isJsonValue } from '@deepseek-ai/dsh-session'
-import type { JsonValue, SessionEvent } from '@deepseek-ai/dsh-session'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionEvent, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import {
   SCIENCE_EVENT_VERSION,
@@ -72,24 +74,14 @@ const SAFE_ID = z.string()
   .min(1)
   .max(MAX_ID_LENGTH)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-/**
- * An artifact's stable logical name: the file's forward-slash path relative
- * to its run's artifact directory (auto-capture), or a flat name (curation).
- * Each segment uses the same safe grammar as {@link SAFE_ID}.
- */
-const SAFE_LOGICAL_NAME = z.string()
-  .min(1)
-  .max(MAX_PATH_LENGTH)
-  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
-    message: 'logicalName must be forward-slash segments each matching the safe artifact-name grammar',
-  })
+/** Historical logical names and run paths retain their unchanged relative identities. */
+const SAFE_LOGICAL_NAME = z.string().refine(isScienceLogicalName, {
+  message: 'logicalName must be a forward-slash relative artifact path',
+})
 
-const RUN_INPUT_PATH = z.string()
-  .min(1)
-  .max(MAX_PATH_LENGTH)
-  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
-    message: 'run input path must be forward-slash segments each matching the safe artifact-name grammar',
-  })
+const RUN_INPUT_PATH = z.string().refine(isScienceLogicalName, {
+  message: 'run input path must be a forward-slash relative artifact path',
+})
 
 const artifactVersionRefSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),
@@ -328,7 +320,7 @@ const environmentSchema = z.object({
 const runIdentityShape = {
   runId: SAFE_ID.transform(value => ScienceRunId(value)),
   language: z.enum(['python', 'r']),
-  toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
+  toolCallId: text(MAX_ID_LENGTH).transform(value => ToolCallId(value)),
   requestHeaderSeq: SAFE_INTEGER,
   environmentRevision: POSITIVE_INTEGER,
   environmentFingerprint: SHA256,
@@ -484,7 +476,7 @@ const outcomeSchema = z.object({
   ),
   evidence: z.array(evidenceSchema).min(1).max(256),
   publishedAt: SAFE_INTEGER,
-  toolCallId: text(MAX_ID_LENGTH).transform(value => CallId(value)),
+  toolCallId: text(MAX_ID_LENGTH).transform(value => ToolCallId(value)),
   requestHeaderSeq: SAFE_INTEGER,
   environmentRevisions: z.array(POSITIVE_INTEGER).max(256),
 }).strict().superRefine((outcome, ctx) => {
@@ -524,13 +516,13 @@ const kernelStateEventSchema = z.object({
 
 /** A Science event whose payload has passed the package's strict decoder. */
 export type DecodedScienceDomainEvent =
-  | { readonly type: 'science/mode-bound'; readonly seq: number; readonly time: number; readonly data: ScienceModeBoundEvent }
-  | { readonly type: 'science/environment-bound'; readonly seq: number; readonly time: number; readonly data: ScienceEnvironmentBoundEvent }
-  | { readonly type: 'science/run-started'; readonly seq: number; readonly time: number; readonly data: ScienceRunStartedEvent }
-  | { readonly type: 'science/run-finished'; readonly seq: number; readonly time: number; readonly data: ScienceRunFinishedEvent }
-  | { readonly type: 'science/artifact-saved'; readonly seq: number; readonly time: number; readonly data: ScienceArtifactSavedEvent }
-  | { readonly type: 'science/outcome-published'; readonly seq: number; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
-  | { readonly type: 'science/kernel-state'; readonly seq: number; readonly time: number; readonly data: ScienceKernelStateEvent }
+  | { readonly type: 'science/mode-bound'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceModeBoundEvent }
+  | { readonly type: 'science/environment-bound'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceEnvironmentBoundEvent }
+  | { readonly type: 'science/run-started'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceRunStartedEvent }
+  | { readonly type: 'science/run-finished'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceRunFinishedEvent }
+  | { readonly type: 'science/artifact-saved'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceArtifactSavedEvent }
+  | { readonly type: 'science/outcome-published'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceOutcomePublishedEvent }
+  | { readonly type: 'science/kernel-state'; readonly seq: SessionSeq; readonly time: number; readonly data: ScienceKernelStateEvent }
 
 /**
  * Decode one mode binding value.
@@ -606,9 +598,9 @@ export function decodeScienceKernelState(value: unknown): ScienceKernelState {
 }
 
 /**
- * Test whether a string names one of the seven required Science event types.
+ * Test whether a string names a Science model-state event.
  * @param type - Session event type to test.
- * @returns whether the type belongs to the Science domain.
+ * @returns whether the type contributes to the Science model-state fold.
  */
 export function isScienceDomainEventType(type: string): type is ScienceDomainEventType {
   return type === 'science/mode-bound'
@@ -623,10 +615,12 @@ export function isScienceDomainEventType(type: string): type is ScienceDomainEve
 /**
  * Decode one Science event and ignore unrelated event types.
  * @param event - Session event from durable replay.
- * @returns the decoded Science event, or `undefined` for another domain.
+ * @returns the decoded model-state event, or `undefined` for user notes and unrelated events.
  */
 export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDomainEvent | undefined {
-  if (event.ignorable === true && isScienceDomainEventType(event.type)) {
+  if (event.ignorable === true && (isScienceDomainEventType(event.type)
+    || event.type === 'science/artifact-note-added'
+    || event.type === 'science/artifact-note-removed')) {
     throw new Error('Science domain events must be required, not ignorable')
   }
   switch (event.type) {
@@ -656,6 +650,10 @@ export function decodeScienceDomainEvent(event: SessionEvent): DecodedScienceDom
       const data = kernelStateEventSchema.parse(event.data) as ScienceKernelStateEvent
       return { type: event.type, seq: event.seq, time: event.time, data }
     }
+    case 'science/artifact-note-added':
+    case 'science/artifact-note-removed':
+      // User notes are folded by the separate artifact-note projection.
+      return undefined
     default:
       if (event.type.startsWith('science/') && event.ignorable !== true) {
         throw new Error(`unsupported required Science event type ${JSON.stringify(event.type)}`)

@@ -1,28 +1,10 @@
-# Science Runtime
+# Science
 
 English | [中文](science.zh.md)
 
-The Science family owns seven required-on-read Session events, the host-local Runtime that produces environment/run/artifact facts, the model-facing Consumer, and browser transcript presentation. [`dsh-science-session`](../../packages/science/science-session) strictly validates the complete durable values, exposes a client-safe `science` Session projection, and registers artifact attachment extraction. [`dsh-science-runtime`](../../packages/science/science-runtime) owns `ctx.scienceRuntime`: it observes configured existing Conda prefixes, writes private scratch, executes Python/R, installs packages into a bound prefix through micromamba, and imports run-produced PNG files through `ctx.attachments`. [`dsh-tool-science`](../../packages/science/tool-science) binds mode/environment on first use, renders `science:environment`, registers the five Science tools without a separate publication workflow. [`dsh-client-ui-science`](../../packages/client/ui-science) renders chart and Outcome tool occurrences through the shared attachment loader, hosts the Science settings card keyed on the `science-runtime` namespace `@deepseek-ai/dsh-science-runtime/with-settings` registers, and adds the Files toggle (session-scoped by default, app-global under a `toggleScope: global` Config) plus a `conversation.details.view` Details entry registered `primary: true` — the Details column's default view for any current Session, blank or Science-unbound included, since the artifact library it renders loads through a project-wide RPC independent of that Session's own `science` projection — an artifact viewer with a tab strip over opened charts, an in-panel toolbar, a provenance drill-in (code, execution log, messages, environment) per artifact version, and, for a PNG version whose `chart` is addressable, a chart editing panel (all 13 element kinds, direct controls and preview only for title, axis label, legend position, and grid, and a precise `+`/`−` model reference for every row). The built-in non-copyable `science` preset composes the Consumer with a narrow supporting roster — including `web_search`/`web_fetch` over the shared [web capability](web.md) and plan mode — but carries no Runtime row; the shipped Web bundle mounts `with-settings` with an intentionally empty profile map alongside it, and a live-capable Host otherwise mounts explicit Runtime configuration. `run_python`/`run_r` already reach the network directly, so this preset enables `web_fetch`, which every other shipped preset leaves disabled ([`apps/cli/config/agent-presets/science/agent.cordis.yml`](../../apps/cli/config/agent-presets/science/agent.cordis.yml)). The preset also composes a deliberately restricted [`subagent`](subagent.md): the spawned child joins this preset's own composition and is narrowed back down by `toolFilter` (no package installs, no further delegation or child-messaging/listing tools) and `maxDepth: 1` (no grandchild delegation), with its own child-scoped persona; this is a first cut, not Science's later role-based Specialists design ([Agent Note](../../.agents/notes/implemented/feature/2026-09-02-science-restricted-subagent.md)).
+Science services own interpreter execution, project artifacts, and artifact-edit admission. The [Science Runtime](../../packages/science/science-runtime/README.md), [artifact store](../../packages/science/science-artifact-store/README.md), and [tool package](../../packages/science/tool-science/README.md) define their configuration and persistence responsibilities. The [Science application bundle](../../packages/bundle/science-app/README.md) controls activation; an unavailable method rejects execution explicitly.
 
-Source: [`packages/science/science-runtime/src/index.ts`](../../packages/science/science-runtime/src/index.ts), [`packages/science/science-session/src/types.ts`](../../packages/science/science-session/src/types.ts), and [`packages/science/tool-science/src/index.ts`](../../packages/science/tool-science/src/index.ts)
-
-Product-facing documentation for the desktop product (PaperMachine) lives under `docs/product/` and `docs/releases/`: [papermachine.md](../product/papermachine.md) describes current researcher-facing behavior by area, [device-checklist.md](../product/device-checklist.md) is the master on-device acceptance checklist, and [releases/](../releases/README.md) holds one record per shipped DMG version.
-
-Artifact identity belongs to the producing conversation: a session's first capture of a logical name creates v1, and later captures continue that session's chain. Same-named project artifacts remain distinct by artifactId. Cross-conversation inputs name exact versions through `artifact_inputs`; `edit_of` remains session-local. Existing logs keep their recorded ordinals. The artifact library groups by producing conversation, with collapsible groups persisted in the selection store.
-
-## Operations
-
-`bindEnvironment` requires the exact live Science Session object, observes one allowlisted profile, and appends one complete `science/environment-bound` value. `startRun` writes the exact source, resolves optional artifact-version inputs through verified attachment reads, materializes them below the reserved `inputs/` directory, appends the complete mapping on `science/run-started`, and returns a `ScienceRunHandle` with only `runId`, `done`, and idempotent `cancel()`. Optional edit baselines name an exact declared content baseline (`base_version_id`/`base_explicit` on the appended store row), never latest-defaulted, including stale and cross-artifact branches. The project artifact store's write transaction is the sole authority for a version's provenance — `contentOrigin`, the full producer group, `baseVersionId`/`baseExplicit`, and `createdAt`; the Session event carries only `versionId`/`sha256` and the title/caption presentation snapshot the model or user saw when it committed. A second live-Session Runtime operation returns `RUNTIME_BUSY`. The Runtime refuses a remote subprocess world and a sandbox that cannot report full enforcement before it creates owner markers, scratch, or Session events.
-
-An `image/png` artifact version may carry `ScienceChartState` in the store's `figure_state` side table: its `runtime`, capture-relative `figureKey`, saved pixel dimensions and DPI, bounded `elements`, cumulative `ops`, `hitmap`, and `hitmapStatus`. The Python and R kernels produce this projection only for captured paths registered through matplotlib savefig or ggplot2 ggsave. A missing or unavailable chart projection never invalidates the PNG; `hitmapStatus: 'unavailable'` requires an empty hit map while preserving any extracted elements.
-
-`applyChartEdit` applies the closed `set_title`, `set_subtitle`, `set_axis_label`, `set_legend_position`, `toggle_grid`, and `set_font` operations to an exact current addressable version and appends a child `content_origin: 'human-edit'` PNG. It uses the live figure when registered; otherwise it privately replays the source run, exact materialized inputs, and prior operations without appending run events. Successful operations accumulate on the new chart state, partial target failures return as indexed `failedOps`, and stale, unaddressable, invalid, or wholly unresolved requests retain distinct stable error codes. A font operation checks exact availability without enumerating installed families, reports `font_not_found` without mutating the figure when resolution fails, and never changes matplotlib's global `rcParams`. The `scienceEdits.applyChartOps` Remote translates the chart-specific Runtime errors for browser clients. `get_science_state` and artifact receipts expose only `contentOrigin` and whether the version has been curated, never operation names, element targets, or operation values — those live only in the store's `figure_state` row. Element references carry id, kind, axes, label, and a bounded current-value summary; the Host requires every field to match the exact addressed chart catalog entry.
-
-A single-axes figure with no figure-level title (`fig.suptitle()`/no ggplot2 equivalent) extracts its one axes title as `kind: 'title'` in both runtimes; matplotlib keeps it `kind: 'subtitle'` only when a suptitle exists or the figure has more than one axes. `set_legend_position`'s shared enum maps straight through to matplotlib's own `loc`, but ggplot2 4's `theme(legend.position = ...)` has no matching corner/edge vocabulary — an unmapped string silently drops the legend rather than erroring — so the ggplot2 adapter maps each value deterministically to `"right"` or to `"inside"` plus a normalized coordinate ([full table](../../packages/science/science-runtime/README.md)); an unmapped `position` fails the operation instead.
-
-The registered client projection is distinct from complete Host replay. It retains path-free environment summaries, run status/history with exact artifact-version inputs when recorded, the latest Outcome, and metrics while omitting prefix/executable paths, full fingerprints, source/scratch facts, authorizing request identities, and Runtime free-text failures. An artifact version's client projection carries only its identity, the title/caption presentation snapshot as committed, `versionId`, `sha256`, and `seenAt` — content origin, producer, and declared baseline are project artifact store facts (`content_origin`, the producer group, `base_version_id`/`base_explicit`), not session-log facts, and are read from the store rather than replayed from the fold. The strict fold and pre-commit invariant require every recorded artifact-input reference to resolve to an earlier committed artifact version; a declared baseline's own validity is a store write-time concern (a foreign-key reference plus the call-site checks in `dsh-science-runtime`), not a fold-time one.
-
-Every probe and run uses direct argv, `environmentBase: 'empty'`, a fixed allowlist, owned cwd, and full `workspace-write` confinement. Python uses frozen isolated UTF-8 flags. R version discovery uses standalone `Rscript --version`; UTF-8 probes and runs use `--vanilla --encoding=UTF-8`. File-write confinement is not confidentiality: it does not isolate reads, network, syscalls, or scientific correctness.
+The Science client uses the native right Sidebar: a project-library guide, stable artifact-identity resources and exact-version navigation. Process is a sibling of Trajectory. Public conversation slots handle input targets, turn-end artifacts and tool views; upstream Files owns workspace browsing. See the [client package](../../packages/client/ui-science/README.md) and [decision](../../.agents/notes/implemented/architecture/2026-09-10-science-native-sidebar.md).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -274,6 +256,57 @@ Remote service admitting browser edit gestures into the addressed live agent.
 Types: [Agent](core.md)
 
 Source: [`packages/science/tool-science/src/edit-message.ts`](../../packages/science/tool-science/src/edit-message.ts)
+
+<a id="ctxsciencereads--sciencereadservice"></a>
+
+### `ctx.scienceReads` — `ScienceReadService`
+
+Read-only Remote service over a session's project and durable attachment references.
+
+```ts cordis-catalog
+/**
+ * Read one session-authorized immutable version.
+ * @param sessionId - Authorizing session.
+ * @param versionId - Exact version.
+ * @returns Verified bytes encoded as base64.
+ */
+@Remote async scienceArtifact(sessionId: SessionId, versionId: VersionId): Promise<{ versionId: VersionId; mediaType: string; byteCount: number; data: string }>
+
+/**
+ * Read an exact version's editable chart state.
+ * @param sessionId - Authorizing session.
+ * @param versionId - Exact version.
+ * @returns Chart state or null for non-chart versions.
+ */
+@Remote async scienceChartState(sessionId: SessionId, versionId: VersionId): Promise<{ chart: ScienceChartState | null }>
+
+/**
+ * Read a referenced UTF-8 file.
+ * @param sessionId - Authorizing session.
+ * @param attachmentId - Durable file identity.
+ * @returns Validated text with its reference.
+ */
+@Remote async textAttachment(sessionId: SessionId, attachmentId: AttachmentId): Promise<{ attachment: FileAttachmentRef; data: string }>
+
+/**
+ * Read current project metadata.
+ * @param sessionId - Authorizing session.
+ * @returns Current authorized store facts.
+ */
+@Remote async scienceLibrary(sessionId: SessionId): Promise<{ projectId: string; artifacts: ScienceLibraryArtifact[]; health: ScienceLibraryHealth }>
+
+/**
+ * Read current project metadata.
+ * @param sessionId - Authorizing session.
+ * @param versionIds - Exact versions to resolve.
+ * @returns Current authorized store facts.
+ */
+@Remote async scienceVersions(sessionId: SessionId, versionIds: readonly VersionId[]): Promise<{ versions: ScienceVersionSummary[] }>
+```
+
+Types: [FileAttachmentRef](attachment.md) · [SessionId](core.md)
+
+Source: [`packages/science/tool-science/src/read-service.ts`](../../packages/science/tool-science/src/read-service.ts)
 
 <a id="ctxscienceruntime--scienceruntime"></a>
 

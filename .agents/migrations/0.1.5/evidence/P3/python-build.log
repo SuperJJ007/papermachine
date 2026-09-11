@@ -1,0 +1,70 @@
+build-exe-for-python-sdk: targets: node24-macos-arm64
+build-exe-for-python-sdk: staging: /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+build-exe-for-python-sdk: runtime dependency closure: pnpm run verify-runtime-closure
+$ tsx scripts/verify-runtime-closure.ts
+verify-runtime-closure: 4 agent presets and 133 workspace packages form a closed runtime dependency graph.
+build-exe-for-python-sdk: skipping pnpm run build (--skip-build)
+build-exe-for-python-sdk: deploy: pnpm --filter dsh-python-runtime-closure deploy --legacy --prod --config.node-linker=hoisted --config.auto-install-peers=false --config.link-workspace-packages=true /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+[WARN] Shared workspace lockfile detected but configuration forces legacy deploy implementation.
+.                                        | [WARN] A pnpm-lock.yaml file exists. The current configuration prohibits to read or write a lockfile
+Packages are cloned from the content-addressable store to the virtual store.
+  Content-addressable store is at: /Users/superjj/Library/pnpm/store/v11
+  Virtual store is at:             python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/node_modules/.pnpm
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 410, reused 0, downloaded 0, added 0
+Progress: resolved 411, reused 0, downloaded 0, added 0
+Progress: resolved 420, reused 0, downloaded 0, added 0
+Progress: resolved 425, reused 0, downloaded 0, added 0
+Progress: resolved 426, reused 0, downloaded 0, added 0
+Progress: resolved 427, reused 0, downloaded 0, added 0
+[WARN] Request took 21618ms: https://registry.npmjs.org/@typescript-eslint%2Ftypes
+[WARN] Request took 18447ms: https://registry.npmjs.org/@typescript-eslint%2Ftypes
+Progress: resolved 428, reused 0, downloaded 0, added 0
+Progress: resolved 793, reused 0, downloaded 0, added 0
+Progress: resolved 794, reused 0, downloaded 0, added 0
+Progress: resolved 799, reused 0, downloaded 0, added 0
+Progress: resolved 810, reused 0, downloaded 0, added 0
+[WARN] GET https://registry.npmjs.org/bluebird error (ECONNRESET). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 815, reused 0, downloaded 0, added 0
+Progress: resolved 817, reused 0, downloaded 0, added 0
+Progress: resolved 818, reused 0, downloaded 0, added 0
+Progress: resolved 819, reused 0, downloaded 0, added 0
+Progress: resolved 820, reused 0, downloaded 0, added 0
+Progress: resolved 821, reused 0, downloaded 0, added 0
+Progress: resolved 1038, reused 0, downloaded 0, added 0
+Progress: resolved 1043, reused 0, downloaded 0, added 0
+Progress: resolved 1044, reused 0, downloaded 0, added 0
+Progress: resolved 1045, reused 0, downloaded 0, added 0
+Progress: resolved 1124, reused 0, downloaded 0, added 0
+Progress: resolved 1145, reused 0, downloaded 0, added 0
+Progress: resolved 1147, reused 0, downloaded 0, added 0
+Progress: resolved 1151, reused 0, downloaded 0, added 0
+Progress: resolved 1158, reused 0, downloaded 0, added 0
+[WARN] GET https://registry.npmjs.org/@img%2Fsharp-libvips-linuxmusl-x64 error (ECONNRESET). Will retry in 10 seconds. 2 retries left.
+Progress: resolved 1161, reused 0, downloaded 0, added 0
+Progress: resolved 1162, reused 0, downloaded 0, added 0
+[WARN] Request took 15578ms: https://registry.npmjs.org/@img%2Fsharp-libvips-darwin-arm64
+Progress: resolved 1163, reused 0, downloaded 0, added 0
+[WARN] Request took 16474ms: https://registry.npmjs.org/@img%2Fsharp-libvips-linuxmusl-x64
+Progress: resolved 1179, reused 0, downloaded 0, added 0
+Progress: resolved 1197, reused 0, downloaded 0, added 0
+Progress: resolved 1201, reused 0, downloaded 0, added 0
+Progress: resolved 1204, reused 0, downloaded 0, added 0
+Progress: resolved 1211, reused 0, downloaded 0, added 0
+[ERR_PNPM_UNUSED_PATCH] The following patches were not used: app-builder-lib@26.15.3
+
+Either remove them from "patchedDependencies" or update them to match packages in your dependencies.
+/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596
+        reject(new Error(`build-exe-for-python-sdk: ${label} failed (${cause}): ${printable}`))
+               ^
+
+Error: build-exe-for-python-sdk: deploy failed (exit code 1): pnpm --filter dsh-python-runtime-closure deploy --legacy --prod --config.node-linker=hoisted --config.auto-install-peers=false --config.link-workspace-packages=true /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+    at ChildProcess.<anonymous> (/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596:16)
+    at Object.onceWrapper (node:events:623:26)
+    at ChildProcess.emit (node:events:508:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+
+Node.js v24.14.0

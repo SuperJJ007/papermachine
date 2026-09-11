@@ -16,13 +16,14 @@ import {
   compareOrRefreshGolden,
   launchWebScaffold,
   seedSession,
+  openScienceSeed,
   watchConsole,
   webSnapshotMode,
   type WebScaffold,
-} from './scaffold.ts'
+} from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const EXPECTED = fileURLToPath(new URL('./snapshots/science-file-library/library.expected.md', import.meta.url))
+const EXPECTED = fileURLToPath(new URL('./expected/science-file-library/library.expected.md', import.meta.url))
 const SHOT_GRID = fileURLToPath(new URL('../../../.artifacts/s4-file-library-grid.png', import.meta.url))
 const SHOT_LIST = fileURLToPath(new URL('../../../.artifacts/s4-file-library-list-search.png', import.meta.url))
 const SHOT_FILES = fileURLToPath(new URL('../../../.artifacts/s4-file-library-project-files.png', import.meta.url))
@@ -52,12 +53,12 @@ function sessionFixture(id: string, title: string): string {
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   const header = {
-    type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
+    type: 'session', version: SESSION_FORMAT_VERSION, isSeeded: false, delegationDepth: 0, id: '{{sessionId}}',
     createdAt: 0, cwd: '{{cwd}}', agentPreset: 'science',
   }
   return [
     JSON.stringify(header),
-    ...session.events.map((event, index) => JSON.stringify({ ...event, time: index + 1 })),
+    ...session.snapshotEvents().map((event, index) => JSON.stringify({ ...event, time: Date.now() + index })),
     '',
   ].join('\n')
 }
@@ -99,13 +100,10 @@ describe('web e2e: project Science file library', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.locator('[role="treeitem"]').first().click()
-    const currentSession = page.locator('[role="treeitem"]').nth(1)
-    await currentSession.waitFor({ timeout: 10_000 })
-    await currentSession.click()
-    await page.getByRole('button', { name: 'Artifacts', exact: true }).click()
+    await openScienceSeed(page, 'Create the Current session B project outputs.')
+    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
   }, 120_000)
 
   afterAll(async () => {
@@ -115,13 +113,13 @@ describe('web e2e: project Science file library', () => {
 
   it('opens cross-session artifacts and workspace files from the library', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-file-library'))
-    const details = page.locator('[class*="detailsCol"]')
+    const details = page.locator('[data-rightbar-col]')
     await expect.poll(() => details.getByText('3 artifacts', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     const sourceGroup = details.getByRole('region', { name: 'Source session A', exact: true })
     const currentGroup = details.getByRole('region', { name: 'Current session B · This session', exact: true })
     expect(await sourceGroup.getByRole('listitem').count()).toBe(2)
     expect(await sourceGroup.getByText(/^v1 · /).count()).toBe(2)
-    expect(await currentGroup.getByText(/^v1 · /).count()).toBe(1)
+    await expect.poll(() => currentGroup.getByText(/^v1 · /).count()).toBe(1)
     expect(await details.getByText(/text\/csv|application\/json/).count()).toBe(0)
     await page.waitForTimeout(400)
     await page.screenshot({ path: SHOT_GRID, fullPage: true })
@@ -141,7 +139,7 @@ describe('web e2e: project Science file library', () => {
     await details.getByRole('table', { name: 'alpha.csv' }).waitFor({ timeout: 10_000 })
     expect(await details.getByText('alpha', { exact: true }).count()).toBeGreaterThan(0)
     await details.getByRole('button', { name: 'Provenance', exact: true }).click()
-    expect(await details.getByText(
+    await expect.poll(() => details.getByText(
       'This version was produced in a different session (Source session A) — nothing to show here.',
       { exact: true },
     ).count()).toBe(1)
@@ -149,30 +147,21 @@ describe('web e2e: project Science file library', () => {
     expect(await details.getByText('Source session A').count()).toBe(1)
     expect(await details.getByRole('button', { name: 'Back to original conversation', exact: true }).isDisabled()).toBe(true)
     await page.screenshot({ path: SHOT_CROSS_SESSION, fullPage: true })
-    await details.getByRole('button', { name: 'Alpha results', exact: true }).click()
-    await details.getByRole('button', { name: 'Artifact library', exact: true }).click()
-    await details.getByRole('button', { name: 'Close Alpha results', exact: true }).click()
-
-    await details.getByRole('tab', { name: 'Project files', exact: true }).click()
-    await expect.poll(() => details.getByText('1 project files', { exact: true }).count()).toBe(1)
+    await details.getByRole('tab', { selected: true }).filter({ has: page.getByRole('button', { name: 'Close', exact: true }) }).getByRole('button', { name: 'Close', exact: true }).click()
+    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
+    await details.getByRole('button', { name: 'Project files', exact: true }).click()
+    await details.locator('[data-files-path$="/seed.csv"]').waitFor()
     await page.screenshot({ path: SHOT_FILES, fullPage: true })
-    await details.getByRole('button', { name: /seed\.csv/ }).click()
-    await details.getByRole('table', { name: 'seed.csv' }).waitFor({ timeout: 10_000 })
-    expect(await details.getByText('project', { exact: true }).count()).toBeGreaterThan(0)
-    await details.getByRole('button', { name: 'Close seed.csv', exact: true }).click()
-    await expect.poll(() => details.getByText('1 project files', { exact: true }).count()).toBe(1)
-    await details.getByRole('tab', { name: 'Artifacts', exact: true }).click()
-    await expect.poll(() => details.getByText('3 artifacts', { exact: true }).count()).toBe(1)
-    // Switching library pages remounts the artifact grid, so its sort choice
-    // does not survive the round trip through Project files; re-select Name
-    // sort for a deterministic order instead of the default newest-first,
-    // which ties (and reorders) on this fixture's near-simultaneous
-    // `createArtifact` calls.
+    await details.locator('[data-files-path$="/seed.csv"] button').click()
+    await details.getByText('label,score', { exact: false }).waitFor()
+    expect(await details.innerText()).toContain('project,42')
+    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
     await details.getByRole('combobox', { name: 'Artifact sort' }).selectOption({ label: 'Name' })
+    await details.getByText('3 artifacts', { exact: true }).waitFor()
 
     await compareOrRefreshGolden(
       EXPECTED,
-      ['## Details column — project file library', await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd)].join('\n'),
+      ['## Details column — project file library', await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd)].join('\n'),
       MODE,
     )
     expect(tripwire.pageErrors).toEqual([])
@@ -191,6 +180,7 @@ describe('web e2e: project Science file library', () => {
     })
     await writeFile(`${scaffold.workspaceCwd}/other.csv`, 'label,score\nsecond-file,73\n')
     await page.reload({ waitUntil: 'load' })
+    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
     // The Details column's open/selected-entry state persists across reload
     // (dsh.conversation.chat), and `beforeAll` already opened the Science
     // library once for this session — so it reopens showing the library on
@@ -198,34 +188,68 @@ describe('web e2e: project Science file library', () => {
     // hit its toggle-closed branch instead (it closes the column when the
     // library is already the selected entry), collapsing it before the next
     // assertion ever runs.
-    const details = page.locator('[class*="detailsCol"]')
+    const details = page.locator('[data-rightbar-col]')
     await details.getByRole('button', { name: 'Open Shared chart, version 1', exact: true }).click()
     await details.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()
     await details.getByRole('button', { name: 'Expand', exact: true }).click()
     const lightbox = page.getByRole('dialog')
     await lightbox.getByRole('img', { name: 'Shared chart', exact: true }).waitFor()
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-file-library/lightbox.expected.md', import.meta.url)),
+      fileURLToPath(new URL('./expected/science-file-library/lightbox.expected.md', import.meta.url)),
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), MODE,
     )
     await lightbox.getByRole('button', { name: 'Close', exact: true }).click()
-    await details.getByRole('button', { name: 'Close tab', exact: true }).click()
-    await details.getByRole('tab', { name: 'Project files', exact: true }).click()
-    await details.getByRole('button', { name: /seed\.csv/ }).click()
-    await details.getByRole('table', { name: 'seed.csv' }).waitFor()
-    await details.getByRole('button', { name: /Artifact library$/ }).click()
-    await details.getByRole('button', { name: /other\.csv/ }).click()
-    await details.getByRole('table', { name: 'other.csv' }).waitFor()
-    await details.getByRole('tab', { name: 'seed.csv', exact: true }).click()
-    await details.getByRole('table', { name: 'seed.csv' }).waitFor()
-    expect(await details.getByText('second-file', { exact: true }).count()).toBe(0)
-    await details.getByRole('tab', { name: 'other.csv', exact: true }).click()
-    await details.getByRole('table', { name: 'other.csv' }).waitFor()
-    expect(await details.getByText('project', { exact: true }).count()).toBe(0)
+    await details.getByRole('tab', { selected: true }).filter({ has: page.getByRole('button', { name: 'Close', exact: true }) }).getByRole('button', { name: 'Close', exact: true }).click()
+    await page.getByRole('button', { name: 'Artifact library', exact: true }).first().click()
+    await details.getByRole('button', { name: 'Project files', exact: true }).click()
+    await details.locator('[data-files-path$="/seed.csv"] button').click()
+    await details.getByText('project,42', { exact: false }).waitFor()
+    await details.getByRole('tab', { name: 'Files Close', exact: true }).click()
+    await details.locator('[data-files-path$="/other.csv"] button').click()
+    await details.getByText('second-file,73', { exact: false }).waitFor()
+    await details.getByRole('tab', { name: 'seed.csv Close', exact: true }).click()
+    await details.getByText('project,42', { exact: false }).waitFor()
+    expect(await details.getByText('second-file,73', { exact: false }).count()).toBe(0)
+    await details.getByRole('tab', { name: 'other.csv Close', exact: true }).click()
+    await details.getByText('second-file,73', { exact: false }).waitFor()
     await compareOrRefreshGolden(
-      fileURLToPath(new URL('./snapshots/science-file-library/file-switch.expected.md', import.meta.url)),
-      await captureStableAria(page, '[class*="detailsCol"]', scaffold.workspaceCwd), MODE,
+      fileURLToPath(new URL('./expected/science-file-library/file-switch.expected.md', import.meta.url)),
+      await captureStableAria(page, '[data-rightbar-col]', scaffold.workspaceCwd), MODE,
     )
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('keeps library navigation and the native rightbar control accessible before the first message', async () => {
+    onTestFailed(() => saveFailureShot(page, 'science-sidebar-navigation'))
+    await page.getByRole('button', { name: /^New session$/i }).first().click()
+    await page.getByText('Into the Unknown', { exact: false }).waitFor()
+    expect(await page.getByRole('button', { name: 'Artifact library', exact: true }).count()).toBe(0)
+
+    const expand = page.getByRole('button', { name: 'Open right sidebar', exact: true })
+    await expand.click()
+    const guide = page.locator('[data-sidebar-right-guide]')
+    await guide.waitFor()
+    const libraryCard = guide.locator('[data-sidebar-right-guide-entry="science-library"]')
+    const filesCard = guide.locator('[data-sidebar-right-guide-entry="files"]')
+    expect(await libraryCard.innerText()).toContain('Browse project artifacts and versions')
+    const libraryBox = await libraryCard.boundingBox()
+    const filesBox = await filesCard.boundingBox()
+    if (libraryBox === null || filesBox === null) throw new Error('Guide cards are not visible')
+    expect(Math.abs(libraryBox.height - filesBox.height)).toBeLessThanOrEqual(1)
+    expect(Math.abs(libraryBox.width - filesBox.width)).toBeLessThanOrEqual(1)
+    expect(await libraryCard.locator('svg').count()).toBe(1)
+    await compareOrRefreshGolden(
+      fileURLToPath(new URL('./expected/science-sidebar-navigation/guide.expected.md', import.meta.url)),
+      await captureStableAria(page, '[data-sidebar-right-guide]', scaffold.workspaceCwd), MODE,
+    )
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
+    await expand.waitFor()
+    await expand.click()
+    await libraryCard.click()
+    await page.locator('[data-rightbar-col]').getByRole('textbox', { name: 'Search', exact: true }).waitFor()
+    expect(await expand.isVisible()).toBe(false)
+    await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
+    await expand.waitFor()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

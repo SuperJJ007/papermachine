@@ -8,8 +8,8 @@
  * wires in is the whole migration — no consuming component changed.
  */
 
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { scienceArtifactUrl } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import { scienceArtifactUrl } from './science-artifact-url.ts'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactContentRef, ScienceImageLoader, TextLoader } from './science-attachment-loader.ts'
 

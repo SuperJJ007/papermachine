@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceChartElement, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceChartFailedOp, ScienceEditTarget } from '@deepseek-ai/dsh-tool-science/types'
-import { scienceElementCurrentSummary } from '@deepseek-ai/dsh-tool-science/element-summary'
+import { jsonValueSummary } from '@deepseek-ai/dsh-util-values'
 import type { ScienceKey } from './locales.ts'
 import { scienceElementColor, scienceElementLabel } from './science-element-label.ts'
 import css from './ScienceDetailsView.module.css'
@@ -153,7 +153,7 @@ function elementTarget(element: ScienceChartElement): Extract<ScienceEditTarget,
     elementKind: element.kind,
     axes: element.axes,
     label: element.label,
-    current: scienceElementCurrentSummary(element.current),
+    current: jsonValueSummary(element.current, 60),
   }
 }
 
@@ -186,7 +186,7 @@ function LegendControl({ current, onApply, t }: {
     setValue(position)
     onApply(position)
   }}>
-    {initial === undefined && <option value="" disabled>{t('panel.legendCurrent', { current: scienceElementCurrentSummary(current) })}</option>}
+    {initial === undefined && <option value="" disabled>{t('panel.legendCurrent', { current: jsonValueSummary(current, 60) })}</option>}
     {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{t(LEGEND_LABEL_KEY[position])}</option>)}
   </select>
 }
@@ -379,6 +379,7 @@ export function ScienceChartEditPanel({
   const [failedOps, setFailedOps] = useState<readonly ScienceChartFailedOp[]>([])
   const [previewing, setPreviewing] = useState(false)
   const [annotationsExpanded, setAnnotationsExpanded] = useState(false)
+  const [discardRevision, setDiscardRevision] = useState(0)
 
   useEffect(() => {
     onPendingChange?.(pending.length > 0)
@@ -443,7 +444,7 @@ export function ScienceChartEditPanel({
     <div className={css.elementPanelColumns}>
       <section className={css.elementPanelSection} aria-labelledby="science-direct-edit-heading">
         <h4 id="science-direct-edit-heading">{t('edit.elements')}</h4>
-        <ul className={css.directEditRows}>{direct.map((row, index) => <Fragment key={row.element.id}>
+        <ul key={discardRevision} className={css.directEditRows}>{direct.map((row, index) => <Fragment key={row.element.id}>
           {multiAxes && row.element.axes !== null && direct[index - 1]?.element.axes !== row.element.axes
             && <li className={css.directEditHeading}>{t('panel.panelHeading', { index: row.element.axes + 1 })}</li>}
           <DirectEditRow element={row.element} referenceable={row.referenceable}
@@ -472,7 +473,10 @@ export function ScienceChartEditPanel({
     </p>)}
     <div className={css.panelActions}>
       <button type="button" className={css.regionButton} disabled={pending.length === 0 || saving}
-        onClick={() => { setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([]) }}>
+        onClick={() => {
+          setDiscardRevision(value => value + 1)
+          setPending([]); onPreviewSrc?.(undefined); setSaved(false); setError(undefined); setFailedOps([])
+        }}>
         {t('panel.discard')}
       </button>
       <button type="button" className={css.editSubmit} disabled={pending.length === 0 || saving} onClick={() => {

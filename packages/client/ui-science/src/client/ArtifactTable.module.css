@@ -18,7 +18,7 @@
 .scroll {
   overflow: auto;
   max-height: 480px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
 }
 
@@ -34,7 +34,7 @@
   padding: 4px 10px;
   text-align: left;
   white-space: nowrap;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .table thead th {

@@ -4,6 +4,7 @@ import { Buffer } from 'node:buffer'
 import { posix } from 'node:path'
 import { e2bControlEnvs } from '@deepseek-ai/dsh-e2b'
 import type { Sandbox } from '@deepseek-ai/dsh-e2b'
+import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { SENSITIVE_ENV_PATTERN } from '@deepseek-ai/dsh-subprocess'
 
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
@@ -85,13 +86,13 @@ export function bootstrapEnvironment(raw: string): Record<string, string> {
  * Overlay explicit entries and serialize one validated E2B environment.
  * @param raw - The complete NUL-delimited remote environment.
  * @param explicit - Deliberate caller overrides applied after ambient scrubbing; an `undefined` tombstone removes an ambient entry.
- * @param environmentBase - Whether to begin with scrubbed remote entries or an empty map.
+ * @param environmentBase - target ambient policy; control commands retain their separate bootstrap environment.
  * @returns NUL-delimited `name=value` entries accepted by `env -i`.
  */
 export function serializeRemoteEnvironment(
   raw: string,
   explicit: Readonly<NodeJS.ProcessEnv> | undefined,
-  environmentBase: 'scrubbed-parent' | 'empty' = 'scrubbed-parent',
+  environmentBase: SubprocessSpawnSpec['environmentBase'] = 'scrubbed-parent',
 ): string {
   const environment = environmentBase === 'empty' ? new Map<string, string>() : scrubRemoteEnvironment(raw)
   for (const [name, value] of Object.entries(explicit ?? {})) {

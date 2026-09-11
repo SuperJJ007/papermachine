@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-artifact-identity-stability-and-raster-capture-policy.md
-2026-08-27-artifact-identity-stability-and-raster-capture-policy.md: b80e26077572cb0cd3bf5fca558da59901ba3aa3
-2026-08-27-artifact-identity-stability-and-raster-capture-policy.zh.md: a3753899a64345b73febe7b6ad7aea69e2e72640
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-08-27-artifact-identity-stability-and-raster-capture-policy.md: b20b372a03c4ccec042b87ea4023e717ae002806
+2026-08-27-artifact-identity-stability-and-raster-capture-policy.zh.md: c339698e36c2896dc87155c8ba7718688b8fd763

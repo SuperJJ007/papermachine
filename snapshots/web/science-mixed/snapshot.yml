@@ -1,0 +1,12 @@
+version: 1
+scenario: science-mixed
+profile: web
+composition: web-science-mixed
+recording: live
+platform: posix
+header:
+  class: web-science-mixed
+  pin: true
+workspace:
+  setup: workspace-seed
+  final: true

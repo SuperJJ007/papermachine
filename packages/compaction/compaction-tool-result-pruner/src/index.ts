@@ -8,7 +8,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, ToolResultMessage } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionSeq, ToolResultMessage } from '@deepseek-ai/dsh-session'
 // Type-only: the `compaction/*` SessionEventMap merges (the shadow-price event).
 import type {} from '@deepseek-ai/dsh-compaction'
 // Type-only: the `ctx.tokenMeter` Context merge for the declared injection.
@@ -36,7 +36,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 interface SnapshotCandidate {
-  readonly seq: number
+  readonly seq: SessionSeq
   readonly event: SessionEvent<'tool/result'>
 }
 
@@ -128,11 +128,11 @@ export class ToolResultPruner extends Service {
    * conversation client uses to pair a result with its call
    * (`viewFor` in `dsh-client-connection`'s fixture).
    * @param session - session whose log supplies the call/name pairing.
-   * @returns call id (stringified `CallId`) to tool name.
+   * @returns call id (stringified `ToolCallId`) to tool name.
    */
   private indexCallNames(session: Session): ReadonlyMap<string, string> {
     const index = new Map<string, string>()
-    for (const event of session.events) {
+    for (const event of session.snapshotEvents()) {
       if (event.type === 'tool/call') index.set(String(event.data.callId), event.data.name)
     }
     return index
@@ -160,7 +160,7 @@ export class ToolResultPruner extends Service {
   pruneSession(session: Session): PruneResult {
     const candidates: SnapshotCandidate[] = []
     for (const seq of [...session.surface.nodes]) {
-      const event = session.events[seq]
+      const event = session.eventAt(seq)
       /* v8 ignore next -- surface seqs are validated contiguous log references. */
       if (event?.type === 'tool/result') candidates.push({ seq, event })
     }
@@ -198,7 +198,7 @@ export class ToolResultPruner extends Service {
         ...event.data,
         message,
       }, {
-        surfaceOp: { op: 'replace', start: seq, end: seq },
+        surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq },
         sourceEventSeqs: [seq],
       })
       pruned.push({

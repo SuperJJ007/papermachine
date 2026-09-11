@@ -23,3 +23,7 @@ Status: implemented
 ## Verification
 
 并发首次打开和移动/复制回归验证身份归属。真实操作系统进程重开同一存储并追加版本。可运行的 Science 快照在生成产物前并发打开工作区，并在冷读历史时验证只有一个项目身份。
+
+## 相关决策
+
+相关 owner：[project-artifact-store](../architecture/2026-08-25-project-artifact-store.zh.md); [project-artifact-store-s1](../architecture/2026-08-26-project-artifact-store-s1.zh.md).

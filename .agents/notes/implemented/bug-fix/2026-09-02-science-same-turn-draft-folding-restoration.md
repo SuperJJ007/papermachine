@@ -6,28 +6,26 @@ English | [中文](2026-09-02-science-same-turn-draft-folding-restoration.zh.md)
 
 ## Problem
 
-The [client raw-byte migration](../architecture/2026-09-01-science-artifact-raw-byte-reads.md) removed content origin, producer Session, and producer turn from `ScienceClientArtifactVersion`. It also removed `intermediate-versions.ts` and stopped skipping same-turn intermediate drafts in the artifact version stepper. The store still retained those facts, but the browser had no authorized per-version path to read them at that point.
-
-The restored provenance read now returns the exact store producer through `sessions.scienceVersions`. Folding can therefore return without duplicating producer fields into the Session artifact projection or reconstructing them from nearby conversation nodes.
+Same-turn intermediate drafts should be less prominent without deleting immutable versions or mistaking another session’s turn counter for the current one.
 
 ## Decision
 
-**The version-summary batch is the complete folding input.** For each version of the active artifact, `ScienceDetailsView` reads `contentOrigin`, `producer.sessionId`, and `producer.turn` from that exact version's authorized summary. A summary that has not loaded, or a producer without a turn, leaves the version walkable. The viewing Session id and the session artifact's former turn field are not substitutes.
+The authorized version-summary batch supplies exact content origin, producer session, and producer turn. A version folds only when a strictly later version of the same artifact has the same producer session and turn. Human edits remain exempt; run-auto and imported versions obey the same identity rule when producer coordinates exist. Missing summaries or turns leave versions walkable.
 
-**A version folds only when a strictly later version of the same artifact has the same producer Session and turn.** `human-edit` is always exempt. `run-auto` and `import` follow the same identity rule when they carry a producer turn. `foldIntermediateVersions` returns version numbers only; it never mutates the projection, store, or durable bytes.
-
-**The toolbar removes folded versions only from its default walk.** If a direct link opens a folded version, the current version remains in the walk and its adjacent controls can leave it. No intermediate-draft toggle returns: the [explicit removal decision](../simplification/2026-09-01-remove-intermediate-toggle.md) remains authoritative.
+Native artifact panes remove folded versions from the default stepper walk only. A directly opened folded version remains in its own walk so adjacent controls can leave it. The fold returns version numbers and never mutates stored data.
 
 ## Alternatives considered
 
-**Restore `contentOrigin`, `producerSessionId`, and `turn` on `ScienceClientArtifactVersion`** — rejected. The store owns producer identity, and the authorized version-summary RPC already transports the exact facts needed by both provenance and folding.
+**Duplicate producer fields into the session projection.** This creates a second provenance authority.
 
-**Use the viewing Session id and the projection version's turn** — rejected. A project artifact can contain versions from multiple Sessions, and turn counters are comparable only inside one producing Session. Missing summary facts must keep a version visible, not make a guess.
+**Use the viewing session and its turn counter.** A project chain can contain versions from several producers.
 
-**Delete or make folded versions unreachable** — rejected. Folding is presentation only. Durable versions remain addressable from existing exact-version links, including the Science Process view, and a directly opened folded version remains in its own stepper walk.
+**Delete or make folded versions unreachable.** Exact links and historical analysis would lose their targets.
 
 ## Consequences
 
-`intermediate-versions.ts` again owns the pure same-artifact rule, while `ScienceDetailsView` owns the authorized summary-to-fact mapping and toolbar filtering. The package README no longer lists C2 as missing and continues to document the absence of an intermediate-draft toggle.
+Folding is presentation only, with no intermediate-draft toggle required. Tests need cross-session turn collisions, missing metadata, human edits, arbitrary input order, and directly opened folded versions; a same-session happy path cannot prove the ownership rule.
 
-Pure tests cover later same-turn versions, cross-Session turn collisions, human edits, missing turns, and arbitrary input order. Details-view tests prove the store-summary wiring and current-version exemption. The built Web fixture creates two versions in one producer turn, proves the default stepper skips the earlier one, then opens that version through the Process direct link and leaves it through the stepper. The keyless accessibility transcript records the assembled three-version scenario.
+## Related
+
+Related owners: [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.md); [science-read-remotes](../architecture/2026-09-09-science-read-remotes.md).

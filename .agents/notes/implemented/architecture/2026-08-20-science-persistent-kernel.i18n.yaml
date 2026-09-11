@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-science-persistent-kernel.md
-2026-08-20-science-persistent-kernel.md: d9bbfe95c86b67780cfcd303cd6c263574ce1228
-2026-08-20-science-persistent-kernel.zh.md: 28ed53128cfceec79898e7b4e48df9e966191c33
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-08-20-science-persistent-kernel.md: 51241e1a2f73dfebfe5747a4d51e97ae2a256a1f
+2026-08-20-science-persistent-kernel.zh.md: 35c5ba99497cb95a4f86aa350a5b4e032e6b6ff0

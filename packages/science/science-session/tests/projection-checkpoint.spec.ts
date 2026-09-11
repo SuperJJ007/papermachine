@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   applyScienceProjectionState,
@@ -31,6 +31,7 @@ import {
   kernelExited,
   kernelStarted,
   legalEvents,
+  mode,
   outcome,
   runStarted,
   runTerminal,
@@ -84,7 +85,7 @@ describe('Science private projection checkpoint', () => {
     appendFixtureEvents(session)
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const client = viewScienceProjectionState(projectState(session.events))
+    const client = viewScienceProjectionState(projectState(session.snapshotEvents()))
     expect(client).toMatchObject({
       trace: {
         turns: [{ turn: 1 }],
@@ -97,6 +98,25 @@ describe('Science private projection checkpoint', () => {
       runs: [{ turn: 1, step: 1 }],
       artifacts: [{ turn: 1, step: 1 }],
     })
+  })
+
+  it('retains a failed turn end before Science binding through checkpoint replay', () => {
+    const session = Session.create(SessionId('science-failed-before-binding'))
+    session.append('turn/start', { turn: 1 })
+    const failed = session.append('turn/end', {
+      turn: 1, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'Startup failed' } },
+    })
+    session.append('turn/start', { turn: 2 })
+    session.append('science/mode-bound', { version: 1, mode: mode() })
+    const state = projectState(session.snapshotEvents())
+    const expected = [
+      { turn: 1, startSeq: 0, startTime: session.snapshotEvents()[0]!.time, endSeq: failed.seq, endTime: failed.time },
+      { turn: 2, startSeq: 2, startTime: session.snapshotEvents()[2]!.time },
+    ]
+    expect(viewScienceProjectionState(state)?.trace.turns).toEqual(expected)
+    expect(state.witness).toContainEqual({ seq: failed.seq, time: failed.time, type: 'turn/end', data: { turn: 1 } })
+    const restored = scienceProjectionStateSchema.parse(JSON.parse(JSON.stringify(state)))
+    expect(viewScienceProjectionState(restored)?.trace.turns).toEqual(expected)
   })
 
   it('leaves an artifact fact without owner coordinates when no run or annotate call is open at save time', () => {
@@ -120,7 +140,7 @@ describe('Science private projection checkpoint', () => {
 
     for (const type of ['step/start', 'request/header', 'tool/call'] as const) {
       const data = type === 'tool/call'
-        ? { turn: 1, step: 1, callId: CallId('pre-mode-call'), name: 'run_python', arguments: '{}' }
+        ? { turn: 1, step: 1, callId: ToolCallId('pre-mode-call'), name: 'run_python', arguments: '{}' }
         : {}
       const blocked = projectState([event(type, 0, 90, data)])
       expect(blocked.witness).toHaveLength(1)
@@ -129,7 +149,7 @@ describe('Science private projection checkpoint', () => {
 
     for (const type of ['user/message', 'assistant/message', 'tool/result'] as const) {
       const data = type === 'tool/result'
-        ? { turn: 1, step: 1, message: { source: { callId: CallId('pre-mode-result') } } }
+        ? { turn: 1, step: 1, message: { source: { callId: ToolCallId('pre-mode-result') } } }
         : {}
       const retained = projectState([event(type, 0, 90, data)])
       expect(retained.witness).toHaveLength(1)
@@ -192,7 +212,7 @@ describe('Science private projection checkpoint', () => {
 
   it('round-trips a run input referencing a prior committed artifact version through the witness-backed checkpoint', () => {
     const branchId = ScienceArtifactId('checkpoint-branch')
-    const runCall = CallId('checkpoint-input-run')
+    const runCall = ToolCallId('checkpoint-input-run')
     const inputs = [{ artifactId: branchId, version: 1, path: 'source/branch.png' }]
     const events: SessionEvent[] = [
       ...legalEvents().slice(0, 9),
@@ -230,7 +250,7 @@ describe('Science private projection checkpoint', () => {
     const call = (
       seq: number,
       time: number,
-      callId: ReturnType<typeof CallId>,
+      callId: ReturnType<typeof ToolCallId>,
       name: string,
       turn = 1,
       step = 1,
@@ -244,7 +264,7 @@ describe('Science private projection checkpoint', () => {
     const result = (
       seq: number,
       time: number,
-      callId: ReturnType<typeof CallId>,
+      callId: ReturnType<typeof ToolCallId>,
     ): SessionEvent => event('tool/result', seq, time, {
       turn: 1,
       step: 1,
@@ -282,7 +302,7 @@ describe('Science private projection checkpoint', () => {
         publishedAt: 129,
       }, 4, 130),
     ])
-    const resultCallId = CallId('call-result')
+    const resultCallId = ToolCallId('call-result')
     const toolMessageState = projectState([
       events[0]!,
       event('request/header', 1, 110, {}),
@@ -406,11 +426,11 @@ describe('Science private projection checkpoint', () => {
     })
     const callData = (
       candidate: ScienceProjectionState['witness'][number],
-    ): { turn: number; step: number; callId: ReturnType<typeof CallId>; name: string } =>
+    ): { turn: number; step: number; callId: ReturnType<typeof ToolCallId>; name: string } =>
       candidate.data as {
         turn: number
         step: number
-        callId: ReturnType<typeof CallId>
+        callId: ReturnType<typeof ToolCallId>
         name: string
       }
 
@@ -525,7 +545,7 @@ describe('Science private projection checkpoint', () => {
         'tool/call',
         candidate => ({
           ...candidate,
-          data: { ...callData(candidate), callId: CallId('call-other') },
+          data: { ...callData(candidate), callId: ToolCallId('call-other') },
         }),
       )],
       ['authorizing call name changed', replaceWitness(

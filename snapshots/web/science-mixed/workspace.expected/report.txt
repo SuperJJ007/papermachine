@@ -1,0 +1,2 @@
+SCIENCE_MIXED_REPORT
+The chart plots y = x squared at x = 0, 1, 2.

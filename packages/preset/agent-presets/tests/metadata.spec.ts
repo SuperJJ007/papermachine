@@ -5,7 +5,7 @@
  * and root.
  */
 
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -37,6 +37,19 @@ describe('reading display metadata', () => {
   it('requires metadata for a shipped preset', async () => {
     await expect(readPresetMetadata(await presetDir(), { required: true }))
       .rejects.toThrow(/preset\.yml is required for shipped presets/)
+  })
+
+  it('rejects an unreadable metadata path instead of treating it as absent', async () => {
+    const dir = await presetDir()
+    try {
+      await mkdir(join(dir, METADATA_FILE))
+      await expect(readPresetMetadata(dir)).rejects.toMatchObject({
+        reason: 'the metadata file preset.yml cannot be read',
+        cause: { code: 'EISDIR' },
+      })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('rejects malformed YAML', async () => {

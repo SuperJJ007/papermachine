@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-science-runtime-input-materialization-and-edit-baselines.md
-2026-08-22-science-runtime-input-materialization-and-edit-baselines.md: 7938f95b5daae279b236a4fc5136c5049222a6e7
-2026-08-22-science-runtime-input-materialization-and-edit-baselines.zh.md: b5cc5b60e77f4aace95096511524845a41f11df6
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-08-22-science-runtime-input-materialization-and-edit-baselines.md: 04ea59bfc9a8e2c7752f48f19fa296a8d138da3e
+2026-08-22-science-runtime-input-materialization-and-edit-baselines.zh.md: d51edb753c50cec774b7cee6e3115f6066d78d40

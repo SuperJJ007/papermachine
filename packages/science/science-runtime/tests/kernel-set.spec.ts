@@ -585,7 +585,7 @@ describe('KernelSet', () => {
 
     original.detach()
     harness.kernelSet.detach(original.session)
-    const successor = attachScienceSession(harness.ctx, 'kernel-quarantine', original.session.events)
+    const successor = attachScienceSession(harness.ctx, 'kernel-quarantine', original.session.snapshotEvents())
     await expect(harness.kernelSet.acquire(successor.session, 'python', environment, originalScratch))
       .rejects.toThrow(KernelSetQuarantinedError)
 
@@ -600,7 +600,7 @@ describe('KernelSet', () => {
     const original = attachScienceSession(harness.ctx, 'kernel-conflict')
     const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
     original.detach()
-    const successor = attachScienceSession(harness.ctx, 'kernel-conflict', original.session.events)
+    const successor = attachScienceSession(harness.ctx, 'kernel-conflict', original.session.snapshotEvents())
     const successorScratch = await ensureSessionScratch(harness.dshHome, successor.session)
     const environment = harness.environment(1, ['python'])
     // Neither acquire is awaited before the other starts: both spawns race
@@ -644,7 +644,7 @@ describe('KernelSet', () => {
     const original = attachScienceSession(harness.ctx, 'kernel-conflict-discard')
     const originalScratch = await ensureSessionScratch(harness.dshHome, original.session)
     original.detach()
-    const successor = attachScienceSession(harness.ctx, 'kernel-conflict-discard', original.session.events)
+    const successor = attachScienceSession(harness.ctx, 'kernel-conflict-discard', original.session.snapshotEvents())
     const successorScratch = await ensureSessionScratch(harness.dshHome, successor.session)
     const environment = harness.environment(1, ['python'])
     const [firstResult, secondResult] = await Promise.allSettled([
@@ -708,7 +708,7 @@ describe('KernelSet', () => {
     // state at this point.
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(ended).toHaveLength(0)
-    const successor = attachScienceSession(harness.ctx, 'kernel-straggler', original.session.events)
+    const successor = attachScienceSession(harness.ctx, 'kernel-straggler', original.session.snapshotEvents())
     await expect(kernelSet.acquire(successor.session, 'python', environment, originalScratch))
       .rejects.toThrow(KernelSetQuarantinedError)
 
@@ -1063,7 +1063,7 @@ describe('KernelSet', () => {
     expect(ended[0]?.fact.reason).toBe('session-end')
     await expect(kernel.process.exited).resolves.toMatchObject({ cause: 'commanded' })
 
-    const successor = attachScienceSession(harness.ctx, 'kernel-spawn-detach-race', original.session.events)
+    const successor = attachScienceSession(harness.ctx, 'kernel-spawn-detach-race', original.session.snapshotEvents())
     const successorKernel = await kernelSet.acquire(successor.session, 'python', environment, originalScratch)
     expect(successorKernel.process).toBeInstanceOf(KernelProcess)
   })

@@ -158,6 +158,7 @@ function handleRun(runId, sourcePath, cwd, artifactDir, inputDir) {
     } else {
       process.on('SIGINT', () => {})
     }
+    if (action.signalReadyPath !== undefined) writeFileSync(action.signalReadyPath, 'ready')
     timer = setTimeout(() => {
       send(`DONE\t${runId}\t${status}\t${detail}\t${flags}`)
     }, sleepMs)

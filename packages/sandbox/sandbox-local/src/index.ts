@@ -30,14 +30,14 @@ import {
   LAUNCHER_FAILURE_EXIT,
   launcherPath as landlockLauncherPath,
   probe as defaultProbeLandlock,
-} from '@deepseek-ai/node-addon-landlock-run'
+} from '@deepseek-ai/node-addon-system/landlock-run'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertNever } from '@deepseek-ai/dsh-llm'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
 
 /** Plugin config. All optional — `static Config` supplies the defaults. */
@@ -169,7 +169,7 @@ const PLATFORM_CHAINS: Record<string, readonly SelectedRunner['runner'][]> = {
  * Enforcement completeness a rung claims when selected WITHOUT a probe (a
  * chain of one). `bwrap` and Seatbelt govern every promised file effect by
  * construction, so the claim is a profile fact; `landlock` is listed for the
- * table's totality but is unreachable unprobed today (the Linux chain has
+ * table's totality but is unreachable without a probe (the Linux chain has
  * two rungs, so it is only ever selected through its probe, whose report is
  * what distinguishes full from per-ABI-partial — and the launcher additionally
  * self-reports partial enforcement on stderr at every confined run).
@@ -212,23 +212,6 @@ const DENIAL_SIGNATURES = {
   runnerCommand: ['read-only file system', 'permission denied'],
 } as const satisfies Record<SelectedRunner['runner'] | 'runnerCommand', readonly string[]>
 
-/**
- * Environment entries each runner's invocation requires, carried on every wrap
- * (the seam's `ConfinedArgv.env`). The windows-acl rung re-execs
- * `process.execPath` — an Electron binary in a packaged desktop app, or a
- * plain Node binary in development — to run its runner as a subprocess; a
- * plain Node binary ignores `ELECTRON_RUN_AS_NODE`, but a packaged Electron
- * binary needs it to run the runner as Node instead of booting a second app
- * instance. The POSIX rungs exec their own dedicated runner binaries, which
- * need no such variable.
- */
-const RUNNER_ENV = {
-  bwrap: {},
-  landlock: {},
-  seatbelt: {},
-  'windows-acl': { ELECTRON_RUN_AS_NODE: '1' },
-} as const satisfies Record<SelectedRunner['runner'], Readonly<Record<string, string>>>
-
 /** The windows-acl runner's documented failure exit (its own RUNNER_FAILURE_EXIT contract, distinct from Landlock's 125). */
 const WINDOWS_ACL_RUNNER_FAILURE_EXIT = 127
 
@@ -243,7 +226,7 @@ const WINDOWS_ACL_RUNNER_FAILURE_EXIT = 127
  * cleanup failure reported on a non-zero child exit) is never misclassified
  * as "the command did not run". Keep the Landlock tuple aligned with the
  * assembled snapshot fixture at
- * `examples/acp-agent/tests/fixtures/partial-landlock-sandbox.ts`.
+ * `packages/test-support/session-snapshot/tests/fixtures/partial-landlock-sandbox.ts`.
  */
 const RUNNER_FAILURE_RULES = {
   bwrap: [{ fatalSignatures: ['bwrap: '] }],
@@ -333,23 +316,21 @@ export class LocalSandboxProvider extends SandboxProvider {
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     if (this.runnerCommand !== undefined) {
       return {
+        env: {},
         argv: [...this.runnerCommand, ...bwrapProfileArgs(policy), '--', ...argv],
         enforcement: 'full',
         denialSignatures: DENIAL_SIGNATURES.runnerCommand,
         runnerFailureRules: [{ fatalSignatures: this.configuredRunnerFailureSignatures }],
-        // An operator-configured runnerCommand is a bwrap-compatible profile
-        // invocation, never a re-exec of process.execPath, so it needs none.
-        env: {},
       }
     }
     const selected = this.selectRunner(policy.mode)
     const runnerArgv = this.runnerArgv(selected.runner, policy)
     return {
+      env: {},
       argv: [...runnerArgv, '--', ...argv],
       enforcement: selected.enforcement,
       denialSignatures: DENIAL_SIGNATURES[selected.runner],
       runnerFailureRules: RUNNER_FAILURE_RULES[selected.runner],
-      env: RUNNER_ENV[selected.runner],
     }
   }
 
@@ -573,12 +554,7 @@ export class LocalSandboxProvider extends SandboxProvider {
    * The windows-acl runner argv prefix: the built lib/runner.js entry when
    * present (production), else the package source through tsx (development).
    * The prefix stays `[node, runner, ...]` — a future native-exe runner keeps
-   * the same argv contract and only swaps these entries. Both branches re-exec
-   * `process.execPath`, which in a packaged desktop app IS the Electron
-   * binary — without `ELECTRON_RUN_AS_NODE=1` (carried on `RUNNER_ENV`,
-   * `ConfinedArgv.env`) it boots a second app instance instead of running the
-   * runner as Node; a plain Node `process.execPath` (CLI, tests) ignores the
-   * variable, so setting it unconditionally is harmless there.
+   * the same argv contract and only swaps these entries.
    */
   private windowsAclRunnerInvocation(): string[] {
     const override = this.internals.windowsAclRunnerArgs

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-science",
   "description": "Science transcript cells, turn artifacts, trajectory process view, and artifact workbench",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -18,10 +18,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
@@ -33,17 +29,16 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-tool",
         "@deepseek-ai/dsh-client-ui-settings-plugins",
         "@deepseek-ai/dsh-client-ui-sidebar",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-trajectory",
-        "@deepseek-ai/dsh-client-ui-attachment"
-      ],
-      "external": [
-        "@deepseek-ai/dsh-client-ui-attachment/client"
+        "@deepseek-ai/dsh-client-ui-attachment",
+        "@deepseek-ai/dsh-client-resources",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-chat"
       ],
       "platform": "web"
     }
@@ -54,57 +49,44 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-byte-size": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-attachment": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-trajectory": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
-    "@deepseek-ai/dsh-science-session": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-tool-science": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-byte-size": "workspace:^",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:^",
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
+    "@deepseek-ai/dsh-client-resources": "workspace:^",
+    "@deepseek-ai/dsh-client-store": "workspace:^",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-attachment": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:^",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-deliverables": "workspace:^",
     "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-session": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
     "@deepseek-ai/dsh-client-ui-trajectory": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
     "@deepseek-ai/dsh-science-session": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-tool-science": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-util-crypto": "workspace:^",
+    "@deepseek-ai/dsh-util-values": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
@@ -112,8 +94,8 @@
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/client.js",
+    "THIRD-PARTY-NOTICES.txt",
     "lib/types/**/*.d.ts"
   ]
 }

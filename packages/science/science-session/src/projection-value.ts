@@ -1,6 +1,6 @@
 /** Derivation of the client-safe Science projection from strict replay state. */
 
-import { assertNever } from '@deepseek-ai/dsh-llm'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ScienceFoldState } from './fold-state.ts'
 import type {
   ScienceClientArtifactVersion,

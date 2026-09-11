@@ -208,10 +208,17 @@ describe('selection-store: view, provenance sub-tab, and lightbox', () => {
 
 describe('selection-store: persistence declaration', () => {
   it('declares lightboxOpen and view transient (a reopened tab must not reopen its lightbox/drill-in over the content)', () => {
-    expect(createScienceSelectionStore().spec.transient).toEqual(['lightboxOpen', 'view'])
+    expect(createScienceSelectionStore().spec.transient).toEqual(['lightboxOpen', 'view', 'traceExpandedTurns', 'traceExpandedSteps'])
   })
 
   it('does not bump the v1 persist key: added fields rehydrate through the runtime merge, not a version suffix', () => {
     expect(createScienceSelectionStore().spec.persist).toBe('dsh.science.selection.v1')
   })
+})
+
+it('keeps an already expanded trace turn open on repeated navigation', () => {
+  const instance = createScienceSelectionStore().create('repeat-expansion')
+  instance.actions.expandTraceTurn(4)
+  instance.actions.expandTraceTurn(4)
+  expect(instance.getSnapshot().traceExpandedTurns).toEqual([4])
 })

@@ -14,7 +14,7 @@ Cold recovery runs the exact source and immutable materialized inputs in a dispo
 
 Recovery uses `settleKernelExecution` with the existing operation control: cancellation and timeout interrupt first, then require process teardown. Chart application also receives the operation signal. The lease remains held through recovery-process quiescence and scratch removal, and a preview rechecks cancellation before returning. Recovery failures never retire the unrelated analysis kernel; a failed warm chart exchange still retires its own protocol-faulted kernel.
 
-The [saved-baseline decision](2026-08-31-chart-edit-baseline-isolation.md) continues to own immutable export snapshots, source-version selection, and cumulative operations. The broader [live-figure proposal](../../proposed/architecture/2026-08-28-science-live-figure-editing.md) retains its independent catalog and viewer decisions.
+The [saved-baseline decision](2026-08-31-chart-edit-baseline-isolation.md) continues to own immutable export snapshots, source-version selection, and cumulative operations. The broader [live-figure design](../architecture/2026-08-28-science-live-figure-editing.md) retains its independent catalog and viewer decisions.
 
 ## Alternatives considered
 
@@ -29,3 +29,7 @@ The [saved-baseline decision](2026-08-31-chart-edit-baseline-isolation.md) conti
 Cold recovery incurs interpreter startup cost and cannot use undeclared objects or packages installed only in the current analysis kernel. Such source fails with `CHART_NOT_ADDRESSABLE`; the user must rerun the analysis to regenerate the figure. Recovery is not a general rollback of external side effects: it retains the product sandbox's existing read and temporary-directory policy. Warm rendering remains a copy of the saved figure.
 
 Real Python/R regressions cover scalar assignments, mutable objects, process settings, and cancelled or timed-out infinite replay. They assert the original kernel epoch and values survive, with no private execution events and no surviving recovery process. Runtime tests cover warm/cold chart cancellation, lease reuse, exact-version validation, and scratch cleanup. The runnable keyless snapshot expires old registrations and pins later execution counters so hidden analysis-kernel replay changes its transcript.
+
+## Related
+
+Related owners: [science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.md); [managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.md).

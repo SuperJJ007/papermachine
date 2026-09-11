@@ -14,7 +14,7 @@ Status: implemented
 
 恢复使用现有操作控制下的 `settleKernelExecution`：取消和超时先请求中断，再要求进程收尾。图操作也接收同一操作信号。lease 持续保留至恢复进程静止和 scratch 移除完毕，预览在返回前再次检查取消。恢复失败不会退役无关的分析内核；温图操作协议失败仍会退役该操作所属的内核。
 
-[保存基线决策](2026-08-31-chart-edit-baseline-isolation.zh.md)继续拥有不可变导出快照、源版本选择和累积操作语义。更广泛的[活图提案](../../proposed/architecture/2026-08-28-science-live-figure-editing.zh.md)保留独立的目录与查看器决策。
+[保存基线决策](2026-08-31-chart-edit-baseline-isolation.zh.md)继续拥有不可变导出快照、源版本选择和累积操作语义。更广泛的[活图设计](../architecture/2026-08-28-science-live-figure-editing.zh.md)保留独立的目录与查看器决策。
 
 ## 考虑过的替代方案
 
@@ -29,3 +29,7 @@ Status: implemented
 冷恢复增加解释器启动成本，无法使用未声明的对象或仅安装在当前分析内核中的包。此类源码以 `CHART_NOT_ADDRESSABLE` 失败，用户需要重新运行分析来生成图。恢复不是外部副作用的通用回滚机制：它保留产品沙箱现有的读取与临时目录策略。温图渲染继续复制保存的图对象。
 
 真实 Python/R 回归覆盖标量赋值、可变对象、进程设置，以及被取消或超时的无限回放。它们断言原内核 epoch 与值保持不变，没有私有执行事件，也没有存活的恢复进程。Runtime 测试覆盖温图和冷图操作取消、lease 复用、精确版本校验与 scratch 清理。可运行的无密钥快照会淘汰旧登记并固定后续执行计数，因此在分析内核中隐藏重放会改变其 transcript。
+
+## 相关决策
+
+相关 owner：[science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.zh.md); [managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.zh.md).

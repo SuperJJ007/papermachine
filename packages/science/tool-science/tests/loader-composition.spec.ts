@@ -2,9 +2,9 @@
  * REQUIRED REAL-composition evidence for `@deepseek-ai/dsh-tool-science`
  * (see `packages/AGENTS.md` and the R3 Agent Note): a test-only `cordis.yml`
  * boots the Loader and a real application composition — session store,
- * invariants, Science Session (+invariant), Science Runtime (+invariant,
+ * invariants, Science Session (+invariant), Science Runtime (
  * with deterministic fake subprocess/sandbox providers), system prompt,
- * tools, agent registry, agent loop, and this Consumer (+invariant) — then
+ * tools, agent registry, agent loop, and this Consumer — then
  * drives it with a scripted deterministic model. It asserts the actual first
  * model request, durable event ordering, the logged environment context,
  * the exact five Science schemas, a run result through the real tool
@@ -21,13 +21,13 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createUserMessage, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import * as ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
-import * as ScienceRuntimeInvariant from '@deepseek-ai/dsh-science-runtime/invariant'
 import * as ScienceSession from '@deepseek-ai/dsh-science-session'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -37,13 +37,13 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolScience from '../src/index.ts'
-import * as ToolScienceInvariant from '../src/invariant.ts'
 import { createFakePythonPrefix, createFakeSandboxRunner, installTestKernelSet, kernelAction } from './harness.ts'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-llm', LlmRuntime],
   ['@deepseek-ai/dsh-session', SessionStore],
+  ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
   ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
   ['@deepseek-ai/dsh-invariants', InvariantRegistry],
   ['@deepseek-ai/dsh-science-session', ScienceSession],
@@ -53,13 +53,11 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
   ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
   ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
-  ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
   ['@deepseek-ai/dsh-tools', ToolRuntime],
   ['@deepseek-ai/dsh-agent', AgentRegistry],
   ['@deepseek-ai/dsh-agent-loop', AgentLoop],
   ['@deepseek-ai/dsh-tool-science', ToolScience],
-  ['@deepseek-ai/dsh-tool-science/invariant', ToolScienceInvariant],
 ])
 
 let configRoot: string | undefined
@@ -94,6 +92,7 @@ async function boot(): Promise<Context> {
   await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-llm'",
     "- name: '@deepseek-ai/dsh-session'",
+    "- name: '@deepseek-ai/dsh-session-projection'",
     "- name: '@deepseek-ai/dsh-session-persistence-jsonl'",
     '  config:',
     `    root: ${JSON.stringify(persistenceRoot)}`,
@@ -119,7 +118,6 @@ async function boot(): Promise<Context> {
     '    profiles:',
     '      fake:',
     `        pythonPrefix: ${JSON.stringify(pythonPrefix)}`,
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     "- name: '@deepseek-ai/dsh-system-prompt'",
     "- name: '@deepseek-ai/dsh-tools'",
     "- name: '@deepseek-ai/dsh-agent'",
@@ -131,7 +129,6 @@ async function boot(): Promise<Context> {
     '    profileId: fake',
     '    modeRevision: test-revision',
     '    stateHistoryLimit: 8',
-    "- name: '@deepseek-ai/dsh-tool-science/invariant'",
     '',
   ].join('\n'))
 
@@ -214,7 +211,7 @@ describe.skipIf(process.platform === 'win32')('tool-science real Loader + agent-
     expect(firstRequestTexts.some(text => text.includes('status applied'))).toBe(true)
 
     // Durable event ordering.
-    const log = agent.session.events
+    const log = agent.session.snapshotEvents()
     const seqOf = (type: string): number | undefined => log.find(event => event.type === type)?.seq
     const modeBoundSeq = seqOf('science/mode-bound')
     const environmentBoundSeq = seqOf('science/environment-bound')
@@ -253,7 +250,7 @@ describe.skipIf(process.platform === 'win32')('tool-science real Loader + agent-
     // quiescent. Wait for its `exited` fact before resuming, or the run
     // below can race the still-quarantined predecessor and be rejected.
     await vi.waitFor(() => {
-      expect(agent.session.events.filter(
+      expect(agent.session.snapshotEvents().filter(
         event => event.type === 'science/kernel-state' && event.data.kernel.state === 'exited',
       )).toHaveLength(1)
     })
@@ -270,7 +267,7 @@ describe.skipIf(process.platform === 'win32')('tool-science real Loader + agent-
     await resumedIdle
 
     expect(adapter.requests).toHaveLength(4)
-    const resumedLog = resumedAgent.session.events
+    const resumedLog = resumedAgent.session.snapshotEvents()
     expect(resumedLog.filter(event => event.type === 'science/mode-bound')).toHaveLength(modeBoundBeforeResume)
     expect(resumedLog.filter(event => event.type === 'science/environment-bound')).toHaveLength(environmentBoundBeforeResume)
     expect(pluginContextTexts(resumedLog).some(text => text.includes('Science mode: revision test-revision.'))).toBe(true)
@@ -290,8 +287,8 @@ describe.skipIf(process.platform === 'win32')('tool-science real Loader + agent-
     standardAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }))
     await standardIdle
 
-    expect(standardAgent.session.events.some(event => event.type.startsWith('science/'))).toBe(false)
-    expect(pluginContextTexts(standardAgent.session.events).every(text => !text.includes('Science mode'))).toBe(true)
+    expect(standardAgent.session.snapshotEvents().some(event => event.type.startsWith('science/'))).toBe(false)
+    expect(pluginContextTexts(standardAgent.session.snapshotEvents()).every(text => !text.includes('Science mode'))).toBe(true)
     await standardHandle.dispose()
   }, 30_000)
 })

@@ -1,0 +1,52 @@
+## Center column — collapsed Science transcript cells and Turn-end artifacts
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science artifact types" [disabled]
+  - button "More actions":
+    - img
+  - button "Artifact library"
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- text: Summarize the experiment as csv, json, markdown, and a chart. {{clock}}
+- button "Copy":
+  - img
+- 'button "R run {}"':
+  - img
+  - img
+  - text: "R run {}"
+- paragraph: "Artifacts produced this turn: 4"
+- list:
+  - listitem:
+    - button "summary.csv v1"
+    - text: summary.csv v1
+    - button "Preview summary.csv version 1": Preview
+  - listitem:
+    - button "metrics.json v1"
+    - text: metrics.json v1
+    - button "Preview metrics.json version 1": Preview
+  - listitem:
+    - button "report.md v1"
+    - text: report.md v1
+    - button "Preview report.md version 1": Preview
+  - listitem:
+    - button "plot.png v1"
+    - text: plot.png v1
+    - button "Preview plot.png version 1": Preview
+- textbox "This model is unavailable — select one to continue" [disabled]
+- button "Commands" [disabled]:
+  - img
+- button "Add attachment" [disabled]:
+  - img
+- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
+- button "Select model, current fixture/fixture":
+  - text: fixture/fixture
+  - img
+- button "Send message" [disabled]
+- button "1 turns 1 steps":
+  - img
+  - text: 1 turns 1 steps
+- text: Latest kernel records r · epoch 1 · interrupted

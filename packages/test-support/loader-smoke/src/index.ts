@@ -11,9 +11,11 @@
  * @module @deepseek-ai/dsh-loader-smoke
  */
 
-import { mkdtemp, rm } from 'node:fs/promises'
+import { clearedProxyEnv } from '@deepseek-ai/dsh-http-proxy'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { execa } from 'execa'
 
 export {
@@ -65,6 +67,8 @@ export interface ExampleLaunchOptions {
   readonly mode?: ExampleMode
   /** Absolute repo tsconfig whose `paths` map resolves unbuilt workspace imports. Required in `src` mode, ignored in `lib`. */
   readonly tsconfigPath?: string
+  /** Select the ESM-only tsx hook instead of the generic loader. */
+  readonly sourceImport?: 'tsx/esm'
   /** Extra environment entries the mode-specific ones layer over; the caller then merges the result over `process.env`. */
   readonly env?: NodeJS.ProcessEnv
 }
@@ -107,13 +111,19 @@ function toLibBin(srcBin: string): string {
 export function resolveExampleLaunch(options: ExampleLaunchOptions): ExampleLaunch {
   const mode = options.mode ?? resolveExampleMode()
   const configArgs = options.configArgs ?? []
-  const env: NodeJS.ProcessEnv = { ...options.env }
+  // A smoke launches a real `dsh` against local fixtures, so it must not inherit the machine's
+  // network policy: the harness honors the proxy environment, and a runner that exports one would
+  // send a fixture-server request to a proxy that cannot resolve the fixture host. `undefined`
+  // removes the name from the child rather than setting it empty.
+  const env: NodeJS.ProcessEnv = { ...clearedProxyEnv(), ...options.env }
 
   if (mode === 'src') {
     if (options.tsconfigPath === undefined) {
       throw new Error("resolveExampleLaunch: 'src' mode needs tsconfigPath for the workspace paths map.")
     }
-    const tsxLoader = import.meta.resolve('tsx')
+    const tsxLoader = options.sourceImport === 'tsx/esm'
+      ? import.meta.resolve('tsx/esm')
+      : import.meta.resolve('tsx')
     env.TSX_TSCONFIG_PATH = options.tsconfigPath
     return { command: process.execPath, args: ['--import', tsxLoader, options.srcBin, ...configArgs], env }
   }
@@ -127,6 +137,8 @@ export interface LoaderSmokeOptions {
   readonly label: string
   /** Prefix for the isolated temporary process cwd. */
   readonly tempDirPrefix: string
+  /** Existing parent for the generated cwd; defaults to the platform temporary directory. */
+  readonly tempDirParent?: string
   /** Absolute app-bin source path (`<pkg>/src/bin.ts`); the `lib` bin is derived from it. */
   readonly binScript: string
   /** Explicit plain-Node entry for `lib` mode; intended for test fixtures outside a package `src/` tree. */
@@ -141,6 +153,8 @@ export interface LoaderSmokeOptions {
   readonly mode?: ExampleMode
   /** Environment overrides layered over the parent and isolated DSH homes. */
   readonly env?: Readonly<NodeJS.ProcessEnv>
+  /** Overlay-only npm package names mapped to their real package directories; linked only into the isolated DSH home's profile fallback. */
+  readonly profilePackages?: Readonly<Record<string, string>>
   /** Process deadline override for harness tests. */
   readonly processTimeoutMs?: number
   /** Optional world-state setup run in the isolated cwd before process start. */
@@ -172,7 +186,7 @@ export interface LoaderSmokeResult {
  * @returns captured stdout and stderr after a zero exit.
  */
 export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<LoaderSmokeResult> {
-  const cwd = await mkdtemp(join(tmpdir(), options.tempDirPrefix))
+  const cwd = await mkdtemp(join(options.tempDirParent ?? tmpdir(), options.tempDirPrefix))
   const processTimeoutMs = options.processTimeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
   try {
     await options.prepare?.(cwd)
@@ -182,8 +196,15 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
       configArgs: options.binArgs ?? [options.configPath],
       ...options.mode !== undefined ? { mode: options.mode } : {},
       tsconfigPath: options.tsconfigPath,
-      env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), ...options.env },
+      env: {
+        DSH_HOME: join(cwd, '.dsh'),
+        DSH_AGENTS_HOME: join(cwd, '.agents'),
+        ...options.env,
+      },
     })
+    if (options.profilePackages !== undefined) {
+      await installProfilePackages(cwd, launch.env.DSH_HOME, options.profilePackages)
+    }
     // `input: ''` writes nothing and closes stdin — the fixture-visible
     // stdin-close contract. `reject: false` folds spawn errors, the SIGKILL
     // deadline, and nonzero exits into independent result fields, so the
@@ -208,5 +229,40 @@ export async function runLoaderSmoke(options: LoaderSmokeOptions): Promise<Loade
     return { stdout: result.stdout, stderr: result.stderr }
   } finally {
     await rm(cwd, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Link validated overlay packages into a test-owned profile fallback before launch.
+ * @param cwd - isolated workspace that owns the home and removes it after the test.
+ * @param configuredHome - selected Harness home, resolved relative to cwd.
+ * @param packages - npm names mapped to real directories with matching versioned manifests.
+ * @returns completion after every package link exists; reuses matching targets and rejects conflicts, invalid identities or unowned homes.
+ */
+export async function installProfilePackages(
+  cwd: string,
+  configuredHome: string | undefined,
+  packages: Readonly<Record<string, string>>,
+): Promise<void> {
+  const home = configuredHome === undefined ? undefined : resolve(cwd, configuredHome)
+  if (home === undefined || home !== cwd && !home.startsWith(cwd + sep)) {
+    throw new Error('runLoaderSmoke: profilePackages requires DSH_HOME inside the isolated cwd')
+  }
+  for (const [name, directory] of Object.entries(packages)) {
+    const packageDir = await realpath(directory)
+    const manifest: unknown = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
+    if (manifest === null || typeof manifest !== 'object' || !('name' in manifest) || manifest.name !== name
+      || !('version' in manifest) || typeof manifest.version !== 'string' || manifest.version.length === 0) {
+      throw new Error(`runLoaderSmoke: overlay package ${name} requires its matching named and versioned manifest at ${packageDir}`)
+    }
+    const link = join(home, 'profiles', 'node_modules', name)
+    await mkdir(dirname(link), { recursive: true })
+    if (existsSync(link)) {
+      if (await realpath(link) !== packageDir) {
+        throw new Error(`runLoaderSmoke: overlay package ${name} resolves to two directories`)
+      }
+      continue
+    }
+    await symlink(packageDir, link, 'junction')
   }
 }

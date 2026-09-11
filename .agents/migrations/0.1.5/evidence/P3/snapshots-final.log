@@ -1,0 +1,25 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 11m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: sync hooks: ✔️(pre-push, pre-commit, pre-merge-commit)
+. postinstall: Done
+Done in 2.7s using pnpm v11.7.0
+$ vitest run --config vitest.snapshot.config.ts
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+
+ Test Files  4 passed (4)
+      Tests  127 passed | 2 skipped (129)
+   Start at  01:28:54
+   Duration  35.82s (transform 1.80s, setup 469ms, import 2.35s, tests 69.06s, environment 0ms)

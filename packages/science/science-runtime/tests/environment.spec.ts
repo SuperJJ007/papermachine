@@ -15,6 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import ScienceRuntime from '../src/index.ts'
 import { MAX_INSTALL_CHANNELS, MIN_PACKAGES_MAX_BYTES, resolveConfig, type Config } from '../src/config.ts'
+import { windowsEnvironment } from '../src/execution.ts'
 import { observeProfile, prefixHistoryDigest, sameObservation } from '../src/environment.ts'
 import { ensureSessionScratch, sessionScratchKey } from '../src/scratch.ts'
 import {
@@ -302,10 +303,10 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
     if (mode === 'missing-output' || mode === 'version-both-streams' || mode === 'version-nul' || mode === 'version-stderr-only') {
       await expect(binding).resolves.toMatchObject({ status: mode === 'version-stderr-only' ? 'applied' : 'invalid' })
-      expect(session.events.map(event => event.type)).toEqual(['science/mode-bound', 'science/environment-bound'])
+      expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound', 'science/environment-bound'])
     } else {
       await expect(binding).rejects.toMatchObject({ code: mode === 'unquiescent' ? 'QUIESCENCE_UNPROVEN' : 'INFRASTRUCTURE_FAILURE' })
-      expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
+      expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
     }
   }
 
@@ -369,14 +370,19 @@ describe('ScienceRuntime.bindEnvironment', () => {
         packagesTruncated: false,
       },
     })
-    expect(session.events.map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().map(event => event.type)).toEqual([
       'science/mode-bound',
       'science/environment-bound',
     ])
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
       expect(spec.environmentBase).toBe('empty')
-      expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ'])
+      expect(Object.keys(spec.env ?? {}).sort()).toEqual(['HOME', 'LANG', 'LC_ALL', 'PATH', 'TMPDIR', 'TZ', ...Object.keys(windowsEnvironment(''))].sort())
+      if (process.platform === 'win32') {
+        expect(spec.env?.SystemRoot).toBe(process.env.SystemRoot)
+        expect(spec.env?.TEMP).toBe(spec.env?.TMPDIR)
+        expect(spec.env?.TMP).toBe(spec.env?.TMPDIR)
+      }
       expect(spec.cwd).toMatch(/[\\/]probes[\\/]/)
     }
     const [versionSpec, utf8Spec, packagesSpec] = subprocess.specs
@@ -398,6 +404,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     // see the equivalent R assertion below) never sees a byte it cannot
     // represent, regardless of the platform this test itself runs on.
     for (const spec of subprocess.specs) {
+      expect(spec.environmentBase).toBe('empty')
       for (const arg of spec.argv) expect(arg).toMatch(/^[\x00-\x7f]*$/)
     }
     expect(sandbox.policies).toHaveLength(3)
@@ -424,6 +431,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     })
     expect(subprocess.specs).toHaveLength(3)
     for (const spec of subprocess.specs) {
+      expect(spec.environmentBase).toBe('empty')
       expect(spec.env?.ELECTRON_RUN_AS_NODE).toBe('1')
       expect(spec.env?.PATH).toBe('/backend-required-path')
     }
@@ -491,7 +499,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
         reason: 'interpreter probes did not produce the required lossless output',
       },
     })
-    expect(session.events.map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().map(event => event.type)).toEqual([
       'science/mode-bound',
       'science/environment-bound',
     ])
@@ -524,7 +532,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       profileId: ScienceEnvironmentProfileId('overlap'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
-    expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
     expect(existsSync(join(dshHome, 'science'))).toBe(false)
   })
 
@@ -555,7 +563,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       profileId: ScienceEnvironmentProfileId('fake'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
-    expect(partialSession.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(partialSession.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
     // Confinement now runs after the probe directory (and therefore the
     // owning Session tree) is created, so rejection rolls back this exact
     // Session's root and marker rather than leaving nothing on disk at all.
@@ -754,7 +762,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       ...authorizePythonRun(spacedSession, 'science-run-r-space'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONFINEMENT_UNAVAILABLE' })
-    expect(spacedSession.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(spacedSession.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
     expect(spaced.subprocess.specs).toEqual([])
   })
 
@@ -1045,7 +1053,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       cause: { errors: [expect.any(Error), expect.any(Error)] },
     })
     staticFsFault.cleanupPath = ''
-    expect(cleanupSession.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(cleanupSession.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
 
     ;(cleanupContext.subprocess as ProbeFailureAndCleanupSubprocess).failProbe = false
     await expect(cleanupContext.scienceRuntime.bindEnvironment({
@@ -1166,7 +1174,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
     const key = sessionScratchKey(session)
     expect(existsSync(join(dshHome, 'science', 'v1', 'sessions', key))).toBe(false)
     expect(existsSync(join(dshHome, 'science', 'v1', 'owners', `${key}.json`))).toBe(false)
-    expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
   it('aggregates a failed retry with failure to roll back newly owned Session scratch', async () => {
@@ -1192,7 +1200,7 @@ describe('ScienceRuntime.bindEnvironment', () => {
       code: 'INFRASTRUCTURE_FAILURE',
       cause: { message: 'science-runtime: pre-publication Session scratch rollback failed' },
     })
-    expect(session.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
   it('aggregates a vetoed run start with failure to roll back the unpublished run scratch', async () => {
@@ -2021,7 +2029,7 @@ describe('ScienceRuntime.installPackages', () => {
 
   it('rejects with RUNTIME_BUSY when the projection has an orphaned open run', async () => {
     const { runtime, session } = await boundHarness('install-orphan-run')
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const binding = projection?.environment?.python
     if (binding?.capability !== 'available') throw new Error('test setup: expected an available Python binding')
     session.append('science/kernel-state', {
@@ -2056,7 +2064,7 @@ describe('ScienceRuntime.installPackages', () => {
 
   it('appends a fresh whole-value environment revision and returns it when a successful install actually changed the inventory', async () => {
     const { runtime, session, subprocess } = await boundHarness('install-success')
-    const before = replayScience(session.events)?.environment
+    const before = replayScience(session.snapshotEvents())?.environment
     // A real micromamba install writes the requested package into the
     // prefix; the fake harness's probe stdout is the only signal
     // `observeProfile` reads, so this simulates that write landing before
@@ -2072,14 +2080,14 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.environmentChanged).toBe(true)
     expect(result.environment?.revision).toBe((before?.revision ?? 0) + 1)
     expect(result.environment?.status).toBe('applied')
-    const after = replayScience(session.events)?.environment
+    const after = replayScience(session.snapshotEvents())?.environment
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
     expect(result.stdout.text.length >= 0).toBe(true)
   })
 
   it('appends no revision and reports environmentChanged: false when a successful install re-observes an identical inventory', async () => {
     const { runtime, session } = await boundHarness('install-redundant')
-    const before = replayScience(session.events)?.environment
+    const before = replayScience(session.snapshotEvents())?.environment
     // The fake installer succeeds (default queued-run behavior: exitCode 0)
     // but the probe stdout `boundHarness` already configured is unchanged,
     // modeling every requested package already being present — the
@@ -2091,13 +2099,13 @@ describe('ScienceRuntime.installPackages', () => {
     expect(result.status).toBe('success')
     expect(result.environmentChanged).toBe(false)
     expect(result.environment?.revision).toBe(before?.revision)
-    const after = replayScience(session.events)?.environment
+    const after = replayScience(session.snapshotEvents())?.environment
     expect(after?.revision).toBe(before?.revision)
   })
 
   it('does not append a fresh revision when the install fails', async () => {
     const { runtime, session, subprocess } = await boundHarness('install-failed')
-    const before = replayScience(session.events)?.environment
+    const before = replayScience(session.snapshotEvents())?.environment
     const run = subprocess.queueRun('immediate', { stdout: '', stderr: 'PackagesNotFoundError\n' })
     run.complete({ exitCode: 1, signal: null })
     const result = await runtime.installPackages({
@@ -2105,7 +2113,7 @@ describe('ScienceRuntime.installPackages', () => {
     })
     expect(result.status).toBe('failed')
     expect(result.environment).toBeUndefined()
-    const after = replayScience(session.events)?.environment
+    const after = replayScience(session.snapshotEvents())?.environment
     expect(after?.revision).toBe(before?.revision)
   })
 
@@ -2191,14 +2199,14 @@ describe('ScienceRuntime.installPackages', () => {
         const failing = subprocess.queueRun('immediate', { stdout: '', stderr })
         failing.complete({ exitCode: 1, signal: null })
       }
-      const before = replayScience(session.events)?.environment
+      const before = replayScience(session.snapshotEvents())?.environment
       const result = await runtime.installPackages({
         session, language: 'python', packages: ['numpy'], signal: new AbortController().signal,
       })
       expect(result.status).toBe('failed')
       expect(result.stderr.text).toBe('second mirror unreachable\n')
       expect(installAttempts(subprocess)).toHaveLength(2)
-      const after = replayScience(session.events)?.environment
+      const after = replayScience(session.snapshotEvents())?.environment
       expect(after?.revision).toBe(before?.revision)
     })
 

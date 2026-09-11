@@ -1,30 +1,30 @@
-/** Shared compact relative time and ago labels. */
 import { describe, expect, it } from 'vitest'
-import { formatRelativeTime, relativeTime } from '../src/relative-time.ts'
-import type { RelativeTimeTranslate } from '../src/relative-time.ts'
+import { relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
+
+const MIN = 60_000
+const HOUR = 3_600_000
+const DAY = 86_400_000
+const now = 1_800_000_000_000
 
 describe('relativeTime', () => {
-  it('buckets current, minute, hour, day, month, and year distances', () => {
-    const now = 400 * 24 * 60 * 60 * 1_000
+  it('buckets each distance and reports its magnitude', () => {
     expect(relativeTime(now, now)).toEqual({ unit: 'now', n: 0 })
-    expect(relativeTime(now - 5 * 60_000, now)).toEqual({ unit: 'minutes', n: 5 })
-    expect(relativeTime(now - 3 * 3_600_000, now)).toEqual({ unit: 'hours', n: 3 })
-    expect(relativeTime(now - 2 * 86_400_000, now)).toEqual({ unit: 'days', n: 2 })
-    expect(relativeTime(now - 60 * 86_400_000, now)).toEqual({ unit: 'months', n: 2 })
-    expect(relativeTime(0, now)).toEqual({ unit: 'years', n: 1 })
+    expect(relativeTime(now - 5 * MIN, now)).toEqual({ unit: 'minutes', n: 5 })
+    expect(relativeTime(now - 3 * HOUR, now)).toEqual({ unit: 'hours', n: 3 })
+    expect(relativeTime(now - 2 * DAY, now)).toEqual({ unit: 'days', n: 2 })
+    expect(relativeTime(now - 60 * DAY, now)).toEqual({ unit: 'months', n: 2 })
+    expect(relativeTime(now - 400 * DAY, now)).toEqual({ unit: 'years', n: 1 })
   })
-})
 
-describe('formatRelativeTime', () => {
-  const t: RelativeTimeTranslate = (key, params) => {
-    if (key === 'time.now') return 'now'
-    if (key === 'time.ago') return `${String(params?.t)} ago`
-    return `${String(params?.n)} ${key.slice(5)}`
-  }
+  it('reports the coarser bucket at each boundary', () => {
+    expect(relativeTime(now - MIN, now)).toEqual({ unit: 'minutes', n: 1 })
+    expect(relativeTime(now - HOUR, now)).toEqual({ unit: 'hours', n: 1 })
+    expect(relativeTime(now - DAY, now)).toEqual({ unit: 'days', n: 1 })
+    expect(relativeTime(now - 30 * DAY, now)).toEqual({ unit: 'months', n: 1 })
+    expect(relativeTime(now - 365 * DAY, now)).toEqual({ unit: 'years', n: 1 })
+  })
 
-  it('leaves now bare, clamps future timestamps, and optionally appends ago', () => {
-    expect(formatRelativeTime(100, 0, t, true)).toBe('now')
-    expect(formatRelativeTime(0, 180_000, t)).toBe('3 minutes')
-    expect(formatRelativeTime(0, 180_000, t, true)).toBe('3 minutes ago')
+  it('reads a future moment as the present rather than a negative distance', () => {
+    expect(relativeTime(now + DAY, now)).toEqual({ unit: 'now', n: 0 })
   })
 })

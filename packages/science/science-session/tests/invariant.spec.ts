@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import * as ScienceInvariant from '../src/invariant.ts'
@@ -59,7 +59,7 @@ describe('Science stream invariant', () => {
         session.append('tool/call', {
           turn: 1,
           step: 1,
-          callId: CallId('call-before-mode'),
+          callId: ToolCallId('call-before-mode'),
           name: 'run_python',
           arguments: '{}',
         })
@@ -74,10 +74,10 @@ describe('Science stream invariant', () => {
         code: 'INVARIANT',
         packageName: PACKAGE_NAME,
       }))
-      expect(session.events, name).toEqual([])
+      expect(session.snapshotEvents(), name).toEqual([])
 
       appendMode(session)
-      expect(session.events.map(event => event.type), name).toEqual(['science/mode-bound'])
+      expect(session.snapshotEvents().map(event => event.type), name).toEqual(['science/mode-bound'])
     }
 
     const accepted = ctx.sessions.create(SessionId('science-invariant-header-after-mode'), {
@@ -105,11 +105,11 @@ describe('Science stream invariant', () => {
       code: 'INVARIANT',
       packageName: PACKAGE_NAME,
     }))
-    expect(session.events).toEqual([])
+    expect(session.snapshotEvents()).toEqual([])
 
     session.append('agent-preset/selected', { agentPreset: 'science' })
     expect(() => { appendMode(session) }).not.toThrow()
-    expect(session.events.map(event => event.type)).toEqual(['agent-preset/selected', 'science/mode-bound'])
+    expect(session.snapshotEvents().map(event => event.type)).toEqual(['agent-preset/selected', 'science/mode-bound'])
   })
 
   it('re-seeds a session that switched to `science` while blank without retroactively failing its history', async () => {
@@ -164,7 +164,7 @@ describe('Science stream invariant', () => {
       packageName: PACKAGE_NAME,
     }))
     expect(session.seq).toBe(0)
-    expect(session.events).toEqual([])
+    expect(session.snapshotEvents()).toEqual([])
   })
 
   it('accepts a fully typed seven-event Science chain', async () => {
@@ -176,7 +176,7 @@ describe('Science stream invariant', () => {
     expect(() => {
       appendLegalChain(session)
     }).not.toThrow()
-    expect(session.events.filter(event => event.type.startsWith('science/')).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().filter(event => event.type.startsWith('science/')).map(event => event.type)).toEqual([
       'science/mode-bound',
       'science/environment-bound',
       'science/kernel-state',
@@ -212,7 +212,7 @@ describe('Science stream invariant', () => {
     const call = inputSession.append('tool/call', {
       turn: 2,
       step: 1,
-      callId: CallId('call-input-run'),
+      callId: ToolCallId('call-input-run'),
       name: 'run_python',
       arguments: '{}',
     })
@@ -276,7 +276,7 @@ describe('Science stream invariant', () => {
       header: { config: { provider: 'test', model: 'test-model' } },
       reason: 'initial',
     })
-    const callId = CallId('call-after-step')
+    const callId = ToolCallId('call-after-step')
     const call = session.append('tool/call', {
       turn: 1,
       step: 1,

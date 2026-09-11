@@ -8,7 +8,7 @@
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve, sep } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { LINK_MAP } from './gen-cordis-catalog.ts'
 import { parseJsDoc, pointer, rawJsDoc } from './jsdoc.ts'
@@ -251,19 +251,6 @@ function loadRelative(world: World, from: FileCtx, specifier: string): FileCtx {
   return loadFile(abs, rel, world.cache)
 }
 
-/** Relative source re-exports that can supply one public type or constant. */
-function* relativeReExports(ctx: FileCtx, name: string): Generator<{ spec: string; lookFor: string }> {
-  for (const stmt of ctx.sf.statements) {
-    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
-    const spec = stmt.moduleSpecifier.text
-    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
-    if (!stmt.exportClause) { yield { spec, lookFor: name }; continue }
-    if (!ts.isNamedExports(stmt.exportClause)) continue
-    const el = stmt.exportClause.elements.find(e => e.name.text === name)
-    if (el) yield { spec, lookFor: (el.propertyName ?? el.name).text }
-  }
-}
-
 /** Find a type declaration EXPORTED (directly or via re-export chains) from a
  * file, following `export … from './x.ts'` and `export * from './x.ts'`. */
 function findExportedTypeDecl(world: World, ctx: FileCtx, name: string, seen = new Set<string>()): { decl: TypeDecl; ctx: FileCtx } | null {
@@ -272,7 +259,18 @@ function findExportedTypeDecl(world: World, ctx: FileCtx, name: string, seen = n
   seen.add(key)
   const local = findTypeDecl(ctx, name)
   if (local) return { decl: local, ctx }
-  for (const { spec, lookFor } of relativeReExports(ctx, name)) {
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isExportDeclaration(stmt) || !stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
+    const spec = stmt.moduleSpecifier.text
+    if (!spec.startsWith('.') || !spec.endsWith('.ts')) continue
+    let lookFor: string | null = null
+    if (!stmt.exportClause) {
+      lookFor = name // export * from './x.ts'
+    } else if (ts.isNamedExports(stmt.exportClause)) {
+      const el = stmt.exportClause.elements.find(e => e.name.text === name)
+      if (el) lookFor = (el.propertyName ?? el.name).text
+    }
+    if (lookFor === null) continue
     const hit = findExportedTypeDecl(world, loadRelative(world, ctx, spec), lookFor, seen)
     if (hit) return hit
   }
@@ -426,9 +424,33 @@ function walkSchemaExpr(
   expr: ts.Expression,
   where: string,
   violations: string[],
+  cache: Map<string, FileCtx>,
 ): { keys: string[]; composes: string[] } {
   const keys: string[] = []
   const composes: string[] = []
+  const resolving = new Set<string>()
+  const resolveSchema = (value: ts.Expression): ts.Expression => {
+    const expression = unwrapExpr(value)
+    if (!ts.isIdentifier(expression)) return expression
+    const identity = `${ctx.abs}:${expression.text}`
+    if (resolving.has(identity)) return expression
+    resolving.add(identity)
+    const imported = ctx.imports.get(expression.text)
+    if (imported?.specifier.startsWith('.') && imported.specifier.endsWith('.ts')) {
+      const abs = resolve(dirname(ctx.abs), imported.specifier)
+      ctx = loadFile(abs, relative(root, abs).replaceAll('\\', '/'), cache)
+      return resolveSchema(ts.factory.createIdentifier(imported.imported))
+    }
+    for (const statement of ctx.sf.statements) {
+      if (!ts.isVariableStatement(statement)
+        || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === expression.text
+          && declaration.initializer) return resolveSchema(declaration.initializer)
+      }
+    }
+    return expression
+  }
   // Nested paths under one object property's VALUE expression: recurse through
   // chained refinements toward the base call, descending into object/array.
   const collectValuePaths = (value: ts.Expression, base: string): void => {
@@ -497,7 +519,7 @@ function walkSchemaExpr(
     if (ts.isCallExpression(base)) { visit(base); return }
     violations.push(`${where}: schema call '${method}' is not object/intersect and hangs off no walkable base call.`)
   }
-  visit(expr)
+  visit(resolveSchema(expr))
   return { keys, composes }
 }
 
@@ -517,64 +539,6 @@ function findSchemaExpr(ctx: FileCtx, pluginClass: ts.ClassDeclaration | null): 
     if (member.initializer) return member.initializer
   }
   return null
-}
-
-/** Find an exported const initializer in one file, following same-package re-exports. */
-function findExportedConstInitializer(
-  world: World,
-  ctx: FileCtx,
-  name: string,
-  seen = new Set<string>(),
-): { ctx: FileCtx; expr: ts.Expression } | null {
-  const key = `${ctx.abs}#const:${name}`
-  if (seen.has(key)) return null
-  seen.add(key)
-  for (const stmt of ctx.sf.statements) {
-    if (!ts.isVariableStatement(stmt)) continue
-    if (!stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) continue
-    for (const decl of stmt.declarationList.declarations) {
-      if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) {
-        return { ctx, expr: decl.initializer }
-      }
-    }
-  }
-  for (const { spec, lookFor } of relativeReExports(ctx, name)) {
-    const hit = findExportedConstInitializer(world, loadRelative(world, ctx, spec), lookFor, seen)
-    if (hit) return hit
-  }
-  return null
-}
-
-/**
- * Follow a same-file binding or same-package imported `configSchema` to the
- * schemastery call the catalog can walk. Remote or non-const referents stay
- * unresolved so the existing hard error remains loud.
- */
-function resolveSchemaExpr(
-  world: World,
-  ctx: FileCtx,
-  expr: ts.Expression,
-  seen = new Set<string>(),
-): { ctx: FileCtx; expr: ts.Expression } {
-  const unwrapped = unwrapExpr(expr)
-  if (!ts.isIdentifier(unwrapped)) return { ctx, expr: unwrapped }
-  const key = `${ctx.abs}#schema:${unwrapped.text}`
-  if (seen.has(key)) return { ctx, expr: unwrapped }
-  seen.add(key)
-  for (const stmt of ctx.sf.statements) {
-    if (!ts.isVariableStatement(stmt)) continue
-    for (const decl of stmt.declarationList.declarations) {
-      if (ts.isIdentifier(decl.name) && decl.name.text === unwrapped.text && decl.initializer) {
-        return resolveSchemaExpr(world, ctx, decl.initializer, seen)
-      }
-    }
-  }
-  const imp = ctx.imports.get(unwrapped.text)
-  if (imp !== undefined && imp.specifier.startsWith('.') && imp.specifier.endsWith('.ts')) {
-    const exported = findExportedConstInitializer(world, loadRelative(world, ctx, imp.specifier), imp.imported)
-    if (exported) return resolveSchemaExpr(world, exported.ctx, exported.expr, seen)
-  }
-  return { ctx, expr: unwrapped }
 }
 
 /** Read an `inject` service-key list: `export const inject = […]` in the entry
@@ -779,8 +743,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // Statically walk the runtime schema (when one exists) for the subset check.
     const schemaExpr = findSchemaExpr(ctx, pluginClass)
     if (schemaExpr) {
-      const resolved = resolveSchemaExpr(world, ctx, schemaExpr)
-      const { keys, composes } = walkSchemaExpr(resolved.ctx, resolved.expr, `${pkg} (${entryRel})`, violations)
+      const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations, cache)
       entry.schemaKeys = keys
       entry.schemaComposes = composes
     } else {
@@ -935,7 +898,6 @@ function main(): void {
   console.log(`gen-config-catalog: wrote ${OUT}.`)
 }
 
-// Run only when invoked as a script, not when imported by a test.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   main()
 }

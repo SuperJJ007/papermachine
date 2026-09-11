@@ -1,8 +1,11 @@
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 /** Cold restore keeps complete Science trajectory ownership beyond the first history page. */
 import { Buffer } from 'node:buffer'
+import { mkdir } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { ArtifactRecord, ProjectId, VersionRecord } from '@deepseek-ai/dsh-science-artifact-store'
 import {
@@ -10,8 +13,8 @@ import {
 } from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  launchWebScaffold, seedSession, watchConsole, type WebScaffold,
-} from './scaffold.ts'
+  launchWebScaffold, openScienceSeed, seedSession, watchConsole, type WebScaffold,
+} from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SEED_ID = 'science-cold-restore-web-e2e'
@@ -61,7 +64,7 @@ function coldRestoreFixture(projectId: ProjectId, stored: readonly Stored[]): st
     for (let step = 1; step <= callCount; step++) {
       const isRun = turn === 1 ? step > 1 : step <= runCount
       const name = isRun ? 'run_python' : turn === 1 ? 'glob' : 'read'
-      const callId = CallId(`cold-restore-call-${String(turn)}-${String(step)}`)
+      const callId = ToolCallId(`cold-restore-call-${String(turn)}-${String(step)}`)
       const args = isRun ? { code: `value_${String(turn)}_${String(step)} = ${String(turn + step)}` }
         : name === 'glob' ? { pattern: '*.csv' } : { file_path: `inputs/file-${String(turn)}-${String(step)}.csv` }
       session.append('step/start', { turn, step })
@@ -69,7 +72,7 @@ function coldRestoreFixture(projectId: ProjectId, stored: readonly Stored[]): st
       if (isRun) requestSeq = session.append('request/header', {
         header: { config: { provider: 'fixture', model: 'fixture' } }, reason: 'initial',
       }).seq
-      session.append('assistant/message', { turn, step, message: createAssistantMessage({
+      session.append('assistant/message', { stream: [], turn, step, message: createAssistantMessage({
         content: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }],
         source: { provider: 'fixture', model: 'fixture' },
       }) }, { surfaceOp: 'append' })
@@ -107,7 +110,7 @@ function coldRestoreFixture(projectId: ProjectId, stored: readonly Stored[]): st
       for (let index = 1; index <= 21; index++) {
         const step = callCount + index
         session.append('step/start', { turn, step })
-        session.append('assistant/message', { turn, step, message: createAssistantMessage({
+        session.append('assistant/message', { stream: [], turn, step, message: createAssistantMessage({
           content: [{ type: 'text', text: `Redacted analysis ${String(index)}.` }],
           source: { provider: 'fixture', model: 'fixture' },
         }) }, { surfaceOp: 'append' })
@@ -117,10 +120,10 @@ function coldRestoreFixture(projectId: ProjectId, stored: readonly Stored[]): st
     session.append('turn/end', { turn, reason: { kind: 'completed' } })
   }
 
-  const events = session.events.map(event => ({ ...event, time: eventTime(event.seq) }))
+  const events = session.snapshotEvents().map(event => ({ ...event, time: eventTime(event.seq) }))
   foldScience(events)
   return [JSON.stringify({
-    type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}', createdAt: origin,
+    type: 'session', version: SESSION_FORMAT_VERSION, isSeeded: false, delegationDepth: 0, id: '{{sessionId}}', createdAt: origin,
     cwd: '{{cwd}}', agentPreset: 'science',
   }), ...events.map(event => JSON.stringify(event)), ''].join('\n')
 }
@@ -171,11 +174,10 @@ describe('web e2e: cold Science trajectory restore', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 1280)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
-    await page.getByRole('treeitem').first().click()
-    await page.locator('[role="treeitem"][aria-selected]').first().click()
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await openScienceSeed(page, 'Redacted request 12.')
     await page.getByText('Redacted request 12.', { exact: true }).waitFor()
-    await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
+    await page.getByRole('tab', { name: 'Process', exact: true }).click()
   }, 120_000)
 
   afterAll(async () => { await browser?.close(); await scaffold?.close() })
@@ -189,6 +191,31 @@ describe('web e2e: cold Science trajectory restore', () => {
     expect(await firstTurn.innerText()).toContain('Request unavailable for this turn')
     expect(await firstTurn.innerText()).toContain('Runs 3')
     expect(await process.locator('article[data-anchor="turn:4"]').innerText()).toContain('Runs 2')
+    await firstTurn.getByRole('button', { name: /Expand steps/u }).click()
+    const firstRun = firstTurn.locator('li[data-anchor="call:cold-restore-call-1-2"]')
+    await firstRun.getByRole('button', { name: 'Python run', exact: true }).click()
+    const details = firstTurn.locator('[data-call-id="cold-restore-call-1-2"]')
+    expect(await details.innerText()).toContain('Input arguments unavailable in loaded history')
+    expect(await details.innerText()).toContain('Result unavailable in loaded history')
+    expect(await details.getByRole('region', { name: 'Input arguments' }).count()).toBe(0)
+    expect(await details.getByRole('region', { name: 'Code' }).count()).toBe(0)
+    expect(await firstRun.innerText()).toContain('Success')
+    expect(await firstRun.getByRole('button', { name: 'result-1.png v1', exact: true }).count()).toBe(1)
+    const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+    await mkdir(evidenceDir, { recursive: true })
+    await page.screenshot({ path: `${evidenceDir}/science-process-unavailable.png`, fullPage: true })
+    expect(await page.getByRole('tab', { name: 'Process', exact: true }).getAttribute('aria-selected')).toBe('true')
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+    await page.getByRole('tab', { name: 'Process', exact: true }).click()
+    await expect.poll(() => details.innerText()).toContain('value_1_2 = 3')
+    expect(await details.innerText()).toContain('status: success')
+    expect(await details.innerText()).not.toContain('unavailable in loaded history')
+    expect(await firstTurn.innerText()).toContain('Redacted request 1.')
+    expect(await firstRun.getByRole('button', { name: 'result-1.png v1', exact: true }).count()).toBe(1)
+    expect(await process.getByRole('region', { name: 'Unassigned history' }).count()).toBe(0)
+    expect(await process.innerText()).toContain('Turns 12 · Steps 29 · Runs 19 · Artifacts 4')
+    await page.screenshot({ path: `${evidenceDir}/science-process-restored.png`, fullPage: true })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

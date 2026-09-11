@@ -6,7 +6,7 @@
  * stays read-only.
  */
 
-import { chmod, mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -14,16 +14,29 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { beforeEach, describe, expect, it } from 'vitest'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, {
-  COMPOSITION_FILE, copyComposition, METADATA_FILE, PresetNotCopyableError,
+  COMPOSITION_FILE, copyComposition, METADATA_FILE, type Config,
 } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
-const VALID = '- id: tool-alpha\n  name: ../../plugins/contribute.js\n  config:\n    tool: alpha\n'
+const VALID = `- id: tool-alpha\n  name: ${JSON.stringify(pathToFileURL(join(FIXTURES, 'plugins/contribute.js')).href)}\n  config:\n    tool: alpha\n`
+
+/** Every temp root created by this file, removed after each test. */
+const roots: string[] = []
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+})
 
 let ctx: Context
 let userRoot: string
+
+/** Mount the required projection seam before the roster service. */
+async function mountAgentPresets(context: Context, config: Config): Promise<void> {
+  await context.plugin(SessionProjectionRegistry)
+  await context.plugin(AgentPresets, config)
+}
 
 /** Hand-craft a preset directory (tests cannot author text through the service). */
 async function seedPreset(
@@ -42,19 +55,22 @@ async function seedPreset(
 
 beforeEach(async () => {
   userRoot = await mkdtemp(join(tmpdir(), 'dsh-preset-authoring-'))
+  roots.push(userRoot)
   ctx = new Context()
   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
-  await ctx.plugin(AgentPresets, {
+  await mountAgentPresets(ctx, {
     default: 'standard',
     roots: [
       { path: join(FIXTURES, 'system'), trust: 'system' as const },
       { path: userRoot, trust: 'user' as const },
     ],
-    // Every roster in this file pins its own roots: the derived harness-home
-    // root would add the developer's real presets to what these assertions
-    // count, and `copy` would write into it.
+    // Every roster in this file pins its own roots: the package's shipped
+    // presets would shadow the fixture ids, and the derived harness-home root
+    // would add the developer's real presets to what these assertions count —
+    // and `copy` would write into it.
+    includeShippedRoot: false,
     includeUserRoot: false,
   })
 })
@@ -153,12 +169,30 @@ describe('copying a preset', () => {
     expect(existsSync(join(userRoot, 'mine'))).toBe(false)
   })
 
+  it.each([
+    ['copy policy', 'copyable: false\n', 'its metadata declares copyable: false'],
+    ['broken metadata', 'copyable: "no"\n', 'copyable'],
+  ])('refuses %s in the copy executor without creating a destination', async (_label, metadata, reason) => {
+    await seedPreset(userRoot, 'source', { metadata })
+    const source = (await ctx.agentPresets.list()).find(preset => preset.id === 'source')
+    if (source === undefined) throw new Error('seeded preset was not discovered')
+    expect(source.copyable).toBe(false)
+    const composition = await readFile(source.path, 'utf8')
+
+    await expect(copyComposition([{ path: userRoot, trust: 'user' }], source, 'mine'))
+      .rejects.toThrow(reason)
+
+    expect(existsSync(join(userRoot, 'mine'))).toBe(false)
+    expect(await readFile(source.path, 'utf8')).toBe(composition)
+    expect(await readFile(join(userRoot, 'source', METADATA_FILE), 'utf8')).toBe(metadata)
+  })
+
   it('leaves nothing behind when the copy itself fails', async () => {
     const source = {
       id: 'gone',
+      copyable: true,
       trust: 'user' as const,
       path: join(userRoot, 'gone', COMPOSITION_FILE),
-      copyable: true,
     }
 
     // The source vanished between resolve and copy: the half-made target is
@@ -167,46 +201,6 @@ describe('copying a preset', () => {
       [{ path: userRoot, trust: 'user' as const }], source, 'mine',
     )).rejects.toThrow()
     expect(existsSync(join(userRoot, 'mine'))).toBe(false)
-  })
-})
-
-describe('copying a preset whose metadata declares copyable: false', () => {
-  it('refuses through the service, naming the source', async () => {
-    await seedPreset(userRoot, 'pinned', { metadata: 'copyable: false\n' })
-
-    await expect(ctx.agentPresets.copy('pinned', 'pinned-copy')).rejects.toThrow(PresetNotCopyableError)
-    await expect(ctx.agentPresets.copy('pinned', 'pinned-copy')).rejects.toThrow(/"pinned" cannot be copied/)
-    expect(existsSync(join(userRoot, 'pinned-copy'))).toBe(false)
-  })
-
-  it('refuses through copyComposition directly, the enforcement choke point', async () => {
-    const source = {
-      id: 'pinned', trust: 'user' as const, path: join(userRoot, 'pinned', COMPOSITION_FILE), copyable: false,
-    }
-
-    await expect(copyComposition([{ path: userRoot, trust: 'user' as const }], source, 'mine'))
-      .rejects.toThrow(PresetNotCopyableError)
-  })
-
-  it('refuses a broken source with its discovery reason', async () => {
-    const source = {
-      id: 'damaged',
-      trust: 'user' as const,
-      path: join(userRoot, 'damaged', COMPOSITION_FILE),
-      copyable: false,
-      broken: 'the metadata field copyable in preset.yml must be a boolean',
-    }
-
-    await expect(copyComposition([{ path: userRoot, trust: 'user' as const }], source, 'mine'))
-      .rejects.toThrow(/source preset is broken:.*copyable.*must be a boolean/)
-  })
-
-  it('resolves copyable: true for a preset that declares no copyable field at all', async () => {
-    await seedPreset(userRoot, 'ordinary')
-
-    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'ordinary')?.copyable).toBe(true)
-    await ctx.agentPresets.copy('ordinary', 'ordinary-copy')
-    expect(existsSync(join(userRoot, 'ordinary-copy'))).toBe(true)
   })
 })
 
@@ -233,17 +227,19 @@ describe('deleting a preset', () => {
 describe('a deployment with more than one user root', () => {
   it('refuses to delete a preset the writable root does not own', async () => {
     const second = await mkdtemp(join(tmpdir(), 'dsh-preset-second-'))
+    roots.push(second)
     await seedPreset(second, 'elsewhere')
     const layered = new Context()
     layered.baseUrl = pathToFileURL(FIXTURES).href + '/'
     await layered.plugin(Loader)
     layered.loader.builtins.include = Include
-    await layered.plugin(AgentPresets, {
+    await mountAgentPresets(layered, {
       default: 'standard',
       roots: [
         { path: userRoot, trust: 'user' as const },
         { path: second, trust: 'user' as const },
       ],
+      includeShippedRoot: false,
       includeUserRoot: false,
     })
 
@@ -262,9 +258,10 @@ describe('a deployment with no writable root', () => {
     readOnly.baseUrl = pathToFileURL(FIXTURES).href + '/'
     await readOnly.plugin(Loader)
     readOnly.loader.builtins.include = Include
-    await readOnly.plugin(AgentPresets, {
+    await mountAgentPresets(readOnly, {
       default: 'standard',
       roots: [{ path: join(FIXTURES, 'system'), trust: 'system' as const }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     })
 
@@ -276,17 +273,20 @@ describe('a deployment with no writable root', () => {
 
 describe('a user root that does not exist yet', () => {
   it('is created by the first copy', async () => {
-    const absent = join(await mkdtemp(join(tmpdir(), 'dsh-preset-absent-')), 'nested', 'preset')
+    const absentRoot = await mkdtemp(join(tmpdir(), 'dsh-preset-absent-'))
+    roots.push(absentRoot)
+    const absent = join(absentRoot, 'nested', 'preset')
     const fresh = new Context()
     fresh.baseUrl = pathToFileURL(FIXTURES).href + '/'
     await fresh.plugin(Loader)
     fresh.loader.builtins.include = Include
-    await fresh.plugin(AgentPresets, {
+    await mountAgentPresets(fresh, {
       default: 'standard',
       roots: [
         { path: join(FIXTURES, 'system'), trust: 'system' as const },
         { path: absent, trust: 'user' as const },
       ],
+      includeShippedRoot: false,
       includeUserRoot: false,
     })
 
@@ -339,6 +339,11 @@ describe('a ghost directory under the user root', () => {
     await ctx.agentPresets.remove('ghost')
     expect(existsSync(join(userRoot, 'ghost'))).toBe(false)
     await ctx.agentPresets.copy('standard', 'ghost')
-    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'ghost')?.broken).toBeUndefined()
+    expect((await ctx.agentPresets.list()).map(preset => preset.id)).toContain('ghost')
+    // A copy carries the whole preset directory, so a preset's own files
+    // travel with it. This fixture's rows reach OUTSIDE that directory, which
+    // no real preset does and which no copy can carry — so the claim here is
+    // the reclaimed id and the restored composition, not the rows' targets.
+    expect(existsSync(join(userRoot, 'ghost', COMPOSITION_FILE))).toBe(true)
   })
 })

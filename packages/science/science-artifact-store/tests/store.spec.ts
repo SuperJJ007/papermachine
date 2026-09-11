@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -48,6 +48,20 @@ const SESSION_A = 'session-a' as SessionId
 const SESSION_B = 'session-b' as SessionId
 
 describe('ProjectArtifactStoreEngine', () => {
+  it('rejects invalid names before opening a database or admitting blobs', async () => {
+    const { engine, home } = await makeEngineWithHome()
+    await expect(engine.createArtifact(ProjectId('unopened-project'), {
+      logicalName: 'dir/file.txt:stream', kind: 'document', originSessionId: SESSION_A,
+      data: new TextEncoder().encode('never stored'), mediaType: 'text/plain', contentOrigin: 'run-auto',
+    })).rejects.toMatchObject({ code: 'LOGICAL_NAME_INVALID' })
+    await expect(engine.reconstructVersion(ProjectId('unopened-project'), {
+      artifactId: ArtifactId('old-artifact'), versionId: VersionId('old-version'), logicalName: '../escape',
+      ordinal: 1, sha256: 'a'.repeat(64), kind: 'document', mediaType: 'text/plain', byteCount: 1,
+      producerSessionId: SESSION_A, createdAt: 1, title: null, caption: null,
+    })).rejects.toMatchObject({ code: 'LOGICAL_NAME_INVALID' })
+    expect(await readdir(home)).toEqual([])
+  })
+
   it('creates an artifact whose first version has ordinal 1 and no explicit baseline', async () => {
     const engine = await makeEngine()
     const workspace = await mkdtemp(join(tmpdir(), 'dsh-science-artifact-store-ws-'))

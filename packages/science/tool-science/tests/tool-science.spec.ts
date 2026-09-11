@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
@@ -24,7 +24,8 @@ import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
 import { ScienceRuntimeError } from '@deepseek-ai/dsh-science-runtime/types'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -32,7 +33,6 @@ import type { ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { replayScience, ScienceArtifactId, ScienceEnvironmentProfileId, ScienceProjectId, ScienceRunId, ScienceVersionId } from '@deepseek-ai/dsh-science-session'
 import type { ScienceArtifactMediaType, ScienceArtifactVersion, ScienceChartState, ScienceKernel, ScienceKernelEndReason, ScienceProjection, ScienceRunTerminal } from '@deepseek-ai/dsh-science-session'
 import * as ToolScience from '../src/index.ts'
-import * as ToolScienceInvariant from '../src/invariant.ts'
 import { resolveConfig } from '../src/config.ts'
 import { ScienceEditService } from '../src/edit-message.ts'
 import { closedKernelFacts, isScienceSession, renderScienceProjection } from '../src/context.ts'
@@ -187,12 +187,12 @@ function fakeAgent(session: Session): Agent {
 /** Append the durable request and named tool-call facts for one turn. */
 function authorizeToolCall(
   session: Session, turn: number, name: string, id: string,
-): ReturnType<typeof CallId> {
+): ReturnType<typeof ToolCallId> {
   session.append('step/start', { turn, step: 1 })
   session.append('request/header', {
     header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial',
   })
-  const toolCallId = CallId(id)
+  const toolCallId = ToolCallId(id)
   session.append('tool/call', { turn, step: 1, callId: toolCallId, name, arguments: '{}' })
   return toolCallId
 }
@@ -200,7 +200,7 @@ function authorizeToolCall(
 /** The authorizing facts one durable run makes available to an artifact version it produces. */
 interface RunProvenance {
   readonly runId: ReturnType<typeof ScienceRunId>
-  readonly toolCallId: ReturnType<typeof CallId>
+  readonly toolCallId: ReturnType<typeof ToolCallId>
   readonly requestHeaderSeq: number
   readonly environmentRevision: number
   readonly environmentFingerprint: string
@@ -273,7 +273,7 @@ async function runSuccessfully(ctx: Context, session: Session, id: string): Prom
     agent: fakeAgent(session),
   })
   expect(result.isError).toBe(false)
-  const started = session.events.find(event => event.type === 'science/run-started')
+  const started = session.snapshotEvents().find(event => event.type === 'science/run-started')
   if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
   return started.data.run
 }
@@ -292,7 +292,7 @@ beforeEach(async () => {
   // Science Runtime scratch roots must not overlap a generic sandbox temp
   // grant (os.tmpdir()/`/tmp`), so this uses a repo-relative hidden dir —
   // the same convention science-runtime's own tests use.
-  root = await mkdtemp(join(process.cwd(), '.tool-science-test-'))
+  root = await mkdtemp(join(process.env['DSH_SCIENCE_TEST_SCRATCH_PARENT'] ?? process.cwd(), '.tool-science-test-'))
 })
 afterEach(async () => {
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -424,11 +424,11 @@ describe('registration and disposal', () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-publication-unavailable')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('removed-publication'), name: 'publish_outcome',
+      signal: testSignal, callId: ToolCallId('removed-publication'), name: 'publish_outcome',
       arguments: {}, agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
-    expect(session.events.some(event => event.type === 'science/outcome-published')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/outcome-published')).toBe(false)
   })
 
   it('HMR-safety: disposing the plugin fiber removes every registration', async () => {
@@ -440,18 +440,6 @@ describe('registration and disposal', () => {
     expect(names).not.toContain('run_r')
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.contexts.some(entry => entry.name === 'science:environment')).toBe(false)
-  })
-})
-
-describe('invariant companion', () => {
-  it('registers its explained empty runtime invariant', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = await ctx.plugin(ToolScienceInvariant)
-    expect(() => {
-      ctx.invariants.register('@deepseek-ai/dsh-tool-science', () => {})
-    }).toThrow(/already registered/)
-    await fiber.dispose()
   })
 })
 
@@ -469,7 +457,7 @@ describe('diagnostic and non-science assembly', () => {
     const assembly = await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const context = assembly.contexts.find(entry => entry.name === 'science:environment')
     expect(context?.text).toBe('')
-    expect(session.events.some(event => event.type === 'science/mode-bound')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/mode-bound')).toBe(false)
   })
 })
 
@@ -480,8 +468,8 @@ describe('first-use binding', () => {
 
     const assembly = await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
 
-    const modeBound = session.events.find(event => event.type === 'science/mode-bound')
-    const environmentBound = session.events.find(event => event.type === 'science/environment-bound')
+    const modeBound = session.snapshotEvents().find(event => event.type === 'science/mode-bound')
+    const environmentBound = session.snapshotEvents().find(event => event.type === 'science/environment-bound')
     expect(modeBound).toBeDefined()
     expect(environmentBound).toBeDefined()
     expect(modeBound && environmentBound && modeBound.seq < environmentBound.seq).toBe(true)
@@ -506,13 +494,13 @@ describe('first-use binding', () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-resumed')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
-    const boundOnce = session.events.filter(event => event.type === 'science/mode-bound').length
-    const environmentOnce = session.events.filter(event => event.type === 'science/environment-bound').length
+    const boundOnce = session.snapshotEvents().filter(event => event.type === 'science/mode-bound').length
+    const environmentOnce = session.snapshotEvents().filter(event => event.type === 'science/environment-bound').length
 
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
 
-    expect(session.events.filter(event => event.type === 'science/mode-bound')).toHaveLength(boundOnce)
-    expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(environmentOnce)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/mode-bound')).toHaveLength(boundOnce)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(environmentOnce)
   })
 
   it.each([true, false])('observes a resumed failed pre-run environment once (prefix repaired: %s)', async (repaired) => {
@@ -531,17 +519,17 @@ describe('first-use binding', () => {
     })
     if (!repaired) await rm(join(root, 'fake-conda'), { recursive: true, force: true })
     const resumed = ctx.sessions.create(SessionId('science-failed-resumed'), {
-      seed: [...original.events], meta: { agentPreset: 'science', cwd: original.header.cwd! },
+      seed: [...original.snapshotEvents()], meta: { agentPreset: 'science', cwd: original.header.cwd! },
     })
     await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
-    expect(replayScience(resumed.events)?.environment).toMatchObject({
+    expect(replayScience(resumed.snapshotEvents())?.environment).toMatchObject({
       revision: 2, status: repaired ? 'applied' : 'invalid',
     })
     await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
-    expect(resumed.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
+    expect(resumed.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
     // An observation made during the current lifecycle is not retried on each step.
     await ctx.systemPrompt.assemble({ agent: fakeAgent(original), signal: testSignal })
-    expect(original.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+    expect(original.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
   })
 
   it('preserves a seeded failed environment after a Science run has started', async () => {
@@ -558,11 +546,11 @@ describe('first-use binding', () => {
       },
     })
     const resumed = ctx.sessions.create(SessionId('science-failed-after-run-resumed'), {
-      seed: [...original.events], meta: { agentPreset: 'science', cwd: original.header.cwd! },
+      seed: [...original.snapshotEvents()], meta: { agentPreset: 'science', cwd: original.header.cwd! },
     })
     await ctx.systemPrompt.assemble({ agent: fakeAgent(resumed), signal: testSignal })
-    expect(replayScience(resumed.events)?.environment).toMatchObject({ revision: 2, status: 'invalid' })
-    expect(resumed.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
+    expect(replayScience(resumed.snapshotEvents())?.environment).toMatchObject({ revision: 2, status: 'invalid' })
+    expect(resumed.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(2)
   })
 
   it('rejects assembly on a configured mode-revision mismatch', async () => {
@@ -571,7 +559,7 @@ describe('first-use binding', () => {
     await firstCtx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
 
     const { ctx: secondCtx } = await setup({ modeRevision: 'rev-b' })
-    const otherSession = secondCtx.sessions.create(SessionId('science-mismatch-2'), { meta: { agentPreset: 'science' }, seed: [...session.events] })
+    const otherSession = secondCtx.sessions.create(SessionId('science-mismatch-2'), { meta: { agentPreset: 'science' }, seed: [...session.snapshotEvents()] })
     await expect(secondCtx.systemPrompt.assemble({ agent: fakeAgent(otherSession), signal: testSignal }))
       .rejects.toThrow(/bound to Science mode revision "rev-a"/)
   })
@@ -581,8 +569,8 @@ describe('first-use binding', () => {
     const session = scienceSession(ctx, 'science-no-runtime')
     await expect(ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal }))
       .rejects.toThrow(/no Science Runtime is mounted/)
-    expect(session.events.some(event => event.type === 'science/mode-bound')).toBe(true)
-    expect(session.events.some(event => event.type === 'science/environment-bound')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/mode-bound')).toBe(true)
+    expect(session.snapshotEvents().some(event => event.type === 'science/environment-bound')).toBe(false)
   })
 })
 
@@ -651,7 +639,7 @@ describe('renderScienceProjection', () => {
       runs: [{
         runId: ScienceRunId('run-1'),
         language: 'python',
-        toolCallId: CallId('call-1'),
+        toolCallId: ToolCallId('call-1'),
         requestHeaderSeq: 1,
         environmentRevision: 1,
         environmentFingerprint: 'a'.repeat(64),
@@ -698,7 +686,7 @@ describe('runValueFromResult / formatRunResult', () => {
       terminal: {
         runId: ScienceRunId('run-2'),
         language: 'python',
-        toolCallId: CallId('call-2'),
+        toolCallId: ToolCallId('call-2'),
         requestHeaderSeq: 1,
         environmentRevision: 1,
         environmentFingerprint: 'a'.repeat(64),
@@ -740,7 +728,7 @@ describe('runValueFromResult / formatRunResult', () => {
       terminal: {
         runId: ScienceRunId('run-3'),
         language: 'python',
-        toolCallId: CallId('call-3'),
+        toolCallId: ToolCallId('call-3'),
         requestHeaderSeq: 1,
         environmentRevision: 1,
         environmentFingerprint: 'a'.repeat(64),
@@ -770,7 +758,7 @@ describe('runValueFromResult / formatRunResult', () => {
     return {
       runId: ScienceRunId('run-capture'),
       language: 'python',
-      toolCallId: CallId('call-capture'),
+      toolCallId: ToolCallId('call-capture'),
       requestHeaderSeq: 1,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -787,6 +775,30 @@ describe('runValueFromResult / formatRunResult', () => {
       stderrTruncated: false,
     }
   }
+
+  it('reports capture failure independently of successful Python execution', async () => {
+    const value = await runValueFromResult({
+      terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false }, captureFailure: 'invalid-logical-name',
+    }, resolverFor([]))
+    expect(value.status).toBe('success')
+    expect(value.captureFailure).toBe('invalid-logical-name')
+    expect(value.capturedArtifacts).toBeUndefined()
+    expect(formatRunResult(value, 'python')).toContain('status: success\nartifact capture failed: invalid-logical-name')
+  })
+
+  it.each(['filesystem', 'capture-failed', 'session-detached', 'event-append-failed'] as const)(
+    'reports %s without blaming valid file names', async (captureFailure) => {
+      const value = await runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false },
+        stderr: { text: '', bytes: 0, truncated: false }, captureFailure,
+      }, resolverFor([]))
+      const text = formatRunResult(value, 'python')
+      expect(text).toContain('Some artifacts may already be saved')
+      expect(text).not.toContain('Windows-reserved punctuation')
+      expect(value.status).toBe('success')
+    },
+  )
 
   it('appends a plural captured-artifacts receipt mixing image and non-image entries, and both skip/truncation flags', async () => {
     const image = artifactVersionFixture({
@@ -1071,7 +1083,7 @@ describe('kernelRestartReason', () => {
     return {
       runId: ScienceRunId(runId),
       language,
-      toolCallId: CallId(`call-${runId}`),
+      toolCallId: ToolCallId(`call-${runId}`),
       requestHeaderSeq: 1,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -1187,7 +1199,7 @@ describe('get_science_state', () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-state-unbound')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('state-1'), name: 'get_science_state', arguments: {},
+      signal: testSignal, callId: ToolCallId('state-1'), name: 'get_science_state', arguments: {},
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
@@ -1198,7 +1210,7 @@ describe('get_science_state', () => {
     const session = scienceSession(ctx, 'science-state-bound')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('state-2'), name: 'get_science_state', arguments: {},
+      signal: testSignal, callId: ToolCallId('state-2'), name: 'get_science_state', arguments: {},
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
@@ -1225,7 +1237,7 @@ describe('get_science_state', () => {
     const runs = ['run-1', 'run-2', 'run-3'].map((runId, index) => ({
       runId: ScienceRunId(runId),
       language: 'python' as const,
-      toolCallId: CallId(`call-${String(index + 1)}`),
+      toolCallId: ToolCallId(`call-${String(index + 1)}`),
       requestHeaderSeq: 1,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -1439,7 +1451,7 @@ describe('get_science_state', () => {
     const run = {
       runId: ScienceRunId('failed-run'),
       language: 'python',
-      toolCallId: CallId('failed-call'),
+      toolCallId: ToolCallId('failed-call'),
       requestHeaderSeq: 1,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -1486,7 +1498,7 @@ describe('get_science_state', () => {
     const run = (runId: string, failureMessage?: string) => ({
       runId: ScienceRunId(runId),
       language: 'python' as const,
-      toolCallId: CallId(`call-${runId}`),
+      toolCallId: ToolCallId(`call-${runId}`),
       requestHeaderSeq: 1,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -1516,7 +1528,7 @@ describe('get_science_state', () => {
 
   it('rejects without an initiating Agent', async () => {
     const { ctx } = await setup()
-    const result = await ctx.tools.execute({ signal: testSignal, callId: CallId('state-3'), name: 'get_science_state', arguments: {} })
+    const result = await ctx.tools.execute({ signal: testSignal, callId: ToolCallId('state-3'), name: 'get_science_state', arguments: {} })
     expect(result.isError).toBe(true)
   })
 })
@@ -1543,7 +1555,7 @@ describe('run_python', () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-empty')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('run-1'), name: 'run_python', arguments: { code: '   ' },
+      signal: testSignal, callId: ToolCallId('run-1'), name: 'run_python', arguments: { code: '   ' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
@@ -1555,7 +1567,7 @@ describe('run_python', () => {
     const session = scienceSession(ctx, 'science-run-no-header')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('run-2'), name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: ToolCallId('run-2'), name: 'run_python', arguments: { code: 'print(1)' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
@@ -1569,7 +1581,7 @@ describe('run_python', () => {
     session.append('step/start', { turn: 1, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('run-3'), name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: ToolCallId('run-3'), name: 'run_python', arguments: { code: 'print(1)' },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
@@ -1581,7 +1593,7 @@ describe('run_python', () => {
     const session = await boundSession(ctx, 'science-run-duplicate-edit-path')
     const result = await ctx.tools.execute({
       signal: testSignal,
-      callId: CallId('run-duplicate-edit-path'),
+      callId: ToolCallId('run-duplicate-edit-path'),
       name: 'run_python',
       arguments: {
         code: 'print(1)',
@@ -1594,7 +1606,7 @@ describe('run_python', () => {
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('edit_of paths must be unique'))).toBe(true)
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('rejects a raster_artifacts path escape through the real Runtime before publishing a run', async () => {
@@ -1602,14 +1614,14 @@ describe('run_python', () => {
     const session = await boundSession(ctx, 'science-run-raster-path-escape')
     const result = await ctx.tools.execute({
       signal: testSignal,
-      callId: CallId('run-raster-path-escape'),
+      callId: ToolCallId('run-raster-path-escape'),
       name: 'run_python',
       arguments: { code: 'print(1)', raster_artifacts: ['../escape.png'] },
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('forward-slash relative file path'))).toBe(true)
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('maps artifact_inputs and edit_of into the Runtime request without changing model field values', async () => {
@@ -1618,7 +1630,7 @@ describe('run_python', () => {
     const terminal: ScienceRunTerminal = {
       runId: ScienceRunId('run-exact-inputs'),
       language: 'python',
-      toolCallId: CallId('run-exact-inputs'),
+      toolCallId: ToolCallId('run-exact-inputs'),
       requestHeaderSeq: latestRequestHeaderSeq(session) ?? 0,
       environmentRevision: 1,
       environmentFingerprint: 'a'.repeat(64),
@@ -1666,7 +1678,7 @@ describe('run_python', () => {
   it('runs source through ctx.scienceRuntime and returns the durable terminal result', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-success')
-    const toolCallId = CallId('run-4')
+    const toolCallId = ToolCallId('run-4')
     // The real agent loop logs `tool/call` before dispatching execution; this
     // direct-composition test supplies that same durable provenance fact.
     session.append('tool/call', { turn: 1, step: 1, callId: toolCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
@@ -1675,8 +1687,8 @@ describe('run_python', () => {
       agent: fakeAgent(session),
     })
     expect(result.isError).toBe(false)
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(true)
-    const finished = session.events.find(event => event.type === 'science/run-finished')
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(true)
+    const finished = session.snapshotEvents().find(event => event.type === 'science/run-finished')
     expect(finished?.type === 'science/run-finished' && finished.data.run.status).toBe('success')
     const text = result.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(text).toContain('status: success')
@@ -1705,7 +1717,7 @@ describe('run_python', () => {
     // guard blocks a product-reachable re-bind):
     // proves the fold-level rebind KernelSet.acquire reacts to, mirroring
     // science-runtime/tests/run.spec.ts's own rebind test.
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const environment = projection?.environment
     if (environment === null || environment === undefined) throw new Error('tool-science test: missing applied environment')
     session.append('science/environment-bound', {
@@ -1752,7 +1764,7 @@ describe('run_python', () => {
     expect(secondResult.isError).toBe(false)
     const secondText = secondResult.content.filter(block => block.type === 'text').map(block => block.text).join('')
     expect(secondText.startsWith('kernel restarted (environment re-bind): variables from earlier runs are gone\n')).toBe(true)
-    const bound = session.events.filter(event => event.type === 'science/environment-bound')
+    const bound = session.snapshotEvents().filter(event => event.type === 'science/environment-bound')
     expect(bound).toHaveLength(2)
   })
 
@@ -1807,20 +1819,20 @@ describe('run_python', () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-nested')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('run-5'), name: 'run_python', arguments: { code: 'print(1)' },
+      signal: testSignal, callId: ToolCallId('run-5'), name: 'run_python', arguments: { code: 'print(1)' },
       agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('nested Code Mode sub-dispatch'))).toBe(true)
     // No side effect reached: no run was published and no scratch/Runtime work occurred.
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('rejects a nested run_r sub-dispatch the same way', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-run-r-nested')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('run-6'), name: 'run_r', arguments: { code: '1 + 1' },
+      signal: testSignal, callId: ToolCallId('run-6'), name: 'run_r', arguments: { code: '1 + 1' },
       agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
     })
     expect(result.isError).toBe(true)
@@ -1946,8 +1958,8 @@ describe('annotate_artifact', () => {
     expect(text).not.toMatch(/sha256:/)
     expect(text).not.toContain(String(run.runId))
     // Two durable saves (the capture and its curation), one version.
-    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
-    expect(replayScience(session.events)?.artifacts.map(a => a.version)).toEqual([1])
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
+    expect(replayScience(session.snapshotEvents())?.artifacts.map(a => a.version)).toEqual([1])
     if (result.isError) throw new Error('unreachable')
     const value = result.value as unknown as ScienceArtifactReceiptValue
     expect(value.artifactId).toBeTypeOf('string')
@@ -2064,7 +2076,7 @@ describe('annotate_artifact', () => {
     const session = scienceSession(ctx, 'science-annotate-no-header')
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-annotate-no-header-call'), name: 'annotate_artifact',
+      signal: testSignal, callId: ToolCallId('science-annotate-no-header-call'), name: 'annotate_artifact',
       arguments: { logical_name: 'plot.png', title: 'main' },
       agent: fakeAgent(session),
     })
@@ -2097,7 +2109,7 @@ describe('annotate_artifact', () => {
     expect(firstValue.version).toBe(1)
     expect(secondValue.artifactId).toBe(firstValue.artifactId)
     expect(secondValue.version).toBe(1)
-    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'plot.png')
+    const artifacts = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'plot.png')
     expect(artifacts?.map(a => a.version)).toEqual([1])
     expect(artifacts?.at(0)?.title).toBe('v3')
   })
@@ -2124,7 +2136,7 @@ describe('annotate_artifact', () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-annotate-nested')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-annotate-nested-call'), name: 'annotate_artifact',
+      signal: testSignal, callId: ToolCallId('science-annotate-nested-call'), name: 'annotate_artifact',
       arguments: { logical_name: 'plot.png', title: 'main' },
       agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
     })
@@ -2253,7 +2265,7 @@ describe('install_science_packages', () => {
     const session = scienceSession(ctx, 'science-install-no-runtime')
     session.append('science/mode-bound', { version: 1, mode: { modeId: 'science', presetId: 'science', modeRevision: 'test-revision' } })
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('install-no-runtime'), name: 'install_science_packages',
+      signal: testSignal, callId: ToolCallId('install-no-runtime'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['numpy'] },
       agent: fakeAgent(session),
     })
@@ -2265,20 +2277,20 @@ describe('install_science_packages', () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-nested')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('install-nested'), name: 'install_science_packages',
+      signal: testSignal, callId: ToolCallId('install-nested'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['numpy'] },
       agent: fakeAgent(session), parent: Symbol('run_code') as ToolExecutionToken,
     })
     expect(result.isError).toBe(true)
     expect(result.content.some(block => block.type === 'text' && block.text.includes('nested Code Mode sub-dispatch'))).toBe(true)
-    expect(session.events.some(event => event.type === 'science/environment-bound' && event.data.environment.revision > 1)).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/environment-bound' && event.data.environment.revision > 1)).toBe(false)
   })
 
   it('surfaces the Runtime rejection for a deployment with no configured installer', async () => {
     const { ctx } = await setup()
     const session = await boundSession(ctx, 'science-install-not-configured')
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('install-not-configured'), name: 'install_science_packages',
+      signal: testSignal, callId: ToolCallId('install-not-configured'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['numpy'] },
       agent: fakeAgent(session),
     })
@@ -2289,7 +2301,7 @@ describe('install_science_packages', () => {
   it('installs successfully, appends a fresh environment revision when the install actually changed the inventory, and tells the model plainly that it takes effect next run', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-success')
-    const before = replayScience(session.events)?.environment
+    const before = replayScience(session.snapshotEvents())?.environment
     // The shared fake Python prefix (createFakePythonPrefix) and fake
     // micromamba (makeMicromamba) both report a fixed static package list
     // regardless of what was requested — correct for every other test in
@@ -2333,7 +2345,7 @@ else if (args.includes('-m')) {
       chmodSync(join(root, 'fake-micromamba'), 0o755)
     }
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('install-success'), name: 'install_science_packages',
+      signal: testSignal, callId: ToolCallId('install-success'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['pandas'] },
       agent: fakeAgent(session),
     })
@@ -2342,19 +2354,19 @@ else if (args.includes('-m')) {
     expect(text).toContain('status: success')
     expect(text).toContain('takes effect on the next run_python/run_r call')
     expect(text).toContain('lost then')
-    const after = replayScience(session.events)?.environment
+    const after = replayScience(session.snapshotEvents())?.environment
     expect(after?.revision).toBe((before?.revision ?? 0) + 1)
   })
 
   it('reports a redundant install as unchanged, appending no revision', async () => {
     const { ctx } = await setup({ installer: true })
     const session = await boundSession(ctx, 'science-install-redundant')
-    const before = replayScience(session.events)?.environment
+    const before = replayScience(session.snapshotEvents())?.environment
     // Default fake harness: every requested package is already in the
     // static probe output, modeling the retry this fix targets after a
     // misreported 'timed-out' whose install had, in fact, already finished.
     const result = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('install-redundant'), name: 'install_science_packages',
+      signal: testSignal, callId: ToolCallId('install-redundant'), name: 'install_science_packages',
       arguments: { language: 'python', packages: ['numpy'] },
       agent: fakeAgent(session),
     })
@@ -2363,7 +2375,7 @@ else if (args.includes('-m')) {
     expect(text).toContain('status: success')
     expect(text).toContain('unchanged')
     expect(text).not.toContain('takes effect')
-    const after = replayScience(session.events)?.environment
+    const after = replayScience(session.snapshotEvents())?.environment
     expect(after?.revision).toBe(before?.revision)
   })
 })
@@ -2455,7 +2467,7 @@ describe('scienceEdits submit', () => {
     await expect(service.previewChartOps(agent, request, testSignal)).rejects.toBe(unexpected)
   })
 
-  it('adds and removes ignorable user-only notes without queuing model input', async () => {
+  it('adds and removes required user-only notes without queuing model input', async () => {
     const { ctx } = await setup()
     const session = scienceSession(ctx, 'science-artifact-notes')
     const run = await runSuccessfully(ctx, session, 'science-artifact-notes-run')
@@ -2467,20 +2479,22 @@ describe('scienceEdits submit', () => {
     expect(service.addArtifactNote(agent, {
       artifactId: artifact.artifactId, version: artifact.version, text: '  Inspect axis label  ',
     })).toEqual({ accepted: true })
-    const added = session.events.at(-1)
+    const added = session.snapshotEvents().at(-1)
     expect(added).toMatchObject({
-      type: 'science/artifact-note-added', ignorable: true,
+      type: 'science/artifact-note-added',
       data: { artifactId: artifact.artifactId, artifactVersion: artifact.version, text: 'Inspect axis label' },
     })
+    expect(added).not.toHaveProperty('ignorable')
     expect(followup).not.toHaveBeenCalled()
     if (added?.type !== 'science/artifact-note-added') throw new Error('expected note-add event')
 
     expect(service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
       .toEqual({ accepted: true })
-    expect(session.events.at(-1)).toMatchObject({
-      type: 'science/artifact-note-removed', ignorable: true,
+    expect(session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'science/artifact-note-removed',
       data: { artifactId: artifact.artifactId, noteSeq: added.seq },
     })
+    expect(session.snapshotEvents().at(-1)).not.toHaveProperty('ignorable')
     expect(() => service.removeArtifactNote(agent, { artifactId: artifact.artifactId, noteSeq: added.seq }))
       .toThrow(/does not identify an active note/)
   })
@@ -2691,7 +2705,7 @@ describe('get_science_state artifact sanitization', () => {
     }
     await seedAutoArtifact(ctx, session, run, 'plot.png', PNG, 'image/png', chart)
     const state = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-state-direct-edits-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+      signal: testSignal, callId: ToolCallId('science-state-direct-edits-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
     })
     expect(state.isError).toBe(false)
     if (state.isError) throw new Error('unreachable')
@@ -2706,18 +2720,18 @@ describe('get_science_state artifact sanitization', () => {
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    const runCallId = CallId('science-state-artifact-run')
+    const runCallId = ToolCallId('science-state-artifact-run')
     session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const runResult = await ctx.tools.execute({
       signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) }, agent: fakeAgent(session),
     })
     expect(runResult.isError).toBe(false)
-    const started = session.events.find(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().find(event => event.type === 'science/run-started')
     if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
     await seedAutoArtifact(ctx, session, started.data.run, 'plot.png', PNG, 'image/png')
     session.append('step/start', { turn: 2, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    const annotateCallId = CallId('science-state-artifact-annotate')
+    const annotateCallId = ToolCallId('science-state-artifact-annotate')
     session.append('tool/call', { turn: 2, step: 1, callId: annotateCallId, name: 'annotate_artifact', arguments: '{}' })
     const annotateResult = await ctx.tools.execute({
       signal: testSignal, callId: annotateCallId, name: 'annotate_artifact',
@@ -2726,7 +2740,7 @@ describe('get_science_state artifact sanitization', () => {
     })
     expect(annotateResult.isError).toBe(false)
     const state = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-state-artifact-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+      signal: testSignal, callId: ToolCallId('science-state-artifact-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
     })
     expect(state.isError).toBe(false)
     if (state.isError) throw new Error('unreachable')
@@ -2754,17 +2768,17 @@ describe('get_science_state artifact sanitization', () => {
     await ctx.systemPrompt.assemble({ agent: fakeAgent(session), signal: testSignal })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('request/header', { header: { config: { provider: 'test', model: 'test-model' } }, reason: 'initial' })
-    const runCallId = CallId('science-state-artifact-auto-run')
+    const runCallId = ToolCallId('science-state-artifact-auto-run')
     session.append('tool/call', { turn: 1, step: 1, callId: runCallId, name: 'run_python', arguments: '{"code":"print(1)"}' })
     const runResult = await ctx.tools.execute({
       signal: testSignal, callId: runCallId, name: 'run_python', arguments: { code: kernelAction({ status: 'ok' }) }, agent: fakeAgent(session),
     })
     expect(runResult.isError).toBe(false)
-    const started = session.events.find(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().find(event => event.type === 'science/run-started')
     if (started?.type !== 'science/run-started') throw new Error('tool-science test: missing science/run-started')
     await seedAutoArtifact(ctx, session, started.data.run, 'summary.csv', Buffer.from('a,b\n1,2\n'), 'text/csv')
     const state = await ctx.tools.execute({
-      signal: testSignal, callId: CallId('science-state-artifact-auto-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
+      signal: testSignal, callId: ToolCallId('science-state-artifact-auto-read'), name: 'get_science_state', arguments: {}, agent: fakeAgent(session),
     })
     expect(state.isError).toBe(false)
     if (state.isError) throw new Error('unreachable')

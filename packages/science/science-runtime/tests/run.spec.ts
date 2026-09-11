@@ -14,7 +14,7 @@ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { DESCENDANT_GRACE_MS, MAX_OUTPUT_BYTES } from '../src/execution.ts'
-import { KernelProcess } from '../src/kernel-process.ts'
+import { KernelProcess, KernelProtocolError } from '../src/kernel-process.ts'
 import { KernelSet } from '../src/kernel-set.ts'
 import { planSessionScratch } from '../src/scratch.ts'
 import ScienceRuntime from '../src/index.ts'
@@ -140,7 +140,6 @@ class CleanupFaultOnKernelSpawnSubprocess extends LocalSubprocessRuntime {
  */
 function wrapKernelSpawn(inner: SubprocessRuntime, transform: (handle: SubprocessHandle) => SubprocessHandle): SubprocessRuntime {
   return {
-    executionWorld: inner.executionWorld,
     resolveExecutable: (command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal) =>
       inner.resolveExecutable(command, env, signal),
     spawn: (spec: SubprocessSpawnSpec) => {
@@ -157,7 +156,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await expect(runtime.startRun({
       session, language: 'python', code: '', ...authorizePythonRun(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('requires an applied environment before acquiring a kernel', async () => {
@@ -182,7 +181,7 @@ describe('ScienceRuntime.startRun preflight', () => {
       session, language: 'r', code: kernelAction({ status: 'ok' }),
       ...authorizeRun(session, 'r'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY', message: 'Science r environment is not available' })
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('queues a second concurrent run for the same session instead of rejecting or cancelling it', async () => {
@@ -205,7 +204,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await expect(first.done).resolves.toMatchObject({ terminal: { status: 'success' } })
     const second = await secondStarting
     await expect(second.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(2)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-started')).toHaveLength(2)
   })
 
   it('cancels a queued run cleanly, without ever spawning a kernel, when its own signal aborts before its turn arrives', async () => {
@@ -223,7 +222,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await expect(secondStarting).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
     first.cancel()
     await expect(first.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
-    expect(session.events.some(event => event.type === 'science/run-started'
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started'
       && event.data.run.toolCallId === 'science-run-queued-cancel-2')).toBe(false)
   })
 
@@ -250,7 +249,7 @@ describe('ScienceRuntime.startRun preflight', () => {
     await harness.runtimeFiber.dispose()
     await secondRejection
     await expect(first.done).resolves.toMatchObject({ terminal: { status: 'cancelled' } })
-    expect(session.events.some(event => event.type === 'science/run-started'
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started'
       && event.data.run.toolCallId === 'science-run-queued-dispose-2')).toBe(false)
   })
 
@@ -448,12 +447,12 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await handle.done
-    const kernelStateIndex = session.events.findIndex(event => event.type === 'science/kernel-state')
-    const runStartedIndex = session.events.findIndex(event => event.type === 'science/run-started')
+    const kernelStateIndex = session.snapshotEvents().findIndex(event => event.type === 'science/kernel-state')
+    const runStartedIndex = session.snapshotEvents().findIndex(event => event.type === 'science/run-started')
     expect(kernelStateIndex).toBeGreaterThanOrEqual(0)
     expect(kernelStateIndex).toBeLessThan(runStartedIndex)
-    const runStarted = session.events[runStartedIndex]
-    const kernelState = session.events[kernelStateIndex]
+    const runStarted = session.snapshotEvents()[runStartedIndex]
+    const kernelState = session.snapshotEvents()[kernelStateIndex]
     expect(runStarted?.data).toMatchObject({ run: { kernelEpoch: 1 } })
     expect(kernelState?.data).toMatchObject({ kernel: { kernelEpoch: 1, language: 'python', state: 'started' } })
   })
@@ -470,11 +469,11 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session, 'science-run-reuse-2'), signal: new AbortController().signal,
     })
     await second.done
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started).toHaveLength(2)
     expect(started[0]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
-    expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
   })
 
   it('ends the stale kernel with environment-rebound and starts a fresh epoch when the environment rebinds', async () => {
@@ -484,7 +483,7 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session, 'science-run-rebind-1'), signal: new AbortController().signal,
     })
     await first.done
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const environment = projection?.environment
     if (environment === null || environment === undefined) throw new Error('missing applied environment')
     session.append('science/environment-bound', {
@@ -496,11 +495,11 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session, 'science-run-rebind-2'), signal: new AbortController().signal,
     })
     await second.done
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts).toHaveLength(3)
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'environment-rebound', kernelEpoch: 1 } })
     expect(kernelFacts[2]?.data).toMatchObject({ kernel: { state: 'started', kernelEpoch: 2 } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
   })
 
@@ -537,14 +536,14 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     ])
     await expect(pythonHandle.done).resolves.toMatchObject({ terminal: { status: 'success', language: 'python' } })
     await expect(rHandle.done).resolves.toMatchObject({ terminal: { status: 'success', language: 'r' } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started).toHaveLength(2)
     expect(started.map(event => event.data.run.language).sort()).toEqual(['python', 'r'])
   })
 
   it('allocates kernelEpoch N+1 through the real durable-projection allocator for a session seeded with prior kernel facts', async () => {
     const { session, runtime } = await readyPythonHarness('science-run-epoch-continuity')
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const environment = projection?.environment
     if (
       environment === null || environment === undefined
@@ -586,10 +585,10 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await handle.done
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started).toHaveLength(1)
     expect(started[0]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[2]?.data).toMatchObject({ kernel: { state: 'started', kernelEpoch: 2 } })
   })
 
@@ -601,9 +600,8 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-run-kernel-start-failed')
     await bindFakePython(harness.runtime, session)
-    // The no-ready driver never sends READY: KernelProcess.start() throws
-    // KernelProtocolError once the (short) start deadline elapses, which
-    // startRun must translate to KERNEL_START_FAILED before publication.
+    // The deadline may expire during connection or while awaiting READY;
+    // either failure must reject before publishing a run.
     installTestKernelSet(harness.ctx, harness.runtime, {
       assetsRoot: KERNEL_ASSETS_NO_READY_ROOT,
       kernelStartTimeoutMs: 200,
@@ -612,7 +610,23 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+  })
+
+  it('reports a kernel handshake failure before publishing a run', async () => {
+    const { runtime, session } = await readyPythonHarness('science-run-handshake-failure')
+    const start = vi.spyOn(KernelProcess, 'start').mockRejectedValueOnce(new KernelProtocolError('invalid READY frame'))
+    try {
+      const rejection = runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        ...authorizePythonRun(session), signal: new AbortController().signal,
+      })
+      await expect(rejection).rejects.toMatchObject({ code: 'KERNEL_START_FAILED' })
+      await expect(rejection).rejects.toThrow('the kernel did not complete its startup handshake')
+      expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+    } finally {
+      start.mockRestore()
+    }
   })
 
   it('classifies a discarded kernel whose own teardown also failed as KERNEL_START_FAILED with the AggregateError cause class', async () => {
@@ -751,7 +765,7 @@ describe('ScienceRuntime.startRun kernel acquisition', () => {
     controller.abort()
     await expect(pending).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
     expect(Date.now() - abortedAt).toBeLessThan(DESCENDANT_GRACE_MS * 3)
-    expect(session.events.some(event => event.type === 'science/run-started')).toBe(false)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
   })
 
   it('disarms the acquired kernel\'s idle timer immediately on acquisition, before run-started commits', async () => {
@@ -849,7 +863,7 @@ esac
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    expect(session.events.some(event => event.type === 'science/kernel-state')).toBe(true)
+    expect(session.snapshotEvents().some(event => event.type === 'science/kernel-state')).toBe(true)
   })
 
   it('threads a configured partial minimumEnforcement through the constructor\'s own KernelSet into a real kernel-spawn confinement', async () => {
@@ -927,7 +941,7 @@ describe('ScienceRuntime.startRun terminal classification', () => {
     await expect(failed.done).resolves.toMatchObject({
       terminal: { status: 'failed', failureCode: 'EXECUTION_FAILED' },
     })
-    expect(session.events.filter(event => event.type === 'science/run-finished')).toHaveLength(2)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-finished')).toHaveLength(2)
   })
 
   it('classifies a DONE interrupted frame with no host abort in flight as failed/EXECUTION_FAILED and keeps the kernel', async () => {
@@ -940,13 +954,13 @@ describe('ScienceRuntime.startRun terminal classification', () => {
       terminal: { status: 'failed', failureCode: 'EXECUTION_FAILED' },
     })
     // The kernel survives (no exited kernel-state fact) and serves a following run on the same epoch.
-    expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
     const next = await runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-run-self-interrupted-next'), signal: new AbortController().signal,
     })
     await expect(next.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
   })
 
@@ -971,9 +985,9 @@ describe('ScienceRuntime.startRun terminal classification', () => {
       terminal: { status: 'failed', failureCode: 'KERNEL_DIED' },
     })
     await vi.waitFor(() => {
-      expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'crash' } })
   })
 
@@ -987,9 +1001,9 @@ describe('ScienceRuntime.startRun terminal classification', () => {
       terminal: { status: 'failed', failureCode: 'KERNEL_DIED' },
     })
     await vi.waitFor(() => {
-      expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'protocol' } })
   })
 
@@ -1003,7 +1017,7 @@ describe('ScienceRuntime.startRun terminal classification', () => {
     expect(result.stdout).toEqual({ text: '运行-✓\n', bytes: Buffer.byteLength('运行-✓\n'), truncated: false })
     expect(result.stderr).toEqual({ text: 'warn\n', bytes: Buffer.byteLength('warn\n'), truncated: false })
     expect(result.terminal).toMatchObject({ stdoutBytes: result.stdout.bytes, stderrBytes: result.stderr.bytes })
-    expect(JSON.stringify(session.events)).not.toContain('运行-✓')
+    expect(JSON.stringify(session.snapshotEvents())).not.toContain('运行-✓')
   })
 
   it('truncates a stdout tail exceeding MAX_OUTPUT_BYTES, retaining exactly the last MAX_OUTPUT_BYTES bytes', async () => {
@@ -1087,13 +1101,13 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
     handle.cancel()
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'cancelled', failureCode: 'CANCELLED' } })
     // The kernel survives: no exited kernel-state fact, and a fresh run reuses the same epoch.
-    expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
     const next = await runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-run-interrupt-survive-next'), signal: new AbortController().signal,
     })
     await expect(next.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
   })
 
@@ -1107,16 +1121,16 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
     handle.cancel()
     await expect(handle.done).resolves.toMatchObject({ terminal: { status: 'cancelled', failureCode: 'CANCELLED' } })
     await vi.waitFor(() => {
-      expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     }, { timeout: 30_000 })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
     const next = await runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-run-escalate-next'), signal: new AbortController().signal,
     })
     await expect(next.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 2 } })
   }, 30_000)
 
@@ -1134,9 +1148,9 @@ describe('ScienceRuntime.startRun interrupt-first cancel/timeout', () => {
     const result = await handle.done
     expect(result.terminal.status).toBe('cancelled')
     await vi.waitFor(() => {
-      expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
   })
 
@@ -1196,14 +1210,14 @@ describe('ScienceRuntime.startRun capture and replay', () => {
       ...authorizePythonRun(session), signal: new AbortController().signal,
     })
     await handle.done
-    const live = replayScience(session.events)
+    const live = replayScience(session.snapshotEvents())
     // The live kernel survives a successful run (reusable, not retired), but
     // a cold resume has no live process to observe: `session/end-seed`
     // derives it interrupted rather than presenting a kernel a fresh
     // Host restart could never actually own.
     expect(live?.kernels).toMatchObject([{ state: 'started' }])
-    const cold = Session.create(SessionId('science-run-cold-replay-cold'), session.events)
-    const coldProjection = replayScience(cold.events)
+    const cold = Session.create(SessionId('science-run-cold-replay-cold'), session.snapshotEvents())
+    const coldProjection = replayScience(cold.snapshotEvents())
     expect(coldProjection?.kernels).toMatchObject([{ state: 'interrupted', kernelEpoch: 1 }])
     expect(coldProjection?.runs).toEqual(live?.runs)
     expect(coldProjection?.environment).toEqual(live?.environment)

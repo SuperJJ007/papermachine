@@ -33,7 +33,8 @@ import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAtta
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
-import type { JsonSchemaNode, JsonValue } from '@deepseek-ai/dsh-tools'
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
@@ -117,7 +118,7 @@ export function resolveToolFilter(config: ToolFilterConfig | undefined, path: st
 /** State for one sync generation: the current set of disposers keyed by public name. */
 export type ToolDisposers = Map<string, () => void>
 
-/** Canonical MCP result exposed to Code Mode without discarding protocol blocks. */
+/** Canonical MCP result exposed to PTC mode without discarding protocol blocks. */
 export type McpResult<Structured extends JsonValue = JsonValue> = {
   content: JsonValue[]
   structuredContent?: Structured
@@ -233,7 +234,7 @@ function validateToolFilterReferences(serverName: string, filter: ResolvedToolFi
  * Three phases keep the swap safe:
  *
  * 1. Fetch: drain uncached `tools/list` pagination into the full raw listing.
- *    A failure here (network error) rejects and leaves the previous
+ *    A failure here (network error or repeated continuation cursor) rejects and leaves the previous
  *    generation registered untouched.
  * 2. Filter and build: validate that every rawName `opts.toolFilter`
  *    references was actually advertised (a stale or misspelled reference
@@ -265,11 +266,20 @@ export async function syncTools(
 ): Promise<ToolDisposers> {
   // Phase 1: drain uncached `tools/list` pagination into the full raw listing.
   const rawTools: ListedTool[] = []
+  const seenCursors = new Set<string>()
   let cursor: string | undefined
   do {
     const response = await listToolsUncached(client, cursor)
     rawTools.push(...response.tools)
     cursor = response.nextCursor
+    if (cursor) {
+      if (seenCursors.has(cursor)) {
+        throw new Error(
+          `mcp-client(${opts.serverName}): server repeated a tools/list continuation cursor — invalid tool list`,
+        )
+      }
+      seenCursors.add(cursor)
+    }
   } while (cursor)
 
   // Phase 2: validate the deployment's filter against the live list, then

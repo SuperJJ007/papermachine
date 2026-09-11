@@ -23,7 +23,6 @@ import { applyScienceArtifactNotes, scienceArtifactNotesSchema } from './artifac
 import {
   applyScienceProjectionState,
   emptyScienceProjectionState,
-  scienceProjectionChanged,
   scienceProjectionSchema,
   scienceProjectionStateSchema,
   scienceProjectionStateSeq,
@@ -91,12 +90,10 @@ export function apply(ctx: Context): void {
     projectionCtx.sessionProjections.register<'science', ScienceProjectionState>({
       key: 'science',
       stateSchema: scienceProjectionStateSchema,
-      checkpointStateSchema: scienceProjectionStateSchema,
       checkpointStateSeq: scienceProjectionStateSeq,
       init: emptyScienceProjectionState,
       apply: applyScienceProjectionState,
       wire: { viewSchema: scienceProjectionSchema, view: viewScienceProjectionState },
-      viewChanged: scienceProjectionChanged,
       stateVersion: SCIENCE_PROJECTION_STATE_VERSION,
     })
     projectionCtx.sessionProjections.register<'scienceArtifactNotes', ScienceArtifactNotesProjection>({

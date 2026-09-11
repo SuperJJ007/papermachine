@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-science-shared-prefix-drift.md
-2026-09-06-science-shared-prefix-drift.md: bf305c0f30015bf3bc0408526094e8f3feb2df62
-2026-09-06-science-shared-prefix-drift.zh.md: 4c2292b8f1dbcd70b065052e6f96b760b0ffb45f
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-09-06-science-shared-prefix-drift.md: 51d72feb1cdaddcd7b7d8ffee2547abde2b8d4f8
+2026-09-06-science-shared-prefix-drift.zh.md: 63e2f51002ea05780a428951f89d0677f373698d

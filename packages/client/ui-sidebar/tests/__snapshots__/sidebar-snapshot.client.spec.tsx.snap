@@ -60,15 +60,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         xmlns="http://www.w3.org/2000/svg"
       />
     </button>
-    <nav
-      aria-label="Project navigation"
-      class="destinations"
-    >
-      <div
-        data-slot="sidebar.destinations"
-        style="display: contents;"
-      />
-    </nav>
     <div
       class="regionArea"
     >
@@ -147,14 +138,18 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               style="display: contents;"
             >
               <span
-                class="fallbackBrandName"
+                class="localBuildBrand"
               >
-                DSH Local Build
-              </span>
-              <span
-                class="buildRevision"
-              >
-                abc1234
+                <span
+                  class="localBuildTitle"
+                >
+                  DSH Local Build
+                </span>
+                <span
+                  class="buildVersion"
+                >
+                  1.2.3-rc.4-abc1234-dirty
+                </span>
               </span>
             </div>
           </span>
@@ -195,15 +190,6 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         New Session
       </span>
     </button>
-    <nav
-      aria-label="Project navigation"
-      class="destinations"
-    >
-      <div
-        data-slot="sidebar.destinations"
-        style="display: contents;"
-      />
-    </nav>
     <div
       class="regionArea"
     >
@@ -282,14 +268,18 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               style="display: contents;"
             >
               <span
-                class="fallbackBrandName"
+                class="localBuildBrand"
               >
-                DSH Local Build
-              </span>
-              <span
-                class="buildRevision"
-              >
-                abc1234
+                <span
+                  class="localBuildTitle"
+                >
+                  DSH 本地构建
+                </span>
+                <span
+                  class="buildVersion"
+                >
+                  1.2.3-rc.4-abc1234-dirty
+                </span>
               </span>
             </div>
           </span>
@@ -330,15 +320,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         新会话
       </span>
     </button>
-    <nav
-      aria-label="项目导航"
-      class="destinations"
-    >
-      <div
-        data-slot="sidebar.destinations"
-        style="display: contents;"
-      />
-    </nav>
     <div
       class="regionArea"
     >

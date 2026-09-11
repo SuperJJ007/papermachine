@@ -9,7 +9,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState, CopyDraft } from '../src/client/section-store.ts'
@@ -23,8 +23,8 @@ const READY: AgentPresetSectionState = {
   authorable: true,
   hasDocument: true,
   rows: [
-    { id: 'standard', trust: 'system', isDefault: true, copyable: true, name: '标准模式', description: '完整的编码 agent。' },
-    { id: 'mine', trust: 'user', isDefault: false, copyable: true },
+    { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式', description: '完整的编码 agent。' },
+    { copyable: true, id: 'mine', trust: 'user', isDefault: false },
   ],
   copy: null,
   view: null,
@@ -117,7 +117,7 @@ describe('the preset list', () => {
   })
 
   it('shows no group heading for a set nobody has', () => {
-    renderSection({ rows: [{ id: 'standard', trust: 'system', isDefault: true, copyable: true }] })
+    renderSection({ rows: [{ copyable: true, id: 'standard', trust: 'system', isDefault: true }] })
 
     expect(screen.queryByRole('heading', { name: en.customGroup })).toBeNull()
   })
@@ -172,20 +172,51 @@ describe('the preset list', () => {
     expect(duplicate.getAttribute('data-tip')).toBe(en.duplicateUnavailable)
   })
 
+  it('keeps a non-copyable preset selectable and viewable while refusing duplication', () => {
+    const actions = renderSection({
+      rows: [{ copyable: false, id: 'standard', trust: 'system', isDefault: false }],
+    })
+    const row = rowFor('standard')
+    const duplicate = within(row).getByRole('button', { name: `${en.duplicate}: ${en.presetStandardName}` })
+    expect(duplicate).toHaveProperty('disabled', true)
+    expect(duplicate.getAttribute('data-tip')).toBe(en.notCopyable)
+    fireEvent.click(duplicate)
+    expect(actions.beginCopy).not.toHaveBeenCalled()
+    fireEvent.click(within(row).getByRole('button', { name: `${en.setDefault}: ${en.presetStandardName}` }))
+    expect(actions.makeDefault).toHaveBeenCalledWith('standard')
+    expect(within(row).queryByRole('alert')).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
+    expect(actions.view).toHaveBeenCalledWith('standard')
+  })
+
   it('marks a broken custom preset: unselectable, uncopyable, still deletable', () => {
     const actions = renderSection({
       rows: [
-        { id: 'standard', trust: 'system', isDefault: true, copyable: true },
-        { id: 'ghost', trust: 'user', isDefault: false, copyable: true, name: '幽灵预设', broken: 'the composition file agent.cordis.yml is missing' },
+        { copyable: true, id: 'standard', trust: 'system', isDefault: true },
+        { copyable: false,
+          id: 'ghost', trust: 'user', isDefault: false, name: '幽灵预设', description: '我自己写的',
+          broken: 'the composition file agent.cordis.yml is missing',
+        },
       ],
     })
 
     const ghost = rowFor('ghost')
-    // The reason is on the card, and the body cannot pick what cannot mount.
-    expect(within(ghost).getByText(en.brokenBadge)).toBeTruthy()
+    // The badge carries the reason for a pointer, and the body cannot pick
+    // what cannot mount.
+    expect(within(ghost).getByText(en.brokenBadge).textContent)
+      .toBe(`${en.brokenBadge}the composition file agent.cordis.yml is missing`)
+    // A picker card keeps showing what the preset is; a package specifier in
+    // its place would tell a chooser nothing they can act on there.
+    expect(within(ghost).getByText('我自己写的')).toBeTruthy()
+    // Reachable without a pointer: the disabled body leaves the tab order, so
+    // this node is the only reading assistive technology gets.
     expect(within(ghost).getByRole('alert').textContent).toContain('is missing')
+    // `aria-disabled`, not `disabled`: the card stays in the tab order so a
+    // keyboard reaches the reason the face no longer shows, and refuses the
+    // pick itself rather than by being unreachable.
     const body = within(ghost).getByRole('button', { name: `${en.brokenBadge}: 幽灵预设` })
-    expect(body).toHaveProperty('disabled', true)
+    expect(body).toHaveProperty('disabled', false)
+    expect(body.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(body)
     expect(actions.makeDefault).not.toHaveBeenCalled()
     // Copying a broken preset would only mint another broken one; deleting
@@ -197,31 +228,9 @@ describe('the preset list', () => {
     expect(within(ghost).getByRole('button', { name: `${en.openLocation}: 幽灵预设` })).toBeTruthy()
   })
 
-  it('disables the copy action on a preset whose metadata declares copyable: false', () => {
-    renderSection({
-      rows: [
-        { id: 'standard', trust: 'system', isDefault: true, copyable: true },
-        // A system-trusted `science` row resolves its localized built-in
-        // name/description regardless of its own file metadata, same as
-        // `standard`/`code`/`minimal`/`cordis` above.
-        { id: 'science', trust: 'system', isDefault: false, copyable: false },
-      ],
-    })
-
-    // Working and selectable — copyable: false is not brokenness — but the
-    // copy action itself is refused with its own reason, distinct from the
-    // broken-preset and authoring-unavailable reasons on the same button.
-    const science = rowFor('science')
-    const body = within(science).getByRole('button', { name: `${en.setDefault}: ${en.presetScienceName}` })
-    expect(body).toHaveProperty('disabled', false)
-    const duplicate = within(science).getByRole('button', { name: `${en.duplicate}: ${en.presetScienceName}` })
-    expect(duplicate).toHaveProperty('disabled', true)
-    expect(duplicate.getAttribute('data-tip')).toBe(en.notCopyable)
-  })
-
   it('withholds the viewer on a broken shipped preset', () => {
     renderSection({
-      rows: [{ id: 'standard', trust: 'system', isDefault: false, copyable: true, name: '标准模式', broken: 'the composition is not valid YAML' }],
+      rows: [{ copyable: false, id: 'standard', trust: 'system', isDefault: false, name: '标准模式', broken: 'the composition is not valid YAML' }],
     })
 
     // There is no readable composition to offer; the reason on the card is
@@ -264,7 +273,7 @@ describe('the preset list', () => {
 
   it('starts a creator-mode draft session and leaves settings', () => {
     const actions = renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, copyable: true, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     })
 
     fireEvent.click(screen.getByRole('button', { name: en.creatorDraft }))
@@ -278,8 +287,8 @@ describe('the preset list', () => {
   it('keeps the empty custom group on screen: heading plus the creator entry', () => {
     renderSection({
       rows: [
-        { id: 'standard', trust: 'system', isDefault: true, copyable: true, name: '标准模式' },
-        { id: 'cordis', trust: 'system', isDefault: false, copyable: true, name: '创造模式' },
+        { copyable: true, id: 'standard', trust: 'system', isDefault: true, name: '标准模式' },
+        { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' },
       ],
     })
 
@@ -295,14 +304,14 @@ describe('the preset list', () => {
     cleanup()
 
     renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, copyable: true, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     }, { creator: false })
     expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
     cleanup()
 
     const actions = renderSection({
       authorable: false,
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, copyable: true, name: '创造模式' }],
+      rows: [...READY.rows, { copyable: true, id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
     })
     const disabled = screen.getByRole('button', { name: en.creatorDraft })
     expect(disabled).toHaveProperty('disabled', true)
@@ -501,7 +510,7 @@ describe('a long card description', () => {
     clamp(true)
     vi.useFakeTimers()
     try {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, copyable: true, name: '中文助手', description: LONG }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: LONG }] })
 
       fireEvent.mouseEnter(within(rowFor('zh')).getByText(LONG))
       act(() => { vi.advanceTimersByTime(400) })
@@ -516,7 +525,7 @@ describe('a long card description', () => {
     clamp(false)
     vi.useFakeTimers()
     try {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, copyable: true, name: '中文助手', description: '短描述。' }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, name: '中文助手', description: '短描述。' }] })
 
       fireEvent.mouseEnter(within(rowFor('zh')).getByText('短描述。'))
       act(() => { vi.advanceTimersByTime(400) })
@@ -533,7 +542,7 @@ describe('a long card description', () => {
     clamp(true)
 
     expect(() => {
-      renderSection({ rows: [{ id: 'zh', trust: 'user', isDefault: false, copyable: true, description: LONG }] })
+      renderSection({ rows: [{ copyable: true, id: 'zh', trust: 'user', isDefault: false, description: LONG }] })
     }).not.toThrow()
     // The first measurement does not depend on the observer.
     expect(within(rowFor('zh')).getByText(LONG).getAttribute('title')).toBe('')

@@ -1,0 +1,141 @@
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+(node:91877) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [process]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+to-parent
+to-parent
+ ❯ |thread-safe| packages/client/ui-theme/tests/elevation-styles.client.spec.ts (7 tests | 2 failed) 244ms
+     × draws every solid neutral-token border at 0.5px under packages/ 67ms
+     × draws every filled divider line at 0.5px under packages/ 81ms
+ ❯ |thread-safe| packages/client/ui-theme/tests/corner-shape-styles.client.spec.ts (4 tests | 1 failed) 119ms
+     × pairs corner-shape: round with every full-round border-radius under packages/ 114ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |thread-safe| packages/client/ui-theme/tests/corner-shape-styles.client.spec.ts > full-round radii keep circular corners > pairs corner-shape: round with every full-round border-radius under packages/
+AssertionError: expected [ …(11) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .librarySectionHead span",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .badge",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .elementReference",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceKernelStatus.module.css .dot",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceOutcomeRow.module.css .badge",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceToolCell.module.css .sep",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceToolCell.module.css .inspect",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .turnLabel",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .pip[data-kind='publish']",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .chips button",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .kernelMarker",
++ ]
+
+ ❯ packages/client/ui-theme/tests/corner-shape-styles.client.spec.ts:89:22
+     87|     const unpaired = packageStylesheets().flatMap(file =>
+     88|       unpairedFullRound(readFileSync(file, 'utf8')).map(selectors => `…
+     89|     expect(unpaired).toEqual([])
+       |                      ^
+     90|   })
+     91| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |thread-safe| packages/client/ui-theme/tests/elevation-styles.client.spec.ts > neutral solid borders are hairlines > draws every solid neutral-token border at 0.5px under packages/
+AssertionError: expected [ …(45) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ArtifactTable.module.css .scroll border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ArtifactTable.module.css .table th, .table td border-bottom: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceArtifactProvenance.module.css .subTabs border-bottom: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceArtifactProvenance.module.css .primaryAction, .secondaryAction border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceComposerChips.module.css .chip border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .reconcileBanner border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .libraryToolbar input border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .libraryToolbar select, .libraryToolbar button border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .chartList .libraryCard border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .chartList .chartMeta border-top: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .workspaceList border-top: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .workspaceList button border-bottom: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .saveAsForm input border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .saveAsForm button border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .notes border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .notes button border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .notes textarea border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .elementPanel border-top: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .specComment border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .specAdd border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .specTarget, .regionButton border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .editPanel border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .styleControl input border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .editInstruction border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .galleryButton border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .directEditRow > input, .directEditRow > select, .fontControls input border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .referenceChip border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .elementColorSwatch border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceDetailsView.module.css .elementReference border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceEmptyDetails.module.css .header border-bottom: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceExecutionRow.module.css .root border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceExecutionRow.module.css .interrupt border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceExecutionRow.module.css .viewReason border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceSettingsCard.module.css .card border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceSettingsCard.module.css .body border-top: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceToolCell.module.css .inspect border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .header border-bottom: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .unassigned border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .turnLabel border: 1px solid var(--dsw-alias-border-l3)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .node, .group border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .chips button border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .kernelMarker border: 1px solid var(--dsw-alias-border-l3)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .callDetails border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTurnArtifacts.module.css .card border: 1px solid var(--dsw-alias-border-l2)",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTurnArtifacts.module.css .more border: 1px solid var(--dsw-alias-border-l2)",
++ ]
+
+ ❯ packages/client/ui-theme/tests/elevation-styles.client.spec.ts:170:18
+    168|         .map(line => `${file} ${line}`)
+    169|     })
+    170|     expect(wide).toEqual([])
+       |                  ^
+    171|   })
+    172|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |thread-safe| packages/client/ui-theme/tests/elevation-styles.client.spec.ts > neutral solid borders are hairlines > draws every filled divider line at 0.5px under packages/
+AssertionError: expected [ …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .flow::before, .turn::before width: 1px",
++   "/Users/superjj/ccproj/pm-replant/packages/client/ui-science/src/client/ScienceTraceView.module.css .node::after, .group::after height: 1px",
++ ]
+
+ ❯ packages/client/ui-theme/tests/elevation-styles.client.spec.ts:180:18
+    178|     const wide = packageStylesheets().flatMap(file =>
+    179|       wideFilledDividers(readFileSync(file, 'utf8')).map(line => `${fi…
+    180|     expect(wide).toEqual([])
+       |                  ^
+    181|   })
+    182| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed | 57 passed | 3 skipped (62)
+      Tests  3 failed | 781 passed | 25 skipped (809)
+   Start at  23:59:20
+   Duration  14.43s (transform 21.93s, setup 5.99s, import 36.09s, tests 39.56s, environment 6.95s)

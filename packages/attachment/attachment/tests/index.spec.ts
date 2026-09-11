@@ -4,16 +4,15 @@ import AttachmentStore, {
   AttachmentError,
   AttachmentId,
   ImageVariantId,
+  isAttachmentError,
   isImageAdmissionError,
   type ImageAttachmentRef,
   type ImageMediaType,
   type ImageRequestPolicy,
   type RequestImageAttachment,
+  type SaveFileAttachment,
   type SaveImageAttachment,
-  type SaveTextAttachment,
   type StoredImageAttachment,
-  type StoredTextAttachment,
-  type TextAttachmentRef,
 } from '../src/index.ts'
 
 const LIMITS = {
@@ -25,14 +24,8 @@ const LIMITS = {
   mediaTypes: ['image/png'] as const,
 }
 
-const TEXT_LIMITS = {
-  maxTextBytes: 4,
-  mediaTypes: ['text/plain'] as const,
-}
-
 class RecordingStore extends AttachmentStore {
   readonly imageLimits = LIMITS
-  readonly textLimits = TEXT_LIMITS
   readonly calls: string[] = []
   rejectValidationAt: number | undefined
   rejectSaveAt: number | undefined
@@ -41,10 +34,6 @@ class RecordingStore extends AttachmentStore {
     const value = input.data[0] ?? 0
     this.calls.push(`validate:${value}`)
     if (value === this.rejectValidationAt) throw new Error(`invalid:${value}`)
-  }
-
-  async validateText(_input: SaveTextAttachment): Promise<void> {
-    throw new Error('not used')
   }
 
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
@@ -61,15 +50,7 @@ class RecordingStore extends AttachmentStore {
     }
   }
 
-  saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
-    throw new Error('not used')
-  }
-
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
-    throw new Error('not used')
-  }
-
-  readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
     throw new Error('not used')
   }
 
@@ -95,30 +76,30 @@ class RecordingStore extends AttachmentStore {
 
 class UnsupportedProjectionStore extends AttachmentStore {
   readonly imageLimits = LIMITS
-  readonly textLimits = TEXT_LIMITS
 
   validateImage(): Promise<void> {
     return Promise.resolve()
-  }
-
-  validateText(): Promise<void> {
-    throw new Error('not used')
   }
 
   saveImage(): Promise<ImageAttachmentRef> {
     throw new Error('not used')
   }
 
-  saveText(): Promise<TextAttachmentRef> {
-    throw new Error('not used')
-  }
-
   readImage(): Promise<StoredImageAttachment> {
     throw new Error('not used')
   }
+}
 
-  readText(): Promise<StoredTextAttachment> {
-    throw new Error('not used')
+class RecordingFileStore extends RecordingStore {
+  fileInput: SaveFileAttachment | undefined
+
+  override saveFile(input: SaveFileAttachment) {
+    this.fileInput = input
+    return Promise.resolve({
+      attachmentId: AttachmentId(`sha256:${'cd'.repeat(32)}`),
+      name: input.name ?? 'unnamed',
+      bytes: input.data.byteLength,
+    })
   }
 }
 
@@ -180,6 +161,49 @@ describe('AttachmentStore.readImageRequest', () => {
     controller.abort(reason)
     expect(() => store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }, controller.signal)).toThrow(reason)
   })
+
+  it('rejects generic-file storage and exposes no provider-owned host path by default', async () => {
+    const store = new RecordingStore(new Context())
+    const ref = await store.saveImage(image(1))
+    expect(store.imageHostPath(ref)).toBeUndefined()
+    await expect(store.saveFile({ data: Uint8Array.of(1), name: 'notes.txt' }))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    await expect(store.saveFileStream({
+      data: (async function* (): AsyncIterable<Uint8Array> { yield Uint8Array.of(1) })(),
+      name: 'notes.txt',
+    })).rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    const fileRef = {
+      attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`),
+      name: 'notes.txt',
+      bytes: 1,
+    }
+    expect(store.fileHostPath(fileRef)).toBeUndefined()
+    const read = async (signal?: AbortSignal): Promise<void> => {
+      for await (const chunk of store.readFileStream(fileRef, signal)) {
+        void chunk
+        throw new Error('unsupported store yielded a chunk')
+      }
+    }
+    await expect(read()).rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported file read')
+    controller.abort(reason)
+    await expect(read(controller.signal)).rejects.toBe(reason)
+  })
+})
+
+describe('AttachmentStore file admission', () => {
+  it('decodes encoded files through the service and exposes attachment errors', async () => {
+    const store = new RecordingFileStore(new Context())
+
+    await expect(store.admitEncodedFile({ data: 'AQID', name: 'notes.bin' })).resolves.toMatchObject({
+      name: 'notes.bin',
+      bytes: 3,
+    })
+    expect(store.fileInput).toEqual({ data: Uint8Array.of(1, 2, 3), name: 'notes.bin' })
+    expect(store.isAttachmentError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(true)
+    expect(store.isAttachmentError(new Error('unknown failure'))).toBe(false)
+  })
 })
 
 describe('isImageAdmissionError', () => {
@@ -191,5 +215,16 @@ describe('isImageAdmissionError', () => {
     expect(isImageAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
     expect(isImageAdmissionError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(false)
     expect(isImageAdmissionError(new Error('unknown failure'))).toBe(false)
+  })
+})
+
+describe('isAttachmentError', () => {
+  it('recognizes attachment failures from another package installation by code', () => {
+    expect(isAttachmentError(new AttachmentError('bad base64', 'INVALID_FILE_BASE64'))).toBe(true)
+    expect(isAttachmentError(Object.assign(new Error('foreign storage error'), {
+      code: 'ATTACHMENT_WRITE_FAILED',
+    }))).toBe(true)
+    expect(isAttachmentError(Object.assign(new Error('other failure'), { code: 'OTHER' }))).toBe(false)
+    expect(isAttachmentError({ code: 'ATTACHMENT_WRITE_FAILED' })).toBe(false)
   })
 })

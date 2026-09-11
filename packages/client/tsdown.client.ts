@@ -53,12 +53,12 @@ function styleInjectionModule(
 }
 
 /**
- * Wire/type layers a client bundle may inline: browser-safe contracts
- * with no runtime identity to share (no Symbol/instanceof/singleton state).
+ * Contract layers and pure folds a client bundle may inline: browser-safe
+ * values with no runtime identity to share (no Symbol/instanceof/singleton state).
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|file-reference|session|llm|tools|brand|byte-size)(\/|$)/
+export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|output-retention|typert-protocol|util-crypto|util-values|util-workspace-path)(?:\/|$)|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-host-open-in-app\/shared$|@deepseek-ai\/dsh-agent-presets\/display$|@deepseek-ai\/dsh-spill-policy\/notice$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -70,17 +70,6 @@ const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 
 /** Generated descriptor/codec contribution with no shared runtime identity. */
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
-
-/**
- * Individual browser-safe leaf modules published from packages whose other
- * subpaths carry real Host imports, so the whole package cannot join
- * `INLINE_SAFE`. Each entry is a specific subpath its own module doc states
- * carries no Host import, kept identical between Host admission and a
- * client bundle by import rather than copy-paste.
- */
-const INLINE_SAFE_LEAF = new Set([
-  '@deepseek-ai/dsh-tool-science/element-summary',
-])
 
 /**
  * Workspace mode replaces an empty config array with the root defaults. A
@@ -105,7 +94,8 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  * earlier Host pass. A package-level tsdown.config.ts REPLACES the root
  * workspace layout, so the lib half must be restated here — dropping it leaves
  * the package without lib/index.js and the host Loader cannot import its node
- * half.
+ * half. The Client build consumes `lib/types` and chains those tsc maps, with
+ * original source content, into the standalone plugin map.
  * @param id - plugin id (package name), stamped into the __ModuleLoader__.load
  * handoff and onto the injected style tags.
  * @param libEntry - node-half entries, spelled at the call site so the
@@ -278,6 +268,7 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
     // The shell compiles this artifact, so its map is the only path from a
     // browser stack frame back to the TSX (tsc emits the lib/types half).
     sourcemap: true,
+    outputOptions: { sourcemapExcludeSources: false },
     plugins: [{
       // Contract 1. `pre` because tsdown's own deps plugin would otherwise
       // resolve and inline every specifier missing from the npm production
@@ -292,18 +283,7 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
           return isBareSpecifier(source) ? { id: source, external: true } : null
         },
       },
-    }, {
-      // Contract 3. Rolldown does not read the `//# sourceMappingURL` of its
-      // inputs, so each tsc map is handed over as that module's map and
-      // composed into the bundle map; without it frames stop at the emitted
-      // lib/types JavaScript instead of reaching the TSX.
-      name: 'dsh-tsc-sourcemap',
-      async load(id: string) {
-        if (!id.includes(TYPES_MARKER) || !id.endsWith('.js') || !existsSync(`${id}.map`)) return null
-        const code = await readFile(id, 'utf8')
-        return { code: code.replace(SOURCEMAP_COMMENT, ''), map: await readFile(`${id}.map`, 'utf8') }
-      },
-    }, {
+    }, tscSourceMapPlugin(), {
       // Contract 4. The import survives verbatim and the sheet lands beside the
       // JavaScript, so the shell's CSS Modules pipeline sees a real stylesheet.
       name: 'dsh-css-asset',
@@ -471,6 +451,18 @@ function clientConfig(id: string, entry: string): UserConfig {
       // everything else is bundled.
       alwaysBundle: (specifier: string) => !isRequested(specifier),
     },
+    // Dual-mode libraries (lexical's exports carry development/production/
+    // node conditions; the node file picks its flavor with a top-level await
+    // a CJS bundle cannot carry) resolve their static flavor matching the
+    // NODE_ENV the defines below bake in.
+    inputOptions: {
+      resolve: {
+        conditionNames: [
+          (process.env.NODE_ENV ?? 'production') === 'development' ? 'development' : 'production',
+          'browser', 'import', 'module', 'default',
+        ],
+      },
+    },
     // Browser bundles inline node-idiom deps (zustand/immer read
     // process.env.NODE_ENV; zustand's esm build also probes
     // import.meta.env.MODE, which a CJS output cannot carry — rolldown flags
@@ -500,14 +492,13 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (isRequested(source)) return null // requested module-table row: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
-        if (INLINE_SAFE_LEAF.has(source)) return null // declared browser-safe leaf module: inline is the point
         throw new Error(
           `client bundle purity: "${source}" is not in the default client externals or ${id}'s dsh.client.external, an inline-safe wire layer, or a generated /remote contribution — `
           + 'cross-plugin value imports are forbidden; declare a non-default module request or collaborate through cordis services '
           + '(type-only imports are erased and never reach this gate)',
         )
       },
-    }, {
+    }, tscSourceMapPlugin(), {
       name: 'dsh-css-modules-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
@@ -566,6 +557,7 @@ function clientConfig(id: string, entry: string): UserConfig {
     }],
     outputOptions: {
       entryFileNames: 'client.js',
+      sourcemapExcludeSources: false,
       // The map is served from /plugins/<scoped-package>/client.js.map. The
       // browser resolves its local sources back into URLs that mirror the
       // /packages/<group>/<package>/src directories; sourcesContent keeps them usable
@@ -574,6 +566,38 @@ function clientConfig(id: string, entry: string): UserConfig {
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
+    },
+  }
+}
+
+/** Chain tsc's emitted maps into any Client bundle that consumes `lib/types`. */
+function tscSourceMapPlugin() {
+  return {
+    name: 'dsh-tsc-sourcemap',
+    async load(id: string) {
+      if (!id.includes(TYPES_MARKER) || !id.endsWith('.js') || !existsSync(`${id}.map`)) return null
+      const code = await readFile(id, 'utf8')
+      const mapPath = `${id}.map`
+      const map = JSON.parse(await readFile(mapPath, 'utf8')) as {
+        sourceRoot?: unknown
+        sources?: unknown
+        sourcesContent?: unknown
+        [key: string]: unknown
+      }
+      if (!Array.isArray(map.sources) || map.sources.some(source => typeof source !== 'string')) {
+        throw new Error(`client sourcemap: ${mapPath} has invalid sources`)
+      }
+      const sources = map.sources as string[]
+      if (
+        !Array.isArray(map.sourcesContent)
+        || map.sourcesContent.length !== sources.length
+        || map.sourcesContent.some(source => typeof source !== 'string')
+      ) {
+        const sourceRoot = typeof map.sourceRoot === 'string' ? map.sourceRoot : ''
+        map.sourcesContent = await Promise.all(sources.map(async source =>
+          await readFile(resolvePath(dirname(mapPath), sourceRoot, source), 'utf8')))
+      }
+      return { code: code.replace(SOURCEMAP_COMMENT, ''), map }
     },
   }
 }

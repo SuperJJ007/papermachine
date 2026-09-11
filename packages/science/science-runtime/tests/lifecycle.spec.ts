@@ -98,7 +98,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
       profileId: ScienceEnvironmentProfileId('fake'),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'OPERATION_TIMED_OUT' })
-    expect(session.session.events.map(event => event.type)).toEqual(['science/mode-bound'])
+    expect(session.session.snapshotEvents().map(event => event.type)).toEqual(['science/mode-bound'])
   })
 
   it('keeps the first cancellation cause and releases exact and same-ID reservations only once', async () => {
@@ -149,7 +149,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     // same-id quarantine map to find the lease still blocking it. `detach`
     // first: `prepare` refuses a second live registration for the same id.
     session.detach()
-    const successor = harness.ctx.sessions.prepare(SessionId('science-blocking'), { seed: [...session.session.events] })
+    const successor = harness.ctx.sessions.prepare(SessionId('science-blocking'), { seed: [...session.session.snapshotEvents()] })
     expect(registry.blocking(successor)).toBe(lease)
     registry.release(lease)
     expect(registry.blocking(session.session)).toBeUndefined()
@@ -178,7 +178,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
     try {
       attached.detach()
       await rejected
-      const successor = attachScienceSession(ctx, 'science-same-id', attached.session.events)
+      const successor = attachScienceSession(ctx, 'science-same-id', attached.session.snapshotEvents())
       const successorAuthorization = authorizePythonRun(successor.session, 'science-same-id-successor')
       await expect(runtime.startRun({
         session: successor.session,
@@ -205,7 +205,7 @@ describe('ScienceRuntime lifecycle ownership', () => {
 
     attached.detach()
     await expect(handle.done).rejects.toMatchObject({ code: 'SESSION_NOT_LIVE' })
-    expect(attached.session.events.some(event => event.type === 'science/run-finished')).toBe(false)
+    expect(attached.session.snapshotEvents().some(event => event.type === 'science/run-finished')).toBe(false)
   })
 
   it('reports terminal append failures as detached when the exact Session disappears at the same moment', async () => {

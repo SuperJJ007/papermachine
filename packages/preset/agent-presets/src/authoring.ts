@@ -16,81 +16,47 @@ import { chmod, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { METADATA_FILE, renderPresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
 
-/** A preset id that cannot be used as a directory name under a root. */
-export class InvalidPresetIdError extends Error {
-  constructor(
-    /** The rejected id. */
-    readonly presetId: string,
-  ) {
-    super(
-      `agent-presets: preset id ${JSON.stringify(presetId)} must match ${String(PRESET_ID)} — `
-      + 'the id is a directory name, so anything else could escape the preset root',
-    )
-  }
-}
-
-/** A copy target that is already occupied — a copy never overwrites. */
-export class PresetExistsError extends Error {
-  constructor(
-    /** The id that is already taken. */
-    readonly presetId: string,
-  ) {
-    super(
-      `agent-presets: preset "${presetId}" already exists — `
-      + 'a copy never overwrites; delete the existing preset first or choose another id',
-    )
-  }
+/**
+ * Refuse one authoring request the deployment does not allow.
+ * @param presetId - what the caller tried to change, for the diagnostic.
+ * @param reason - why authoring is refused.
+ * @returns the failure to throw.
+ */
+function notWritable(presetId: string, reason: string): RemoteError<'agent-preset/read-only'> {
+  return new RemoteError(
+    'agent-preset/read-only',
+    `agent-presets: preset "${presetId}" cannot be written: ${reason}`,
+    { agentPreset: presetId, reason },
+  )
 }
 
 /**
- * A copy source whose resolved eligibility forbids copying.
- *
- * A byte-for-byte copy would mount the same tools the source does, but a
- * preset whose durable identity is bound to its literal id — `dsh-tool-science`
- * binds `ScienceModeRef.presetId` and Consumer eligibility to the literal
- * `science` preset — cannot bind or execute through any other id. Refusing
- * the copy up front keeps that failure from reaching a caller as successful
- * authoring. A broken source is also refused because discovery cannot prove
- * that its copied directory would be loadable or honor its copy policy.
+ * Refuse a copy onto an id something already occupies. Both the roster check
+ * and the on-disk check answer with it, so a taken id reads the same either way.
+ * @param presetId - the id that is already taken.
+ * @returns the failure to throw.
  */
-export class PresetNotCopyableError extends Error {
-  constructor(
-    /** The source preset that refused to be copied. */
-    readonly sourceId: string,
-    /** Why discovery resolved this source as non-copyable. */
-    readonly reason = 'its own metadata declares copyable: false',
-  ) {
-    super(
-      `agent-presets: preset "${sourceId}" cannot be copied — `
-      + reason,
-    )
-  }
-}
-
-/** Authoring was attempted where the deployment allows none. */
-export class PresetNotWritableError extends Error {
-  constructor(
-    /** What the caller tried to change, for the diagnostic. */
-    readonly presetId: string,
-    reason: string,
-  ) {
-    super(`agent-presets: preset "${presetId}" cannot be written: ${reason}`)
-  }
+export function presetExists(presetId: string): RemoteError<'agent-preset/invalid'> {
+  const reason = `preset "${presetId}" already exists — `
+    + 'a copy never overwrites; delete the existing preset first or choose another id'
+  return new RemoteError('agent-preset/invalid', `agent-presets: ${reason}`, { agentPreset: presetId, reason })
 }
 
 /**
  * The root locally authored presets are written to.
  * @param roots - the configured roots in precedence order.
+ * @param presetId - the preset the caller is authoring, named by the refusal.
  * @returns the absolute path of the first `user` root.
  * @throws when the deployment configured no writable root.
  */
-export function writableRoot(roots: readonly PresetRoot[]): string {
+export function writableRoot(roots: readonly PresetRoot[], presetId: string): string {
   const root = roots.find(candidate => candidate.trust === 'user')
   if (root === undefined) {
-    throw new PresetNotWritableError('', 'this deployment configures no user-writable preset root')
+    throw notWritable(presetId, 'this deployment configures no user-writable preset root')
   }
   return resolve(expandHomePath(root.path))
 }
@@ -165,20 +131,20 @@ export async function copyComposition(
   id: string,
   name?: string,
 ): Promise<string> {
-  if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
-  if (!source.copyable) {
-    throw new PresetNotCopyableError(
-      source.id,
-      source.broken === undefined
-        ? 'its own metadata declares copyable: false'
-        : `the source preset is broken: ${source.broken}`,
-    )
+  if (!PRESET_ID.test(id)) {
+    const reason = `preset id ${JSON.stringify(id)} must match ${String(PRESET_ID)} — `
+      + 'the id is a directory name, so anything else could escape the preset root'
+    throw new RemoteError('agent-preset/invalid', `agent-presets: ${reason}`, { agentPreset: id, reason })
   }
-  const dir = join(writableRoot(roots), id)
+  if (!source.copyable) {
+    const reason = source.broken ?? 'its metadata declares copyable: false'
+    throw notWritable(source.id, reason)
+  }
+  const dir = join(writableRoot(roots, id), id)
   // The roster check upstream only sees discovered presets; a directory with
   // no composition file still occupies the name and deserves a readable
   // refusal rather than a filesystem error code.
-  if (await occupied(dir)) throw new PresetExistsError(id)
+  if (await occupied(dir)) throw presetExists(id)
   try {
     await cp(dirname(source.path), dir, {
       recursive: true, dereference: true, force: false, errorOnExist: true,
@@ -218,13 +184,13 @@ export async function deleteComposition(
   preset: AgentPreset,
 ): Promise<void> {
   if (preset.trust !== 'user') {
-    throw new PresetNotWritableError(preset.id, 'it ships with the deployment')
+    throw notWritable(preset.id, 'it ships with the deployment')
   }
-  const dir = join(writableRoot(roots), preset.id)
+  const dir = join(writableRoot(roots, preset.id), preset.id)
   // Belt and braces over the id pattern: the resolved directory must still be
   // the one the writable root owns, whatever discovery reported.
   if (!isAbsolute(preset.path) || !preset.path.startsWith(dir)) {
-    throw new PresetNotWritableError(preset.id, 'it does not live under the writable preset root')
+    throw notWritable(preset.id, 'it does not live under the writable preset root')
   }
   await rm(dir, { recursive: true, force: true })
 }

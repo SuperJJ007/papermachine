@@ -1,0 +1,27 @@
+## Details column — artifact viewer
+- tablist:
+  - tab "Missing revision Close" [selected]:
+    - text: Missing revision
+    - button "Close":
+      - img
+  - tab "Artifact library Close":
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
+- navigation "Provenance":
+  - button "Missing revision"
+  - text: Provenance
+- tablist "Provenance":
+  - tab "Code"
+  - tab "Execution log" [selected]
+  - tab "Messages"
+  - tab "Environment"
+- paragraph: stdout 2 bytes, stderr 0 bytes
+- text: text
+- button "Copy"
+- code: revised run complete

@@ -1,0 +1,20 @@
+[
+  {
+    "home": "/private/tmp/p2-closeout-temp-z1l3z2xh",
+    "exitCode": 0,
+    "status": "NOT-RUN",
+    "reason": "set absolute non-temporary DSH_SCIENCE_RUNTIME_DSH_HOME and DSH_SCIENCE_RUNTIME_TEST_OWNED=1 for a test-owned Harness home"
+  },
+  {
+    "home": "/tmp/p2-closeout-temp-z1l3z2xh",
+    "exitCode": 0,
+    "status": "NOT-RUN",
+    "reason": "set absolute non-temporary DSH_SCIENCE_RUNTIME_DSH_HOME and DSH_SCIENCE_RUNTIME_TEST_OWNED=1 for a test-owned Harness home"
+  },
+  {
+    "home": "/var/folders/49/dnl__mlx7bv24krr3fhyhptm0000gn/T/p2-closeout-os-temp-u41vsoe6",
+    "exitCode": 0,
+    "status": "NOT-RUN",
+    "reason": "set absolute non-temporary DSH_SCIENCE_RUNTIME_DSH_HOME and DSH_SCIENCE_RUNTIME_TEST_OWNED=1 for a test-owned Harness home"
+  }
+]

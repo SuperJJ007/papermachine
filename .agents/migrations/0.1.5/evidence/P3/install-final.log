@@ -1,0 +1,14 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 17m ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: Done
+Done in 1.6s using pnpm v11.7.0

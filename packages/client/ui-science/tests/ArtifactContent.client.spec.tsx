@@ -327,3 +327,14 @@ describe('ArtifactContent: text content and human-edit ancestry', () => {
     expect(screen.getByRole('status').textContent).toBe('Showing first 100000 of 100001 characters.')
   })
 })
+
+it('offers a localized copy action for an inspected JSON value', async () => {
+  const props = baseProps()
+  props.chart = chart({ mediaType: 'application/json', logicalName: 'result.json' })
+  props.loadText.mockResolvedValue('{"answer":42}')
+  render(<ArtifactContent {...props} />)
+  const row = await screen.findByRole('treeitem')
+  fireEvent.mouseOver(row)
+  const copy = screen.getByRole('button', { name: 'Copy value' })
+  expect(copy.getAttribute('title')).toBe('Copy value')
+})

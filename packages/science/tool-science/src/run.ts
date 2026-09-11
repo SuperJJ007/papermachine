@@ -110,6 +110,7 @@ const runOutputSchema = {
     // empty capturedArtifacts array) whenever capture ran synchronously.
     capturedArtifacts: { type: 'array', items: capturedArtifactSchema },
     captureSkippedOversizedCount: { type: 'integer' },
+    captureFailure: { type: 'string' },
     captureTruncatedPerRun: { type: 'boolean' },
     captureTruncatedPerSession: { type: 'boolean' },
     // Undeclared `.png` paths this run wrote under SCIENCE_ARTIFACT_DIR but
@@ -141,7 +142,7 @@ export function requireScienceSession(exec: ToolExecution): Session {
  * @returns the latest request-header sequence, or `undefined` when none exists.
  */
 export function latestRequestHeaderSeq(session: Session): number | undefined {
-  return session.events.findLast(event => event.type === 'request/header')?.seq
+  return session.snapshotEvents().findLast(event => event.type === 'request/header')?.seq
 }
 
 /**
@@ -287,6 +288,7 @@ export async function runValueFromResult(
     ...terminal.failureMessage === undefined ? {} : { failureMessage: terminal.failureMessage },
     stdout: result.stdout,
     stderr: result.stderr,
+    ...result.captureFailure === undefined ? {} : { captureFailure: result.captureFailure },
     ...capture === undefined ? {} : {
       capturedArtifacts: await Promise.all(
         capture.captured.map(async artifact => capturedArtifactValue(artifact, await resolveStore(artifact))),
@@ -341,6 +343,11 @@ export function formatRunResult(value: ScienceRunValue, language: ScienceLanguag
     lines.push(`kernel restarted (${value.kernelRestartReason}): variables from earlier runs are gone`)
   }
   lines.push(header.join(' '))
+  if (value.captureFailure !== undefined) {
+    lines.push(value.captureFailure === 'invalid-logical-name'
+      ? `artifact capture failed: ${value.captureFailure}; interpreter status above is unchanged. Inspect get_science_state for committed artifacts; use relative names without traversal, control characters, or Windows-reserved punctuation.`
+      : `artifact capture failed: ${value.captureFailure}; interpreter status above is unchanged. Some artifacts may already be saved. Inspect get_science_state before retrying capture in a live session.`)
+  }
   if (value.failureCode !== undefined) lines.push(`failureCode: ${value.failureCode}`)
   if (value.failureMessage !== undefined) lines.push(`failureMessage: ${value.failureMessage}`)
   lines.push('--- stdout ---', value.stdout.text.length > 0 ? value.stdout.text : '(empty)')
@@ -457,7 +464,7 @@ export function applyRunTool(ctx: Context, language: ScienceLanguage, directEdit
       })
       const result = await handle.done
       const value = await runValueFromResult(result, resolveCapturedArtifactStoreFacts.bind(undefined, ctx, directEditLimit))
-      const projection = replayScience(session.events)
+      const projection = replayScience(session.snapshotEvents())
       /* v8 ignore next -- a run that just settled already required a bound mode; replay cannot be null here */
       const restartReason = projection === null ? undefined : kernelRestartReason(projection, result.terminal)
       return restartReason === undefined ? value : { ...value, kernelRestartReason: restartReason }

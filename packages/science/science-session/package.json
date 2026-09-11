@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-science-session",
   "description": "Required-on-read Science session events, strict replay, projection, and invariants",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -37,7 +37,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-util-values": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -57,6 +58,7 @@
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
     "@deepseek-ai/dsh-session-projection": "workspace:^"
   }
 }

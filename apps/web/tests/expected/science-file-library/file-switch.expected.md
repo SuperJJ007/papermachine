@@ -1,0 +1,29 @@
+- tablist:
+  - tab "Artifact library Close":
+    - button "Close":
+      - img
+  - tab "Files Close":
+    - text: Files
+    - button "Close":
+      - img
+  - tab "seed.csv Close":
+    - text: seed.csv
+    - button "Close":
+      - img
+  - tab "other.csv Close" [selected]:
+    - text: other.csv
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse right sidebar":
+    - img
+- text: {{cwd}}/other.csv
+- button "Open with": Plain text
+- button "Line wrap" [pressed]:
+  - img
+- button "Read the file again":
+  - img
+- text: label,score second-file,73

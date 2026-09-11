@@ -1,6 +1,6 @@
 /**
- * Build the SDK runtime executables and Python node carrier. The fixed
- * `@yao-pkg/pkg --sea` route, deploy flags, and artifact layout are owned by
+ * Build the dsh executables and development Node carrier for the Python runtime wheel. The fixed
+ * `@yao-pkg/pkg --sea` route and artifact layout are owned by
  * .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.
  * The staged closure is symlink-free, and whole-tree assets cover Cordis's
  * runtime imports that pkg cannot discover statically.
@@ -8,29 +8,28 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
-import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, join, resolve, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { load } from 'js-yaml'
 import { parseArgs } from 'node:util'
-import { resolveLinuxNodePtyAddon } from './build-exe-for-python-sdk-native-pty.ts'
+import { resolveLinuxNodePtyAddon, resolveWindowsNodePtyAddons } from './build-exe-for-python-sdk-native-pty.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
 /** The closure manifest whose dependencies define the executable. */
-const DEPLOY_ROOT_PACKAGE = 'dsh-jsonrpc-agent-pkg'
-/** The closed-runtime app entry inside the deployed closure. */
-const ENTRY_BIN = 'node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'
-const OUTPUT_BASENAME = 'dsh-jsonrpc-agent-pkg'
+const DEPLOY_ROOT_PACKAGE = 'dsh-python-runtime-closure'
+/** The sole executable entry inside the deployed closure. */
+const ENTRY_BIN = 'runtime-bootstrap.mjs'
+/** Python-visible executable basename. */
+const OUTPUT_BASENAME = 'deepseek-harness-sdk-runtime'
 /** Default Node major; SEA mode requires at least Node 22. */
 const DEFAULT_NODE_RANGE = 'node24'
-/** Pinned for reproducible builds. */
-const PKG_SPEC = '@yao-pkg/pkg@6.21.0'
 const OUT_DIR = 'dist-exe'
 /** Python package destination; created when absent. */
 const PYTHON_RUNTIME_DIR = 'python/sdk-runtime/src/deepseek_harness_runtime/runtime'
 /** The deployed closure doubles as the node-mode carrier. */
 const PYTHON_NODE_SUBDIR = 'node'
-/** Legacy deploy may hoist peer-specialized workspace packages back here. */
-const DEPLOY_SOURCE_NODE_MODULES = 'python/sdk-runtime/node_modules'
 /** Documentation excluded from the generated runtime directory. */
 const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
 
@@ -46,11 +45,23 @@ const ASSET_GLOBS = [
   'node_modules/**/*.mjs',
   'node_modules/**/package.json',
   'node_modules/**/*.json',
+  // Package-owned Markdown includes runtime skill instructions and badge content.
+  'node_modules/**/*.md',
+  'node_modules/**/*.dylib',
+  'node_modules/**/*.dll',
   'node_modules/**/*.node',
+  'node_modules/**/*.so',
+  'node_modules/**/*.so.*',
   'node_modules/**/*.wasm',
+  'node_modules/**/*.yaml',
+  'node_modules/**/*.yml',
+  // web-app builds this path dynamically, so pkg cannot discover the static frontend.
+  'node_modules/@deepseek-ai/dsh-web-frontend/dist/**/*',
+  // skill-badge resolves both Markdown and image resources through import.meta.url.
+  'node_modules/@deepseek-ai/dsh-skill-badge/assets/**/*',
 ]
 
-const PLATFORMS = ['linux', 'macos'] as const
+const PLATFORMS = ['linux', 'macos', 'win'] as const
 const ARCHES = ['x64', 'arm64'] as const
 type Platform = (typeof PLATFORMS)[number]
 type Arch = (typeof ARCHES)[number]
@@ -70,10 +81,7 @@ class Target {
   private constructor(
     /** pkg Node range (`node<major>`). */
     readonly nodeRange: string,
-    /**
-     * pkg platform tag. Windows is a documented non-goal
-     * (.agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md).
-     */
+    /** pkg platform tag. */
     readonly platform: Platform,
     /** pkg CPU tag. */
     readonly arch: Arch,
@@ -104,6 +112,9 @@ class Target {
     if (!isArch(arch)) {
       throw new Error(`build-exe-for-python-sdk: target ${JSON.stringify(spec)}: arch must be one of ${ARCHES.join(', ')}, got ${JSON.stringify(arch)}.`)
     }
+    if (platform === 'win' && arch !== 'x64') {
+      throw new Error(`build-exe-for-python-sdk: target ${JSON.stringify(spec)}: Windows supports x64 only.`)
+    }
     return new Target(nodeRange, platform, arch)
   }
 
@@ -112,13 +123,22 @@ class Target {
    * @returns the host target; throws on an unsupported host platform or arch.
    */
   static host(): Target {
-    const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : undefined
+    const platform = process.platform === 'darwin'
+      ? 'macos'
+      : process.platform === 'linux'
+        ? 'linux'
+        : process.platform === 'win32'
+          ? 'win'
+          : undefined
     if (platform === undefined) {
       throw new Error(`build-exe-for-python-sdk: unsupported host platform ${process.platform}; pass --targets explicitly.`)
     }
     const arch = process.arch === 'x64' || process.arch === 'arm64' ? process.arch : undefined
     if (arch === undefined) {
       throw new Error(`build-exe-for-python-sdk: unsupported host arch ${process.arch}; pass --targets explicitly.`)
+    }
+    if (platform === 'win' && arch !== 'x64') {
+      throw new Error('build-exe-for-python-sdk: Windows supports x64 only; use an x64 Node process.')
     }
     return new Target(DEFAULT_NODE_RANGE, platform, arch)
   }
@@ -187,20 +207,39 @@ class BuildCli {
     return [
       'Usage: pnpm exec tsx scripts/build-exe-for-python-sdk.ts [flags]',
       '',
-      '  --targets=<t1,t2,...>  pkg targets, e.g. node24-linux-x64,node24-linux-arm64,node24-macos-arm64.',
+      '  --targets=<t1,t2,...>  pkg targets, e.g. node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64,node24-win-x64.',
       '                         Default: the host platform only (on node24).',
       '  --skip-build           skip `pnpm run build` (lib/ artifacts must already exist).',
       '  --dry-run              print every command and config patch without executing.',
       '  --help                 print this help.',
       '',
-      `Build route: ${PKG_SPEC} --sea; see .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.`,
+      'Build route: @yao-pkg/pkg --sea (root devDependency, pnpm-patched); see .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.',
       `Stages the node carrier in ${PYTHON_RUNTIME_DIR}/${PYTHON_NODE_SUBDIR} and writes executables to ${OUT_DIR}/.`,
     ].join('\n')
   }
 }
 
-function pnpmBin(): string {
-  return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+function pnpmInvocation(args: string[]): [command: string, args: string[]] {
+  const entrypoint = process.env.npm_execpath?.trim()
+  if (entrypoint !== undefined && entrypoint !== '') {
+    const extension = extname(entrypoint).toLowerCase()
+    if (extension === '.js' || extension === '.cjs' || extension === '.mjs') {
+      return [process.execPath, [entrypoint, ...args]]
+    }
+    if (extension !== '.cmd') return [entrypoint, args]
+  }
+  const home = process.env.PNPM_HOME?.trim()
+  if (home !== undefined && home !== '') {
+    const packageBin = resolve(home, '..', 'pnpm', 'bin')
+    for (const filename of ['pnpm.mjs', 'pnpm.cjs']) {
+      const candidate = resolve(packageBin, filename)
+      if (existsSync(candidate)) return [process.execPath, [candidate, ...args]]
+    }
+  }
+  if (process.platform === 'win32') {
+    throw new Error('build-exe-for-python-sdk: pnpm must expose a JavaScript entrypoint through npm_execpath or PNPM_HOME on Windows.')
+  }
+  return ['pnpm', args]
 }
 
 /**
@@ -214,13 +253,78 @@ function formatCommand(command: string, args: string[]): string {
 }
 
 /**
+ * Deploy the locked production closure without installing into workspace packages.
+ * Missing or empty lockfiles fail before pnpm can fall back to legacy deployment.
+ * @param workspaceRoot - Repository containing the shared lockfile and runtime manifest.
+ * @param staging - Disposable destination for pnpm's standalone installation.
+ * @param runPnpm - Awaited pnpm invocation running from workspaceRoot; rejects on failure.
+ * @param dryRun - Print the invocation without creating the temporary configuration hook.
+ * @returns Completion after deployment and temporary-hook cleanup.
+ */
+export async function deployRuntimeClosure(
+  workspaceRoot: string,
+  staging: string,
+  runPnpm: (args: string[]) => Promise<void>,
+  dryRun = false,
+): Promise<void> {
+  const lockfile = load(await readFile(join(workspaceRoot, 'pnpm-lock.yaml'), 'utf8')) as {
+    lockfileVersion?: string | number
+    importers?: Record<string, unknown>
+  } | null
+  if (!lockfile?.lockfileVersion || !lockfile.importers?.['python/sdk-runtime']) {
+    throw new Error('build-exe-for-python-sdk: shared lockfile must contain python/sdk-runtime; legacy deploy is unsafe.')
+  }
+  const temporary = dryRun
+    ? join(tmpdir(), 'dsh-python-deploy-<temporary>')
+    : await mkdtemp(join(tmpdir(), 'dsh-python-deploy-'))
+  const hook = join(temporary, 'pnpmfile.mjs')
+  try {
+    if (!dryRun) await writeFile(hook, DEPLOY_CONFIG_HOOK)
+    await runPnpm([
+      '--filter', DEPLOY_ROOT_PACKAGE, 'deploy', '--prod',
+      '--config.shared-workspace-lockfile=true',
+      '--config.force-legacy-deploy=false',
+      '--config.inject-workspace-packages=true',
+      '--config.node-linker=hoisted',
+      '--config.global-pnpmfile=' + hook,
+      // Desktop-only patches are outside this production runtime closure.
+      '--config.allowUnusedPatches=true',
+      staging,
+    ])
+  } finally {
+    if (!dryRun) await rm(temporary, { recursive: true, force: true })
+  }
+}
+
+// Shared-lockfile deploy identifies local packages by file URL. Preserve each
+// reviewed allow/deny decision under that identity, without changing source config.
+const DEPLOY_CONFIG_HOOK = `
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+export const hooks = {
+  updateConfig(config) {
+    const allowBuilds = { ...config.allowBuilds }
+    for (const [selector, allowed] of Object.entries(allowBuilds)) {
+      const index = selector.indexOf('@file:')
+      if (index < 0) continue
+      const directory = selector.slice(index + 6)
+      if (directory.startsWith('//')) continue
+      const name = selector.slice(0, index)
+      const url = pathToFileURL(resolve(config.workspaceDir, directory)).href
+      allowBuilds[name + '@' + url] = allowed
+    }
+    return { ...config, allowBuilds }
+  },
+}
+`
+
+/**
  * Sequential build pipeline. Subprocesses inherit stdio and errors include
  * the command; dry runs print commands and filesystem changes.
  */
 class SingleExeBuild {
   /**
-   * The cleared deploy target, pkg input, and Python node-mode carrier. The
-   * checked-in default `cordis.yml` remains in its parent directory.
+   * The cleared deploy target, pkg input, and Python node-mode carrier.
    */
   readonly staging = resolve(root, PYTHON_RUNTIME_DIR, PYTHON_NODE_SUBDIR)
   private readonly outDir = resolve(root, OUT_DIR)
@@ -229,7 +333,7 @@ class SingleExeBuild {
 
   /** Verify the closure before compiling or packaging. */
   async verifyClosure(): Promise<void> {
-    await this.run('runtime dependency closure', pnpmBin(), ['run', 'verify-runtime-closure'])
+    await this.runPnpm('runtime dependency closure', ['run', 'verify-runtime-closure'])
   }
 
   /** Build all package artifacts unless `--skip-build` was passed. */
@@ -238,7 +342,7 @@ class SingleExeBuild {
       console.log('build-exe-for-python-sdk: skipping pnpm run build (--skip-build)')
       return
     }
-    await this.run('build', pnpmBin(), ['run', 'build'])
+    await this.runPnpm('build', ['run', 'build'])
   }
 
   /** Clear and deploy the runtime closure into the node carrier. */
@@ -248,70 +352,12 @@ class SingleExeBuild {
     }
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${this.staging}`)
     else await rm(this.staging, { recursive: true, force: true })
-    await this.run('deploy', pnpmBin(), [
-      '--filter',
-      DEPLOY_ROOT_PACKAGE,
-      'deploy',
-      '--legacy',
-      '--prod',
-      // Production closures omit patched development tools; matching runtime patches still apply and must succeed.
-      '--config.allow-unused-patches=true',
-      '--config.node-linker=hoisted',
-      '--config.auto-install-peers=false',
-      '--config.link-workspace-packages=true',
-      this.staging,
-    ])
-    await this.restoreLegacyHoists()
+    await deployRuntimeClosure(root, this.staging, args => this.runPnpm('deploy', args), this.cli.dryRun)
     await this.materializeStagedLinks()
     if (this.cli.dryRun) {
       for (const name of DEPLOY_ONLY_DOCS) console.log(`build-exe-for-python-sdk: [dry-run] rm -f ${join(this.staging, name)}`)
     } else {
       await Promise.all(DEPLOY_ONLY_DOCS.map(name => rm(join(this.staging, name), { force: true })))
-    }
-  }
-
-  /**
-   * Restore direct packages that pnpm's legacy hoister places beside the deploy
-   * source instead of in the target. The runtime manifest supplies every peer,
-   * so package-local node_modules trees are omitted to preserve one flat Cordis
-   * instance and a symlink-free packaged payload.
-   */
-  private async restoreLegacyHoists(): Promise<void> {
-    if (this.cli.dryRun) {
-      console.log('build-exe-for-python-sdk: [dry-run] restore direct dependencies omitted by legacy deploy')
-      return
-    }
-    const manifestPath = join(this.staging, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
-      dependencies?: Record<string, string>
-    }
-    const sourceNodeModules = resolve(root, DEPLOY_SOURCE_NODE_MODULES)
-    const restored: string[] = []
-    for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
-      const destination = join(this.staging, 'node_modules', dependency)
-      if (existsSync(destination)) continue
-      const source = join(sourceNodeModules, dependency)
-      if (!existsSync(source)) {
-        throw new Error(
-          `build-exe-for-python-sdk: deployed dependency ${dependency} is absent from both ${destination} and ${source}.`,
-        )
-      }
-      await mkdir(dirname(destination), { recursive: true })
-      const nestedNodeModules = join(source, 'node_modules')
-      await cp(source, destination, {
-        recursive: true,
-        dereference: true,
-        filter: path => path !== nestedNodeModules && !path.startsWith(nestedNodeModules + sep),
-      })
-      restored.push(dependency)
-    }
-    const stillMissing = Object.keys(manifest.dependencies ?? {})
-      .filter(dependency => !existsSync(join(this.staging, 'node_modules', dependency)))
-    if (stillMissing.length > 0) {
-      throw new Error(`build-exe-for-python-sdk: staged dependencies remain missing: ${stillMissing.join(', ')}.`)
-    }
-    if (restored.length > 0) {
-      console.log(`build-exe-for-python-sdk: restored legacy deploy hoists: ${restored.join(', ')}`)
     }
   }
 
@@ -370,7 +416,7 @@ class SingleExeBuild {
       throw new Error(`build-exe-for-python-sdk: ${manifestPath} missing — pnpm deploy did not produce a staged package.`)
     }
     if (!existsSync(join(this.staging, ENTRY_BIN))) {
-      throw new Error(`build-exe-for-python-sdk: ${join(this.staging, ENTRY_BIN)} missing — run without --skip-build so lib/ artifacts exist.`)
+      throw new Error(`build-exe-for-python-sdk: staged bootstrap ${join(this.staging, ENTRY_BIN)} is missing.`)
     }
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, ...patch }, null, 2)}\n`)
@@ -383,12 +429,13 @@ class SingleExeBuild {
    * @returns the executable and ripgrep sidecar paths, plus the macOS spawn helper path when required.
    */
   async pack(target: Target): Promise<string[]> {
-    const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
+    const productBase = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
+    const product = target.platform === 'win' ? `${productBase}.exe` : productBase
     await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
-    await this.run(`pkg ${target.spec}`, pnpmBin(), [
-      'dlx',
-      PKG_SPEC,
+    await this.runPnpm(`pkg ${target.spec}`, [
+      'exec',
+      'pkg',
       this.staging,
       '--sea',
       '--targets',
@@ -414,16 +461,19 @@ class SingleExeBuild {
 
   /** Copy the target ripgrep binary beside the executable so Node can spawn it outside pkg's virtual filesystem. */
   private async copyRipgrepSidecar(target: Target, product: string): Promise<string> {
-    const platform = target.platform === 'macos' ? 'darwin' : target.platform
+    const platform = target.platform === 'macos' ? 'darwin' : target.platform === 'win' ? 'win32' : target.platform
+    const executable = target.platform === 'win' ? 'rg.exe' : 'rg'
     const source = join(
       this.staging,
       'node_modules',
       '@vscode',
       `ripgrep-${platform}-${target.arch}`,
       'bin',
-      'rg',
+      executable,
     )
-    const destination = `${product}-rg`
+    const destination = target.platform === 'win'
+      ? `${product.slice(0, -'.exe'.length)}-rg.exe`
+      : `${product}-rg`
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)
       return destination
@@ -445,7 +495,6 @@ class SingleExeBuild {
     const stagedBuild = join(this.staging, 'node_modules', 'node-pty', 'build')
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${stagedBuild}`)
     else await rm(stagedBuild, { recursive: true, force: true })
-    if (target.platform !== 'linux') return
     const packageDirectory = join(
       root,
       'packages',
@@ -454,6 +503,21 @@ class SingleExeBuild {
       'node_modules',
       'node-pty',
     )
+    if (target.platform === 'win') {
+      if (target.arch !== 'x64') {
+        throw new Error('build-exe-for-python-sdk: Windows supports x64 only.')
+      }
+      const host = Target.host()
+      if (target.platform !== host.platform || target.arch !== host.arch) {
+        throw new Error(
+          'build-exe-for-python-sdk: build the Windows runtime under x64 Node on its target host; '
+          + `target ${target.platform}-${target.arch} does not match host ${host.platform}-${host.arch}.`,
+        )
+      }
+      resolveWindowsNodePtyAddons(join(this.staging, 'node_modules', 'node-pty'), target.arch)
+      return
+    }
+    if (target.platform !== 'linux') return
     const destination = join(stagedBuild, 'Release', 'pty.node')
     const source = resolveLinuxNodePtyAddon(packageDirectory, target.arch)
     if (this.cli.dryRun) {
@@ -543,6 +607,13 @@ class SingleExeBuild {
       })
     })
   }
+
+  /** Run pnpm through its JavaScript entrypoint when the caller supplies one. */
+  private async runPnpm(label: string, args: string[]): Promise<void> {
+    // Preflight run scripts and pkg must never refresh source dependencies.
+    const [command, invocationArgs] = pnpmInvocation(['--config.verifyDepsBeforeRun=false', ...args])
+    await this.run(label, command, invocationArgs)
+  }
 }
 
 async function main(): Promise<void> {
@@ -560,4 +631,4 @@ async function main(): Promise<void> {
   await pipeline.syncToPythonRuntime(products)
 }
 
-await main()
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) await main()

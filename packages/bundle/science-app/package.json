@@ -1,0 +1,69 @@
+{
+  "name": "@deepseek-ai/dsh-science-app",
+  "description": "PaperMachine product composition over the dsh Web bundle",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/bundle/science-app"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "presets",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent-presets": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-brand-papermachine": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-science": "workspace:^",
+    "@deepseek-ai/dsh-science-session": "workspace:^",
+    "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
+    "@deepseek-ai/dsh-science-runtime": "workspace:^",
+    "@deepseek-ai/dsh-tool-science": "workspace:^",
+    "@deepseek-ai/dsh-session-attachment-index": "workspace:^",
+    "@deepseek-ai/dsh-persona": "workspace:^",
+    "@deepseek-ai/dsh-agent-instructions": "workspace:^",
+    "@deepseek-ai/dsh-tool-fs": "workspace:^",
+    "@deepseek-ai/dsh-tool-fs-search": "workspace:^",
+    "@deepseek-ai/dsh-plan-mode": "workspace:^",
+    "@deepseek-ai/dsh-compaction-basic": "workspace:^",
+    "@deepseek-ai/dsh-command-compact": "workspace:^",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:^",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:^",
+    "@deepseek-ai/dsh-tool-skill": "workspace:^",
+    "@deepseek-ai/dsh-tool-web": "workspace:^",
+    "@deepseek-ai/dsh-tool-subagent-control": "workspace:^",
+    "@deepseek-ai/dsh-tool-subagent": "workspace:^",
+    "@deepseek-ai/dsh-tool-ask-user": "workspace:^",
+    "@deepseek-ai/dsh-tool-todo": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^"
+  }
+}

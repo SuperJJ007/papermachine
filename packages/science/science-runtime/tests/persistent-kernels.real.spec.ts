@@ -94,14 +94,14 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
         const initial = await runtime.startRun({ session, language, code, rasterArtifacts: ['first.png'],
           ...authorizeRun(session, language, 'first'), signal })
         expect((await initial.done).terminal.status).toBe('success')
-        const artifact = replayScience(session.events)!.artifacts[0]!
+        const artifact = replayScience(session.snapshotEvents())!.artifacts[0]!
         const later = await runtime.startRun({ session, language,
           code: `${code.replaceAll('first.png', 'second.png')}\n${language === 'python' ? 'value = 99' : 'value <- 99'}`,
           rasterArtifacts: ['second.png'],
           ...authorizeRun(session, language, 'later'), signal })
         const epoch = (await later.done).terminal.kernelEpoch
         await writeFile(marker, '')
-        const events = session.events.length
+        const events = session.snapshotEvents().length
         const controller = new AbortController()
         const preview = runtime.previewChartEdit({ session, artifactId: artifact.artifactId, version: artifact.version,
           ops: [{ op: 'toggle_grid', axes: null, visible: false }], signal: controller.signal })
@@ -115,7 +115,7 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
           controller.abort()
         }
         await assertion
-        expect(session.events).toHaveLength(events)
+        expect(session.snapshotEvents()).toHaveLength(events)
         const resumed = await runtime.startRun({ session, language, code: 'print(value)',
           ...authorizeRun(session, language, 'resumed'), signal })
         const result = await resumed.done
@@ -146,7 +146,7 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
       await run((language === 'python'
         ? "import builtins, os\nfrom pathlib import Path\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nloss_value = 1\nstate = globals().get('state', {'values': []})\nstate['values'].append(1)\nbuiltins.science_probe = 1\nos.environ['SCIENCE_PROBE'] = '1'\nPath(os.environ['SCIENCE_STATE_DIR'], 'value.txt').write_text('1')\n"
         : "library(ggplot2)\nloss_value <- 1\nif (!exists('state', inherits=FALSE)) state <- new.env()\nstate$value <- 1\noptions(science.probe=1)\nSys.setenv(SCIENCE_PROBE='1')\nwriteLines('1', file.path(Sys.getenv('SCIENCE_STATE_DIR'), 'value.txt'))\n") + plot, ['first.png'])
-      const artifact = replayScience(session.events)!.artifacts.find(value => value.logicalName === 'first.png')!
+      const artifact = replayScience(session.snapshotEvents())!.artifacts.find(value => value.logicalName === 'first.png')!
       expect(await chartOf(ctx, artifact)).toBeDefined()
       await run((language === 'python'
         ? "loss_value = 99\nstate['values'][:] = [99]\nbuiltins.science_probe = 99\nos.environ['SCIENCE_PROBE'] = '99'\nPath(os.environ['SCIENCE_STATE_DIR'], 'value.txt').write_text('99')\n"
@@ -155,11 +155,11 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
         ? "print(loss_value, state['values'], builtins.science_probe, os.environ['SCIENCE_PROBE'], Path(os.environ['SCIENCE_STATE_DIR'], 'value.txt').read_text())"
         : "cat(loss_value, state$value, getOption('science.probe'), Sys.getenv('SCIENCE_PROBE'), readLines(file.path(Sys.getenv('SCIENCE_STATE_DIR'), 'value.txt')))"
       const before = await run(inspect)
-      const events = session.events.length
+      const events = session.snapshotEvents().length
       const preview = await runtime.previewChartEdit({ session, artifactId: artifact.artifactId, version: artifact.version,
         ops: [{ op: 'set_title', axes: null, text: 'Preview only' }], signal })
       expect(preview.failedOps).toEqual([])
-      expect(session.events).toHaveLength(events)
+      expect(session.snapshotEvents()).toHaveLength(events)
       const after = await run(inspect)
       expect(after.stdout.text).toBe(before.stdout.text)
       expect(after.terminal.kernelEpoch).toBe(before.terminal.kernelEpoch)
@@ -199,7 +199,7 @@ describe.skipIf(!enabled)('real persistent Science kernels', () => {
           ...authorizeRun(session, language, `after-cancel-${language}`), signal })
         expect((await next.done).stdout.text).toContain('99')
       }
-      expect(replayScience(session.events)?.kernels.filter(kernel => kernel.state === 'started')).toHaveLength(2)
+      expect(replayScience(session.snapshotEvents())?.kernels.filter(kernel => kernel.state === 'started')).toHaveLength(2)
     }
   }, 120_000)
 })

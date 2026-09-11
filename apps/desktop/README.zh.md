@@ -1,95 +1,217 @@
-# dsh-desktop
+# PaperMachine 桌面端
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-desktop` 是 Science 桌面产品的 Electron carrier，交付 macOS（arm64、x64）与 Windows（x64）安装包。它把现有 Web profile 作为独立 Host process 启动，把 `~/.papermachine` 指定为 Harness home（`DSH_HOME`），并在受限 BrowserWindow 内加载 Host 通过 OS 分配的 loopback URL。Harness home 由 `src/harness-home.ts` 解析，位于 OS user home directory 之下，刻意与 Electron 自身的 `userData` directory 相互独立（后者继续只保存 Electron 的 cookies、caches 等状态）：R 拒绝在其 scratch `TMPDIR` 中出现任何 ASCII space，而 macOS 的 `userData` 路径（`~/Library/Application Support/PaperMachine`）恰好含有一个空格，因此若 OS user home 本身的路径含有空格，解析会转而 fail loud。
+桌面应用是包裹 dsh Web UI 的 Electron 壳。它不打开监听端口：内置的上游 Node.js 子进程启动已安装的 dsh 项目，带版本的分帧字节管道在没有外层 Base64 信封的情况下承载 Fetch 请求与流式响应，Node IPC 承载生命周期控制，`dsh-app://` 则提供与后端版本匹配的客户端资源。
 
-全新的 home 会先打开 desktop onboarding，再进入 workspace。PaperMachine 完全拥有自己的 Python 与 R environment：onboarding 安装随应用发布的 `general` environment（或用户在高级编辑器中自定的 package 清单），绝不绑定机器上已有的 conda-family environment。安装完成后写入 `<dshHome>/environment-binding.json`，再打开 workspace；生成的 Host overlay 把已配备的 prefix 绑定到固定的 `science` Runtime profile，把随应用打包的 micromamba 可执行文件与 `install_science_packages` 所用的有序安装 channel 交给 Host，以 Science 作为 session default，移除通用 product-mode picker，禁用共享的 module-reload `hmr` 行，并把侧边栏/hero 的品牌 slot 从官方 occupant 换成 PaperMachine occupant。仅在 `win32-x64` 上，同一个 overlay 还会把 `science-runtime` 的 `minimumEnforcement` 降到 `partial`（`src/runtime-overlay.ts` 的 `renderDesktopRuntimeOverlay`）：随应用打包的 Windows 沙箱后端 [`dsh-sandbox-windows-acl`](../../packages/sandbox/sandbox-windows-acl/README.zh.md)（见其 “Verified boundaries” 一节）无法达到完全强制；每个 `darwin-*` 目标都省略该字段，保留 Config 默认值（`full`）。这个接受为何是部署层面的取舍而非代码缺陷，见 [minimum-sandbox-enforcement Agent Note](../../.agents/notes/implemented/architecture/2026-09-05-science-runtime-minimum-sandbox-enforcement.zh.md)。随后既有的 Models onboarding 继续作为唯一 API-key 写入方，并通过 credentials service 完成写入。详见下文”Onboarding 与 environment binding”。
+## 关键技术决策
+
+| 决策 | 原因 | 直接结果 |
+|---|---|---|
+| 发布身份 | 桌面壳 API、Web 客户端、后端与插件依赖图作为一个组合完成验证；独立版本会产生未经验证的组合，并让更新可用性含糊不清。 | Electron 与 `@deepseek-ai/dsh` 始终使用同一精确版本。即使桌面壳代码不变，升级 dsh 也必须发布新 Desktop 版本。 |
+| 运行时 | Electron 的 Node.js 带有 Electron 补丁、fuse、ABI 与生命周期约束，而系统运行时和用户包管理器状态不可控。 | dsh 通过内置的上游 Node.js 运行，所有包操作都使用内置 pnpm。Electron 的 Node.js、系统 Node.js、系统 pnpm 与用户的包管理器配置都不进入执行路径。 |
+| 包来源 | 必须能在发布到 npm 之前从同一次源码构建打包精确的 dsh，并支持离线安装；插件则需要保留为用户选择的普通 npm 包。 | 已签名应用携带本地打包的第一方 dsh 包与离线 seed store。桌面插件仍是从固定 Desktop registry 解析的普通 npm 依赖。 |
+| Seed 传输 | Apple 公证会检查归档内的代码；把 pnpm store 的每个文件分别放入应用，还会让应用签名记录数万个缓存条目，而单个压缩归档会放大小幅包变更。 | macOS 打包先签署每个 Mach-O CAS 对象、重写其 pnpm 哈希并再次证明离线安装，再把 store 文件分配到 16 个确定性的未压缩 tar 分片。外层安装包负责压缩，差分更新可以复用未变化的分片。 |
+| 状态归属 | 共享可执行依赖图会让 CLI 与 Desktop 相互改变 dsh、Cordis、插件或原生模块版本，而两个桌面进程还可能争用同一个 profile。 | Electron 在访问任何 profile 前获取进程生命周期单实例锁，并独占 `$DSH_HOME/profiles/desktop` 及其包管理器状态。PaperMachine CLI 与 Desktop 共享 PaperMachine 主目录下受支持的产品数据，但绝不共享可执行包、插件激活、锁文件或 `node_modules`。 |
+| 通信 | 监听 Web 服务会引入端口归属、认证、CORS 与暴露风险；Electron 与上游 Node.js 之间也需要明确的跨进程协议。 | 应用不打开 Web 端口。`dsh-app://` 承载 Web 资源和 Fetch 流量；分帧字节管道以背压传输有界请求与响应分块，Node IPC 只承载子进程生命周期控制。 |
+| 激活 | 依赖解析、生命周期脚本、原生模块与插件启动都可能失败，目录替换期间进程也可能中断。 | 发布与插件变更先安装到 staging，并启动完整后端执行健康检查；只有成功后才替换活跃 profile，中断替换由事务日志和一个 rollback profile 恢复。 |
+| 更新 | 桌面壳与 dsh 独立更新会重新产生版本分裂，而桌面壳未变化的数据块不应强制完整传输。 | Electron 壳、匹配的 dsh seed、Node.js 与 pnpm 组成一个已签名更新单元。平台更新产物可以复用未变化的数据块，但运行时版本选择绝不脱离 Desktop 发布。 |
+
+[Electron 打包与更新 Agent Note](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.zh.md)记录了这些决策背后的理由、替代方案、安全约束和发布验证要求。
+
+## 安装归属
+
+PaperMachine 依次使用 `PAPERMACHINE_HOME`、`~/.papermachine-home` 中保存的绝对路径或 `~/.papermachine` 作为数据根目录。它忽略继承的 `DSH_HOME`，并拒绝与官方 `~/.dsh` 重叠的路径（包括符号链接别名）。Electron 在获取单实例锁或发出 `ready` 事件前，将 `userData` 和 `sessionData` 均设为 `<home>/desktop/electron-user-data`。活动及暂存 Host 均通过 `PAPERMACHINE_HOME` 和 `DSH_HOME` 接收同一已解析根目录；后者是下文使用的 Harness 内部路径。内置 profile 包含本地第一方包集合中的 `science-app`。
+
+Electron 拥有保留 profile `$DSH_HOME/profiles/desktop`。其 manifest 通过 `dsh.profile.bundles` 列出内置与已安装插件 bundle，`node_modules` 则同时包含精确版本的 `@deepseek-ai/dsh`、与之匹配的私有 `@deepseek-ai/dsh-desktop-host` 和所有桌面插件。把 Electron 专用进程入口与 overlay 放入私有应用包，可以避免 Desktop 实现成为公共 CLI 包的一部分。CLI 不能启动或修改该 profile。Electron 始终调用自身内置的 Node.js 与 pnpm，并把 store 固定在 `$DSH_HOME/desktop/pnpm/store`；它绝不使用系统 pnpm 或调用方的 npm/pnpm 配置。
+
+dsh 主渲染进程只获得桌面协议标记。独立插件窗口获得结构化的列出、安装、移除、更新和更新检查操作；两个渲染进程都拿不到文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
+
+Electron 根据应用 locale 选择类型化的中英文字典，并以英文作为 fallback。菜单、原生对话框与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
+
+### Seed 安装
+
+安装包内的 seed 是安装工具包，不是可以直接运行的 `node_modules` 目录。打包过程会生成锁文件，在禁用生命周期脚本的情况下在线物化生产依赖图，删除 `node_modules` 以及所有临时 pnpm cache、config 和 state 目录，然后只使用最终 store 完成一次完整离线安装，并验证私有 Desktop Host 的入口与 overlay 均存在。每次离线安装还必须使用内置 Node.js 在隔离临时主目录中启动完整 Host 与客户端插件组合，核对发布版本并等待退出；即使 pnpm 将依赖视为可选项，缺少运行时依赖也会使制备失败。macOS 构建随后从 pnpm 内容寻址 store staging 每个 Mach-O 对象，最多并发四个 Developer ID 签名进程，并且只在所有签名成功后才更新受影响的 SHA-512 索引记录。再一次离线安装会在分片前证明重写后的 store；准备过程随后解包最终归档，并验证每个内嵌签名。签名 seed 保留发布身份、本地第一方 tarball 及其描述文件、项目元数据、锁文件、完整性清单，以及在用户机器上重复该安装所需的 pnpm store 内容。
+
+| Seed 内容 | 可写目标或用途 |
+|---|---|
+| `integrity.json` 与 `desktop-packages.json` | 在修改包状态前验证清单记录的每个 seed 文件、本地 tarball 哈希以及绑定的 dsh 与 Desktop Host 版本。 |
+| `store-archives.json` 与 `store-archives/*.tar` | 验证确定性的未压缩分片，把它们解包到唯一的 Desktop staging 目录，替换匹配的不可变 store 文件，并以事务方式把 pnpm 的版本化 SQLite 包索引合并进 `$DSH_HOME/desktop/pnpm/store`，且不移除已经为 Desktop 插件下载的包。 |
+| 项目元数据与 `desktop-packages/` | 复制到唯一的 `$DSH_HOME/desktop/staging/<transaction-id>/profile` 项目。 |
+| 锁文件与本地包映射 | 驱动内置 pnpm 完成安装，且不会从 npm 解析已打包的核心包名。 |
+
+启动过程把 seed 安装或校准为一个串行事务：
+
+1. 恢复中断的激活事务日志，验证完整 seed 清单与本地包集，并要求 seed 版本等于 Electron 应用版本。
+2. 如果活跃 profile 已包含该发布及匹配的 dsh 与 Desktop Host 版本，则确认其中完整本地包集与 seed 一致且每个已安装包版本匹配后才直接复用。
+3. 否则验证每个归档条目，把全部 store 分片解包到 Desktop 拥有的临时 staging 目录，将包文件与 SQLite 包索引记录合并进私有 store，再创建 staging profile，并通过内置 Node.js 与 pnpm 执行 `pnpm install --offline --frozen-lockfile --trust-lockfile`。Seed 记录替换匹配的索引键，插件专属记录继续保留。
+4. Electron 升级时，从旧活跃 profile 读取每个插件的名称和精确版本，再通过现有 Desktop pnpm 状态以 `--offline` 把这些版本加入 staging。首次安装不执行插件恢复。
+5. 停止活跃后端，启动并停止完整的 staging 后端执行健康检查，再在激活前重新启动活跃后端。这种串行方式避免两个桌面后端共享 `$DSH_HOME`；安装错误或插件不兼容会删除 staging，并保持活跃 profile 不变。
+6. 在每次目录移动前先持久化下一个激活阶段，把活跃 profile 移到 `$DSH_HOME/desktop/rollback/profile`，再把 staging 移到 `$DSH_HOME/profiles/desktop`。恢复过程同时检查日志与真实的 profile、rollback 和 staging 目录，因此在任一个写入与移动间隙中断后仍会恢复或保留一个完整 profile。
+
+GUI 插件修改会在把 registry 包安装到共享 Desktop pnpm store 后，使用相同的 staging、健康检查、激活与 rollback 路径。
+
+进程生命周期 Electron 锁是桌面端的主要 owner。事务锁用于纵深防御：准备本地状态时记录 Electron，在 pnpm worker 仍可能写入时记录该 worker，worker 退出后再把 owner 交还 Electron。后续进程不会把仍然存活的孤儿 worker 误判为陈旧事务。
+
+## 科学环境与恢复
+
+产品版本由 [product.ts](src/product.ts) 的 `PAPER_MACHINE_VERSION` 定义；内部 Electron 包、dsh 包与 seed 保持 harness 发布版本。关于页、首次设置页和安装包文件名使用产品版本，应用仍作为一个经过验证的壳、Host 与客户端组合运行。
+
+PaperMachine 在创建 Electron 浏览器数据、取得单实例锁和解析桌面安装目录前解析规范化数据主目录。路径不可包含 ASCII 空格，因为 R 的临时目录不支持空格。壳允许选择新位置或重置位置指针；确认对话框明确说明现有数据保留原处，新位置需重新安装运行时和环境。应用不移动 Session 文件。共享主目录选择与官方 DSH 隔离遵循 [home-paths 解析器](../../packages/util/home-paths/README.zh.md)。
+
+首次运行时，隔离的设置页在 seed 解包和软件包安装前显示。主进程验证按 locale 默认选择的来源及可选自定义软件包清单。用户确认安装后，应用准备离线运行时，供应并验证 Conda 环境，写入持久绑定，再启动工作区。取消会等待安装器进程树退出；安装失败后设置页仍可重试。更改环境会在供应修改已有 prefix 前停止 Host。软件包事务、环境变更、位置变更和退出不能重叠。
+
+主进程在每个 staging 或活跃 profile 的 Host 启动前重写机器专属 Science 配置，产品组合保留在 Science bundle 中。插件 staging 复制 `cordis.patch.yml`；发布健康检查与激活会重新生成 prefix、安装来源、超时和内置 skills 路径。协调过程比较完整本地软件包描述文件并检查每个已安装包版本，因此缺失客户端包或同版本包集变化会触发离线修复。Session 兼容性由持久化读取器负责，桌面修复不重写 Session 文件。
+
+设置页和启动恢复页作为打包资源通过 `dsh-app://shell/` 提供，各使用独立 sandboxed preload。它们的 IPC 仅接受所属窗口主 frame 的精确页面，工作区只获得桌面协议标记。启动失败可更改安装位置、重启或退出；Host 意外退出会返回设置页。Electron 浏览器数据保存在所选主目录，因此稳定的 `dsh-app://app` origin 可跨启动保留客户端状态。
+
+在 POSIX 系统上，内置 Node Host 独占进程组。独立的内置 Node watchdog 在 Electron 消失后回收该进程组；正常退出等待 Host 后代与 watchdog 结束。Host 字节管道流独占其文件描述符；关闭时先排空响应，再等待流的 close 事件。watchdog 不删除软件包事务锁，锁中记录的 pnpm worker 在退出前仍是有效所有者。Host stderr 在持久化前脱敏，按 `resources/host.json` 限制大小和轮转，窗口显示前读取主题偏好。
 
 ## 开发
 
-先构建仓库 Web artifacts，再运行：
+`dev:desktop` 选择 `papermachine` 客户端构建配置并构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不下载安装包内的 Node.js，也不从 npm 解析 dsh：
 
 ```sh
-pnpm --filter @deepseek-ai/dsh-desktop dev
+pnpm run dev:desktop
 ```
 
-development 需要当前机器对应的 pinned micromamba asset：
+开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/home/desktop/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `PAPERMACHINE_HOME` 会替换开发主目录及其浏览器数据目录；开发启动忽略继承的 `DSH_HOME`。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
+
+运行 `pnpm run build --profile papermachine` 和 `pnpm run build:desktop` 后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
 ```sh
-pnpm --filter @deepseek-ai/dsh-desktop fetch:micromamba darwin-arm64
+pnpm run start:desktop
 ```
 
-Intel Mac 使用 `darwin-x64`，Windows 使用 `win32-x64`；`DESKTOP_PLATFORMS`（`src/environment-declaration.ts`）是这份清单，脚本拒绝清单之外的 target。只有下载内容的 SHA-256 digest 与 `resources/micromamba.json` 一致时才会被接纳；Windows target 落盘为 `micromamba.exe`。`fetch:micromamba win32-x64` 还会额外下载 conda-forge 的 `vc14_runtime` 包，把它的 11 个根目录 DLL 落到 `micromamba.exe` 旁边：随包的 `micromamba.exe` 动态链接 MSVC C/C++ 运行库，裸机的 `System32` 里没有这些 DLL，此前也没有任何 Windows DLL 搜索顺序会查到的地方带着它们——见[随包本地 CRT 的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.zh.md)。
+两种启动模式都要求完整构建记录：PaperMachine 配置、`PaperMachine` 文档标题、当前提交与内部包版本，以及匹配的客户端产物摘要。`--skip-build` 在资源准备或 Electron 启动前拒绝官方、缺失或后续被修改的客户端产物。该配置启用 PaperMachine 侧栏和首页品牌组件；构建元数据只出现在默认品牌回退内容中。若共享客户端输出被其他配置重建，Desktop 再次启动前必须重建 PaperMachine 产物。
 
-carrier 不会打开 system browser。外部 HTTPS links 交给操作系统，而 active Host origin 之外的其他 navigation 一律拒绝。Host 意外退出时 Harness home 保持不变，页面替换为 restart 操作。
+Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop Host 包，并禁用桌面包修改；只有该模式明确链接的一次性 profile 可以从自身目录外解析 bundle。需要验证内置 Node.js、内置 pnpm、发布 seed、插件安装、staging 和 rollback 时，应运行未封装安装器的应用目录。
 
-## 进程生命周期
+## 打包
 
-Host 拥有自己的 POSIX 进程组。Electron 正常退出时会发送 `SIGTERM`，使 Host 得以 dispose（资源释放）Cordis 及其子进程树，随后在限定宽限期后升级为 `SIGKILL`。一个同级的纯 Node 看门狗进程观察 Electron，并在 Electron 被强制终止时停止该 Host 进程组。
+正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标默认使用现有 PaperMachine 应用 ID `com.papermachine.desktop`；可通过 `PAPERMACHINE_DESKTOP_APP_ID` 显式指定反向域名形式的覆盖值。升级时应保持同一 ID。应用名称为 `PaperMachine`，安装包名称以 `papermachine-` 开头。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据。App Store Connect API Key 方式使用以下变量：
 
-## Host 诊断日志
+```sh
+export PAPERMACHINE_DESKTOP_APP_ID='com.papermachine.desktop'
+export DSH_DESKTOP_MACOS_SIGNING_IDENTITY='<certificate name without the Developer ID Application prefix>'
+export DSH_DESKTOP_MACOS_TEAM_ID='<10-character Apple Team ID>'
+export APPLE_API_KEY='<absolute path to the .p8 file>'
+export APPLE_API_KEY_ID='<App Store Connect API Key ID>'
+export APPLE_API_ISSUER='<App Store Connect issuer UUID>'
+```
 
-Electron 会把 Host 的 stderr 持久化到 `<dshHome>/logs/host.log`；Host 输出绝不会进入 renderer。随应用发布的 `resources/host.json` 使用 schema version 1，把 active file 限定为 5 MiB（`logMaxBytes`），并保留 2 个轮转文件（`logMaxRotatedFiles: 2`）。两个上限都是严格的 safe integer（`logMaxBytes` 为 1 KiB 至 50 MiB，保留轮转数为 1 至 20）；配置缺失、不可读、格式错误或带有多余字段都会使启动失败。任何一行写入磁盘前，writer 会替换 Host environment 中凭据类名称对应的精确值，以及常见的 bearer、API key、authorization、credential、password、secret、token 与 `sk-…` 形式。日志目录与文件会强制设为 `0700` 与 `0600` mode；非普通文件与 symlink 会被拒绝；按发布配置，轮转最多保留 `host.log`、`host.log.1` 与 `host.log.2`。单行若大于 active-file 上限，会替换成固定的省略标记，而不会保留无界 buffer 或写出凭据的一部分。
+无需提前执行 `prepare:desktop`：
 
-## Host 端口
+```sh
+pnpm run package:desktop
+```
 
-Host 会在它上一次成功绑定的端口上启动——该端口记录在 `<dshHome>/host-port.json`（`src/host-port.ts`）——而不是每次都请求一个全新的 OS 分配端口。浏览器端状态以 origin 为 key，而 OS 分配端口每次启动都会改变 origin，因而会悄悄丢弃客户端此前写入 `localStorage` 的所有内容。目前受影响的包括:侧边栏 details panel 的宽度、当前 session 选中项、trajectory-duration 偏好、workspace browser 的分组/排序/展开状态、per-session 的 chat draft 与 view 选择,以及 Science artifact viewer 的已打开标签页与 library 状态(`packages/client/*/src/**/stores.ts` 中任何通过 `defineStore`/`createSnapshotStore` 选择 `persist` 的 store);sidebar 自身宽度在上游被特意排除在持久化之外,不受此影响。跨普通启动保持 origin 稳定,就能保住上述全部状态。把这部分状态从 `localStorage` 迁移到 settings service 才是真正的长期方案——那样连 fallback 也能保住状态——但它跨越多个 client package,不在本次范围内。
+发布自动化使用固定目标命令，确保运行时准备、seed 安装与 electron-builder 接收相同的平台和架构：
 
-Host 在上报 bind 失败时,不会给这个 carrier 留下任何可与其他启动失败区分开的信号:端口被占用和一个无关的启动错误,表现完全一样——都是子进程在打印 readiness line 之前就退出了。因此 `src/host-launch.ts` 的 `launchHostOnRememberedPort` 不去诊断失败原因——在记忆端口上启动失败(可能是另一个进程占用了它,也可能是已有一个 PaperMachine 实例在运行)会被重试一次,改用 OS 分配端口(`0`);之后被记住的是 Host 实际上报的端口,而不是当初请求的那个。`host-port.json` 缺失、不可读或损坏,会以同样的方式退化为 OS 分配端口,而不会阻塞或使启动失败。剩下的情形——偶尔一次 fallback 启动——仍会在那一次 session 中丢失上述状态;这只是把丢失范围从"每次启动"收窄到"例外情况",而不是彻底消除。
+```sh
+pnpm run package:desktop:mac:arm64
+pnpm run package:desktop:mac:x64
+pnpm run package:desktop:win:x64
+```
 
-## Onboarding 与 environment binding
+macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Desktop 尚不支持 Linux 发布目标。
 
-启动时的路由完全依据 `<dshHome>/environment-binding.json`（`src/environment-binding.ts`）：文件不存在是普通的首次运行，会打开 onboarding。文件解析失败、所命名的 prefix 已不存在，或所命名的 prefix 位于本应用自己的 provisioned environments root（`<dshHome>/desktop-environments/environments/`）之外，同样会路由到 onboarding 并带上醒目的状态提示——最后一种情况覆盖了本应用完全拥有自己环境之前写入的 binding，或任何其他外部 conda-family 安装，绝不会被悄悄保留。binding 有效则直接打开 workspace。binding 还记录本次安装成功所经由的 package source 的 id（`sourceId`）；缺少它的 binding 视为无效。下文“环境声明”中描述的学科包 `applied.json` pointer 在这条路由中不起任何作用。
+每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、seed、pnpm 准备状态、未打包应用、更新元数据和最终产物。Node.js 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 
-Onboarding 只有一条路径：安装。PaperMachine 不提供绑定机器上已有 conda-family environment 的选项——由本应用配备并拥有的一个 environment 是唯一可复现的代码路径，因此首次运行不需要任何 conda 知识，向本应用拥有的 prefix 中安装 package 也可以自由重新求解，而不会危及用户自己的 Anaconda 安装。`src/interpreter-presence.ts` 的 `qualifyingInterpreters` 会在 `main.ts` 的 `bindProvisionedPrefix` 写入 binding 之前，按与 Science Runtime 自身 interpreter 检查相同的规则（一个正规、非 symlink 的 `conda-meta/history` 文件，外加该模块 `interpreterLayout` 所列两个 interpreter 中的至少一个——macOS 上是 `bin/python` 与 `bin/Rscript`，Windows 上是 `python.exe` 与 `Scripts\Rscript.exe`）重新校验刚刚配备好的 prefix——这是对 provisioning 刚刚跑过的同一组 health check、在即将写入的那个确切路径上做的一次纵深防御式复核。`DesktopEnvironmentProvisioner` 自身的 health-check 步骤（见下文“环境声明”）也通过同一个 `interpreterLayout` 函数解析每个 check 的可执行文件路径，而不是写死一条固定路径，因此二者不会在 interpreter 的位置上产生分歧。应用菜单的 "Change Environment…" 操作会在活跃 Host 继续服务当前 environment 时重新打开 onboarding。Onboarding 顶部显示已应用 environment 的 id、revision、`applied` 或 `stale` 状态及 prefix；"Keep current environment" 会通过重新启动 Host 返回 workspace。当 applied revision 与标准 declaration 一致时，主要操作显示为 "Reinstall"，并说明会再次下载标示的 850 MB。只有用户明确确认安装后，应用才会在 provisioning 可以修改 prefix 之前停止 Host。
+### 上传更新
 
-Onboarding 的安装位置这一行，让用户在安装之前把 Harness home 重定向到另一块盘——这是抵达 `resolveHarnessHome` 的 `customHomeDir`（`src/harness-home.ts`）的唯一 GUI 路径，Windows 机器上 `C:` 盘太小、放不下约 6 GB 的 environment 时需要它。这个选择会作为一行绝对路径持久化到 `<osHomeDir>/.papermachine-home`（`src/install-location.ts`）——一个纯 ASCII 文件名，其读取先于 `PAPERMACHINE_HOME` 与 `DSH_HOME`，也先于 `<osHomeDir>/.papermachine` 默认值，因此它是 GUI 用户无需设置环境变量即可触达的那一档优先级。pointer 文件若存在但为空、只含空白、指向相对路径，或以其他方式无法读取，都会导向一个专门的恢复页面，而不是悄悄失败或者让应用直接消失、连一个窗口都不出现。当一个能正常读出的 pointer 指向的目标在启动时变得不可达——外接盘被拔掉、网络共享被卸载、权限被更改——同一个恢复页面也会打开。两种情况下页面都会直接点名 `<osHomeDir>/.papermachine-home`，并提供一个 "使用默认位置" 按钮；手动删除这个文件效果相同。选择器自身的默认路径是当前 Harness home 的父目录，不进一步导航就直接确认，会把这个父目录本身——默认情况下就是 `~`，或是 Windows 上的一个盘符根目录——原样当作新的 Harness home；`resolveChosenInstallLocationPath`（`src/install-location.ts`）会转而在所选目录下追加一个固定的 `PaperMachine` 子目录，仅当所选目录自身的 basename 已经就是这个名字时才会跳过（在 darwin 与 win32 上按大小写不敏感比较，因为这两个平台的默认文件系统本就大小写不敏感），因此所选位置下若已存在一个 `PaperMachine` 目录会被直接复用而不会重复创建。解析出的路径含非 ASCII 字符时只会警告、不会拒绝，随后会用一个确认对话框点名这个路径本身；取消这个确认，与取消选择器或拒绝非 ASCII 警告一样，不会在磁盘上改动任何东西。只有在这个确认之后，解析出的路径才会用 `resolveHarnessHome` 本身校验——一个会触发 `HarnessHomeSpaceError` 的候选路径，在这里被拒绝，仍然早于 pointer 文件的写入——因此更早任何一步的取消都不会留下这个处理过程为了校验而新建出来的目录。确认后应用会重新启动，让每一个已打开的 Host 与窗口都从一次干净的启动中拿到新的 home；此前位置下的任何东西都不会被移动，这意味着 session、环境绑定，以及此前位置下已安装的 environment 都会留在原地，应用会像全新安装一样重新开始，需要在新位置重新安装 environment。"恢复默认" 会清除 pointer 文件并按同样方式重新启动。安装正在进行时点击 "更改…" 或 "恢复默认" 会被直接拒绝，并点名正在进行的这次安装，而不是在下载中途重启并悄悄丢弃它。
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包时写入的更新 URL 与后续 COS 上传目标，可取 `test` 或 `production`；未设置时使用 `test`。测试打包要求通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin；生产打包要求提供 `PAPERMACHINE_DOWNLOAD_ORIGIN`。两者都拒绝官方 `download.deepseek.com` 主机。打包会嵌入所选 URL，用户安装后无需设置环境变量来定位更新。上传还必须通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选环境的 COS bucket。目标路径为 `_/papermachine/desktop/stable/<target>/`，其中 `target` 为 `mac-arm64`、`mac-x64` 或 `win-x64`。
 
-## 环境声明
+更新目标与上传凭据都与所选环境对应：
 
-`resources/environments/*.json` 是闭合且只含数据的格式：schema version、学科 id 与 revision、支持的 platform-architecture 组合、一份有序的 package source 列表、packages、如实的容量字段、operation timeout，以及分别一个 Python 与 R health check。它不接纳 executable installation hook。这个 operation timeout 同时约束每一次 `micromamba create` 尝试与每一条 health check：冷盘、Windows 实时扫描器对数千个新写入的 `.pyd`/`.dll` 文件的扫描、或是 x86_64 wheel 在 Rosetta 转译下的首次 import，都可能让一次 health check 远超两分钟，因此声明按这种情况设置该字段，而不是让 health check 单独使用一个更短的固定超时。每个 revision 直接安装在它发布所用的 prefix 路径下（`environments/<discipline>/<revision>`），因此每个 health check 都针对 `applied.json` 最终指向的那个确切路径运行——Conda/micromamba 安装不可重定位，在一个路径上验证却发布另一个路径无法证明任何事情。solve 失败、取消或 health check 失败，在全新配备或不同 revision 的配备下都不会改变此前的 `applied.json` pointer；而同一 revision 的原地修复路径会在触碰 prefix 之前先清空该 pointer（见下文），因此那里发生的失败会导致完全没有 applied revision。retry 会复用 micromamba 的 package cache，并在重新创建前清空未 ready 的 prefix 目录，因为没有匹配 `applied.json` 条目的 prefix 永远不算 ready。
+| 环境 | 公开 origin | COS bucket | COS 凭据 |
+|---|---|---|---|
+| `test` 或未设置 | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`、`DOWNLOAD_TEST_COS_SECRET_KEY` |
+| `production` | `PAPERMACHINE_DOWNLOAD_ORIGIN` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
 
-`DesktopEnvironmentProvisioner.provision`（`src/provisioning.ts` 的 `resolvePackageCacheDir`）显式解析这个共享的 package cache 目录，而不是让 micromamba 从 `MAMBA_ROOT_PREFIX` 隐式推导，并把它作为 `CONDA_PKGS_DIRS` 传给每一次 `create` 尝试。在 macOS 上它是 `<dshHome>/desktop-environments/micromamba/pkgs`，与 micromamba 原本会隐式使用的路径相同。在 Windows 上它则是 `<SystemDrive>\pm\pkgs`，而不是 `<dshHome>` 下的路径：micromamba 2.x 按来源 host 与 channel 分层排布 package cache，随应用发布的 `general` declaration 中最长的这类相对路径，TUNA 镜像为 251 个字符、USTC 为 242、官方 channel 为 226；加上 10 个字符的 `C:\pm\pkgs` root 后分别是 261、252、236——因此只有 TUNA 会超出 Windows 260 字符的 `MAX_PATH`，USTC 与官方 channel 都留有余量——见 [issue #4](https://github.com/SuperJJ007/papermachine/issues/4)、[2026-09-05 package-cache Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-05-win32-package-cache-max-path.zh.md) 与 [2026-09-07 TUNA-`MAX_PATH` Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-package-cache-tuna-max-path.zh.md)。这个目录会在第一次 `create` 尝试之前创建；如果无法创建，provisioning 会 loud 失败并在错误信息中点出该路径。由于这个路径位于 `<dshHome>` 之外，本应用当前没有任何代码会删除它——这与本应用在任何平台上都不删除 `<dshHome>/desktop-environments/micromamba` 的事实是一致的：Harness home 的清理在每个平台上都留给用户自己处理。
+同一目标必须在同一环境下完成打包与上传。例如，默认测试环境使用：
 
-本版本发布单一声明 `general`：Python 分析栈（NumPy、SciPy、pandas、Matplotlib、seaborn、statsmodels、scikit-learn）、研究数据实际到达时所用的文件格式（openpyxl 读 Excel、pyreadstat 读 SPSS 与 Stata、PyArrow 读 Parquet），以及 R 栈（tidyverse、haven、broom、modelr、lme4、survey、srvyr、data.table、jsonlite）。ggplot2 随 tidyverse 一同到位，且是必需而非可选：kernel 的 R chart capture 直接调用它（`packages/science/science-runtime/assets/chart_ggplot2.R`）。学科声明与它并列增加；一个 prefix 同时承载两种 interpreter，因此配备好的 environment 会把 `pythonPrefix` 与 `rPrefix` 绑定到同一路径。
+```sh
+export DOWNLOAD_TEST_ORIGIN='https://desktop-updates.example.com'
+pnpm run package:desktop:mac:arm64
 
-`general` 的 package 从三个源下载，按顺序作为完整且相互独立的 `micromamba create` 尝试执行，而不是合并成一份被搜索的 channel 清单：USTC 镜像、TUNA 镜像，然后是官方的 `conda.anaconda.org` channel。任何一个源失败都会被完全放弃，下一个源会在重新清空的 prefix 上重试，并复用共享的 micromamba package cache；确认面板会说明当前正在尝试哪个源。当系统时区为 `Asia/Shanghai` 或某个首选系统语言为中文时，确认面板默认选中 USTC 镜像（`src/source-selection.ts`，完全根据 locale 设置决定，从不做网络探测），否则默认官方 channel；用户可以在确认之前从三者中任选一个，该选择会成为上述回退顺序中的第一次尝试。同一套有序回退会延续到 workspace 中：Host overlay 的 `science-runtime` 行把 `micromambaPath` 设为随应用打包的可执行文件，把 `installChannels` 设为各个随应用发布的源的 channel URL、并从已绑定的源开始排列，因此 `install_science_packages` 会先尝试环境本身所来自的镜像，再依次尝试其余的源，每一次都是完整且相互独立的 `micromamba install` 尝试。同一行还把 `installTimeoutMs` 设为一小时（`renderDesktopRuntimeOverlay` 固定的 `INSTALL_TIMEOUT_MS`），与该 Host 自身置备时已经给予 micromamba 工作的时限一致，因此一次真正耗时数分钟的求解不会被误报为超时。完整原理见 [environment-ownership Agent Note](../../.agents/notes/implemented/feature/2026-09-01-desktop-owns-its-environment.zh.md)。
+export DOWNLOAD_TEST_COS_BUCKET='<test COS bucket>'
+export DOWNLOAD_TEST_COS_SECRET_ID='<test COS SecretId>'
+export DOWNLOAD_TEST_COS_SECRET_KEY='<test COS SecretKey>'
+pnpm run upload:mac:arm64
+```
 
-用户自行编写的 package 集合（`src/custom-environment.ts`）作为另一个声明以 `custom` 为 id 发布，经由同一个 parser 构建，因此用户键入的 package token 在抵达 solver argv 之前，面对的校验与随应用发布的声明完全一致。它携带与随应用发布声明相同的有序 source 列表；它的 revision 为 `YYYY.MM.<package 集合排序后的 digest>`，特意不把 source 纳入该 digest，因为 source 描述的是包从哪里来，而不是最终环境里有哪些包。未改动的 package 集合保留自己的 prefix，跨启动仍为 `current`；改动过的集合则配备到属于自己的 prefix。该声明持久化到 `<dshHome>/desktop-environments/custom.json` 并在启动时重新读取；没有它，`resolveDisciplineStatus` 会把一个可用的自定义安装报为 `unknown-discipline`，每次启动都退回 onboarding。
+生产发布需在打包前设置 `DSH_DESKTOP_AUTO_UPDATE_ENV=production` 和 `PAPERMACHINE_DOWNLOAD_ORIGIN`，并在上传时保留两者，再在执行 `upload:mac:arm64`、`upload:mac:x64` 或 `upload:win:x64` 前提供 `DOWNLOAD_PROD_COS_BUCKET` 与生产凭据对。打包不要求 COS bucket 或凭据。它会明确禁止 electron-builder 发布，从其子进程中删除全部四个 COS 凭据字段，并且只有在 electron-builder 以及全部签名或公证 hook 成功后才写入目标完成记录。上传会先要求该记录与所选环境、目标、公开 URL 和当前 dsh 版本一致，再要求根 dsh 版本、Desktop 版本、频道元数据版本、产物名称、大小与 SHA-512 全部一致，之后才读取所选 COS 凭据对。它只上传该目标不可变且带版本的产物，最后以 `no-cache` 上传根据版本得出的频道元数据，并且不会删除历史对象。稳定版本使用 `latest-mac.yml` 或 `latest.yml`；`alpha` 等预发布版本则使用 `alpha-mac.yml` 或 `alpha.yml`，与 electron-builder 生成的文件名一致。
 
-每一次源尝试都会把自己完整的 `micromamba create` 输出写到 `<dshHome>/desktop-environments/logs/provision-<sourceId>-<timestamp>.log`（目录权限 `0700`，文件权限 `0600`），无论该次尝试成功还是失败。失败尝试的日志路径与其首行错误信息会出现在下一个源的"Retrying via …"进度提示里；若所有源都失败，也会出现在抛出的 Error 的诊断报告里，方便用户定位。这些日志不脱敏、不限制大小，这一点不同于上文那个有大小上限且会脱敏凭据的 `<dshHome>/logs/host.log`，因为每个日志文件只存活一次 `provision()` 调用：`clearStaleAttemptLogs` 会在下一次调用开始时清掉上一轮的全部 `provision-*.log` 文件，所以重试前必须先保存或复制。如果 `logs/` 无法创建或清理（例如一个被锁定的残留文件），本轮会整体禁用日志而不是让安装失败。
+macOS 配置使用必填发布环境，不会接受钥匙串中最先发现的证书。空值、格式错误的 Team ID、包含 electron-builder 不支持的 `Developer ID Application:` 前缀的签名身份，以及不完整的公证凭据都会被拒绝。macOS 打包要求已配置的身份及其私钥可用。Seed 准备会把该身份、安全时间戳与 hardened runtime 应用到每个内嵌 Mach-O 文件；应用签名完成后，深度严格检查会拒绝其他叶证书 Authority 或 Team ID，验证通过才生成发布产物。Electron-builder 会在封装前公证应用并钉票，然后签署 DMG。DMG 的 artifact-completion hook 随后会公证它并钉票，再要求其身份、票据与 Gatekeeper 验证全部通过；只有 hook 成功，electron-builder 才能发布该文件。私钥可以来自登录钥匙串或 electron-builder 的标准 `CSC_LINK` 输入；环境中的 `CSC_NAME` 与证书发现顺序都不能选择发布所有者。公证凭据也可以使用 electron-builder 支持的完整 Apple ID 或钥匙串 profile 方式。手动执行 `pnpm --dir apps/desktop run verify:mac-signature -- <path-to-app>` 重复应用检查时，也必须提供两个 macOS 身份变量。
 
-## 安装包
+### Windows EV 签名
 
-`package:mac` 与 `package:win` 各自构建仓库、下载本平台 target 的 pinned micromamba 资产、暂存无 symlink 的 production Host closure，并要求 Electron Builder 生成本平台的安装包——macOS 上是 arm64 与 x64 DMG，Windows 上是 x64 NSIS 安装包。两者都只能在各自平台上运行，且都通过 `pnpm -w run build --profile official` 选择官方 client profile，而不是用前置环境变量赋值——Windows 上 pnpm 运行脚本所用的 shell 不接受后者。两者都不发布：`--publish never` 阻止 Electron Builder 读取 `repository` 字段并索要 GitHub token，release 由 workflow 自己创建。随后 `scripts/write-update-metadata.ts` 记录该次运行所出安装包的名称、架构、大小与 SHA-256，并拒绝产出不足本平台完整集合的运行。
+Windows 发布打包要求 `DSH_DESKTOP_WINDOWS_CER_FILE` 标识公开的 GlobalSign EV 叶证书，要求 `DSH_DESKTOP_WINDOWS_SIGNTOOL` 标识与 SafeNet 兼容的 SignTool 可执行文件，要求 `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` 标识匹配的私钥容器，并要求 `DSH_DESKTOP_WINDOWS_TOKEN_PIN` 包含 SafeNet Token Password。证书文件保留在源码仓库之外，匹配的私钥仍位于 USB Token。运行固定 Windows 目标前设置这四个输入：
 
-暂存的 Host closure 需要每个桌面打包 target 的 `sharp`/`koffi` 原生模块变体，而不只是运行机器自己那一份——否则在 arm64 mac 上打的 x64 DMG、或在 mac 上交叉打的 Windows 包，都会把宿主机自己的 darwin-arm64 二进制带进另一个平台的 app；sharp 与 koffi 都在 Host 启动时加载，打包出来的 Host 会在就绪前退出且构建期毫无信号。`pnpm install` 默认只拉运行机器自己那一份变体，所以**暂存之前，先用这一条命令为本次安装单独放宽三个桌面 target 的架构**：`pnpm install --frozen-lockfile --os=darwin --os=win32 --os=linux --cpu=x64 --cpu=arm64 --libc=glibc`（`.github/workflows/desktop-release.yml` 跑的是同样的参数；本地打包在第一次 `stage:host` 之前也需要先跑这条）。这是一次性的 CLI 参数覆盖，不是写进 `pnpm-workspace.yaml` 的永久配置——因为工作区里其余每个按平台分发原生模块的包（ripgrep、`node-addon-require-builtin`、Landlock launcher 等）如果永久放宽，就会拖慢每一个人的每一次 `pnpm install`，而不只是桌面打包这一条路径。`scripts/stage-host.ts` 在暂存完成后立即断言三个桌面 target 的 sharp/koffi 变体都在，缺任何一个就报错失败并指明这条安装命令；`scripts/after-pack.mjs` 随后删掉所有不属于这次 electron-builder 调用自身平台与架构的 sharp/koffi/ripgrep 等变体，并断言打包产物的 `resources/bin/<os>-<arch>` 本身携带了固定版本的 micromamba 可执行文件与（仅 win32）全部 app-local CRT DLL（`scripts/native-module-targets.mjs` 持有这几步共用的纯选择逻辑）。见[按目标平台携带原生模块的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-host-native-modules-per-target.zh.md)。
+```powershell
+$env:DSH_DESKTOP_WINDOWS_CER_FILE = 'C:\path\to\server.cer'
+$env:DSH_DESKTOP_WINDOWS_SIGNTOOL = 'C:\path\to\the\validated\signtool.exe'
+$env:DSH_DESKTOP_WINDOWS_KEY_CONTAINER = '<SafeNet private-key container name>'
+$env:DSH_DESKTOP_WINDOWS_TOKEN_PIN = '<SafeNet Token Password>'
+pnpm run package:desktop:win:x64
+```
 
-Windows 安装包是 per-user 安装（`%LOCALAPPDATA%`，不需要提权），不带代码签名。macOS 这边 `electron-builder.yml` 同样没有配置 Apple Developer ID（`mac.identity: null`），所以 `scripts/after-pack.mjs` 的 `afterPack` 钩子会在其余每个打包步骤都改完 app 内容之后，自己对打包出的 `.app` 做 ad-hoc deep 签名（`codesign --force --deep --sign -`），再用 `codesign --verify --deep --strict` 验证结果:这是 mac 包携带的唯一签名,它能让下载下来的副本被 Gatekeeper 判定为"来自身份不明的开发者"而不是"已损坏"。见[mac ad-hoc 签名的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-mac-adhoc-deep-signature.zh.md)。Windows 安装包的 `resources/bin/win32-x64/` 同时带着 `fetch:micromamba win32-x64` 落在那里的 MSVC C/C++ 运行库 DLL，随包本地、与 `micromamba.exe` 同目录：一个 per-user、不提权的安装器无法要求或运行裸机上缺失的那次机器级 Visual C++ 可再发行组件安装（见[随包本地 CRT 的 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-07-win32-micromamba-app-local-crt.zh.md)）。`.github/workflows/desktop-release.yml` 构建两个平台并把产物收进同一个 draft GitHub release；draft 不创建 tag，在有人发布它之前对仓库写者之外不可见。
+打包前插入并解锁 Token。electron-builder hook 把每个产物交给采用 CRLF 的 `scripts/windows-sign.cmd`；该 CMD 只调用一次已配置的 SignTool，并指定 `/f`、SafeNet `/kc "[{{PIN}}]=容器"`、`/csp "eToken Base Cryptographic Provider"`、SHA-256 文件摘要和 DigiCert SHA-256 RFC 3161 时间戳。hook 不会改用 electron-builder 内置的 SignTool，也不会重试失败的签名请求。SignTool、证书、容器、PIN、Token 或签名不可用时，Windows 打包会失败，不会生成未签名产物。
 
-Windows 安装器必须在 Windows 上构建。产物开始构建钩子拒绝 NSIS 交叉编译（包括 `--prepackaged`），因为 Mac 的卸载器提取路径可能生成 CRC 无效的可执行文件。保留 CRC 校验。Windows 静默安装保留卸载失败的非零退出码，并通过固定的 [NSIS 模板补丁](../../patches/app-builder-lib@26.15.3.patch)自动关闭错误通知。升级失败需要定位原因；全新安装成功不能证明已有安装能够升级。见[安装器失败处理决定](../../.agents/notes/implemented/bug-fix/2026-09-09-nsis-silent-failure.zh.md)。
+PIN 不能包含 `]`、引号或换行，因为这些字符用于分隔 SafeNet `/kc` 值或对应的 CMD 参数。CMD 会禁用延迟展开，因此包含 `!` 的 PIN 可以原样到达 SafeNet。打包流程不会把任何 `DSH_DESKTOP_WINDOWS_*` 字段传给构建与 seed 准备子进程；它只向 electron-builder 提供四个配置输入，在其他字段已经清理的环境中只向签名 CMD 提供经过校验的签名字段，在 SignTool 启动前清除这些字段，并遮盖 SignTool 诊断。SafeNet 仍要求 PIN 出现在 SignTool 进程命令行中。只能在连接了物理 Token 的受控 self-hosted Windows runner 上把它注入为临时 secret；绝不能提交该值、把它写进 `.env`，或持久保存为 Windows 用户或系统环境变量。
 
-Windows 安装包是实验性 / Beta：`dsh-sandbox-windows-acl` 只能做到 `partial` 沙箱强制，达不到 macOS 那种 `full` 隔离（见其 README 的 "Verified boundaries" 一节）；R 在非 ASCII 安装路径或用户名下有已知边角情况；需要 Windows 10 64 位及以上；遇到问题提 issue 时请附上 `%USERPROFILE%\.papermachine\logs`。
+使用对应的 `:dir` 命令可以生成可直接运行的应用目录，而不是安装包，例如：
 
-生成的 app 持有自身 Host、环境声明与 micromamba executable；Harness home 与 applied environments 保留在 `~/.papermachine` 下，既在 application payload 之外,也在 Electron `userData` 之外。
+```sh
+pnpm run package:desktop:dir
+pnpm run package:desktop:mac:arm64:dir
+```
 
-## 随应用内置的默认 skill
+需要检查或诊断为宿主目标准备的资源而不调用 electron-builder 时，可以让同一流水线在准备完成后停止：
 
-DMG 内置三个默认 Science skill——`scientific-visualization`、`statistical-analysis`、`scientific-writing`——以只读方式 vendor 在 `resources/skills/` 下，来自上游仓库 `K-Dense-AI/scientific-agent-skills`（确切 commit 与 license 见 `resources/skills/SOURCES.md`）。Electron Builder 的 `extraResources` 会把该目录原样暂存到 `process.resourcesPath/skills`，在 asar 归档之外。生成的 Host overlay 中 `skill-filesystem` 这一行（`src/runtime-overlay.ts`）把该路径挂载为一个隔离的、global-scope 的 skill provider（`bundledSkillDir`、`includeDefaultRoots: false`，因此它不发现任何其他内容）。
+```sh
+pnpm run prepare:desktop
+```
 
-用户自己的同名 skill 会胜出。`science` agent preset 自身的 `skill-filesystem` 行仍在 preset 自己的 scope layer 中发现 project、custom 与 `~/.papermachine/skills` 这些 root，而 `dsh-skill` 的 registry 解析同名冲突时优先按最近的 scope layer 判定——preset 的 layer 比这一行内置 skill 所在的 global layer 更近，因此无论两个 root 各自的 discovery rank 如何，它总会遮蔽同名的内置 skill。新增一个 skill 或覆盖一个内置 skill，只需把 `<name>/SKILL.md`(或 `<name>.md`)放到 `~/.papermachine/skills` 下即可；`resources/skills` 下无需任何改动，从上游重新拷贝内置集合也绝不会碰到用户自己的 skill。
+这条诊断命令是另一种停止位置，并非两条命令构建流程的前半段。之后执行 `package:desktop*` 时仍会重新完成 PaperMachine 构建与准备，避免使用陈旧的 dsh 包、运行时文件或 seed 内容。
 
-## 使用统计（telemetry）
+每条打包命令都会先执行完整 `papermachine` 仓库构建并校验客户端产物记录，通过 Desktop 本地准备入口打包 dsh 包族，通过发布工具打包 vendored 包族，在本地打包私有 Desktop Host 包，并打包 Landlock 入口，然后再准备发布资源。`prepare:packages` 选择分别以 `@deepseek-ai/dsh` 和 `@deepseek-ai/dsh-desktop-host` 为根的第一方生产依赖闭包之并集，验证私有 Host tarball 同时包含 `lib/index.js` 与 `config/desktop.cordis.patch.yml`，把选中的 tarball 复制到 seed 输入，并记录其大小与 SHA-512 完整性。Host 包不会发布到 npm；它的 `files` manifest 只包含该运行入口与 overlay。包 tarball 仍是由各包发布 manifest 控制的 `pnpm pack` 输出，因此 Desktop 不增加第二套过滤规则，会保留 `lib/types` 等已发布声明，也不会独立删除或增加 source map。Desktop 本地准备入口验证产品构建记录，复用包族版本与 tarball 内容校验，但不写入 npm 发布顺序清单。官方 `release:pack --family dsh` 保持精确的 official 配置校验，并拒绝 PaperMachine 产物。Registry 包同样在 pnpm 内容寻址 store 中保留其发布的包字节。dsh 发布版本更新会同步更新两个私有 Desktop manifest、仓库根与可发布 workspace；打包还会要求根 dsh 包、Desktop Host 包与 Electron 包使用同一版本。构建 Desktop 应用前不要求 dsh 或私有 Host 已发布到 npm。`prepare:runtime` 从 Node.js 官方发行服务下载 Node.js 24.17.0，在解压前验证其 SHA-256 条目，并在兼容的构建宿主上执行准备完成的目标二进制文件以验证其报告版本。它复制桌面包声明的 pnpm 版本，并把两个运行时版本记录进发布 seed。`prepare:seed` 运行该目标 Node.js 与内置 pnpm，因此按平台和 CPU 过滤的可选依赖会使 pnpm store 与 seed 成为目标专用内容。它生成本地核心包映射、禁用全局 virtual store、从 npm 物化外部生产依赖并禁用生命周期脚本、删除 `node_modules` 以及所有临时 pnpm cache、config 和 state，证明完整依赖图可以离线安装并包含私有 Host 的入口与 overlay，在适用时执行 macOS 重写，再通过一次离线安装证明重写后的 store，删除临时 pnpm 项目注册，然后把松散 store 替换为 16 个确定性的未压缩 tar 分片。它会解包这些最终分片，并在生成清单前验证每个内嵌 macOS 签名。后续 GUI 插件操作保留本地核心包映射，同时从固定的 Desktop npm registry 解析插件包及其外部依赖。`electron-builder` 把各目标的平台产物写到 `apps/desktop/.desktop-build/targets/<target>/artifacts`；后续版本会保留不同名称的不可变安装包与 blockmap，但会替换该目标的未打包应用、诊断文件、完成记录与频道元数据。
 
-PaperMachine 上报三个只含元数据、绝不含内容的事件：`app.launch`（每次进程启动一次）、`environment.installed`、`environment.install-failed`（一次 provisioning 运行的 package source、耗时或最后阶段，以及是否被取消）。每个事件都带有新生成的 `eventId`、与 Host identity 插件共享的匿名 id（`<dshHome>/.anonymous-user-id`；desktop 自己的首个 `app.launch` 会在任何 Host 运行之前先发生，此时 `src/anonymous-id.ts` 会按该插件的确切格式创建这个文件）、时间戳、`appVersion`、`platform`、`arch`，以及 `schemaVersion: 1`——不含 hostname、路径、package 清单或错误文本。
+未压缩产物包含四块相互独立的体积：Electron、离线 seed store 分片与本地 dsh tarball、上游 Node.js 与 pnpm 运行时，以及很小的桌面壳应用。分片不压缩，使外层 DMG、ZIP 或 NSIS 压缩器与差分更新器可以处理稳定的数据区间。文件系统占用不等于安装包下载大小，因此必须分别测量。打包应用首次启动时还会先把 seed store 解包到 `$DSH_HOME/desktop/pnpm/store`，再安装可写 profile，因此发布验证必须同时测量应用与 Harness home 的磁盘占用。
 
-Receiver 在构建期的 `resources/telemetry.json` 中配置（`schemaVersion: 1`，`endpoints: string[]`，元素为 `https://` URL；由 `src/telemetry-config.ts` 解析，文件缺失或格式错误会 loud 报错，而不是悄悄禁用）。每个已配置的 endpoint 都独立收到每一个事件——没有 failover、没有重试队列、没有离线缓冲。本版本发布时携带一个 endpoint，即已部署的 Cloudflare Worker（`apps/telemetry-receivers`）；空数组 `endpoints: []` 是有效且独立的 “telemetry 关闭” 状态，未来某个版本可以选择改用它。将 `DSH_TELEMETRY_DISABLED` 设为任意非空值——与 Host 自身 session telemetry 使用的开关及其解释完全相同（`resolveTelemetryPatch`，`apps/cli/src/profile-boot.ts`）——会让什么都不发送。
+## 更新
 
-退出时（`before-quit`）会等待所有已入队的上报发送完成，其上限就是 reporter 自身的单 endpoint 请求超时；因此一次被取消的 provisioning 运行所触发的 `void report(...)`（`environment.install-failed`，`cancelled: true`）不会因进程退出而丢失。
+打包应用会在主窗口打开十秒后检查目标专用的发布流；本地化的 **检查更新…** 菜单项会手动触发同一检查。发现可用版本时，应用打开一个原生确认弹窗。用户确认后，应用等待正在进行的检查完成，下载并验证已签名的 Desktop 发布、停止 dsh 子进程，并把安装与重启交给 electron-updater。下次启动会先校准版本绑定的 seed，再重新打开产品窗口。启动时即使内部发布版本未变化，也会比较 seed 包描述与已安装包版本；依赖集合变化或客户端包缺失会触发暂存修复。
 
-## 限制
+Electron-builder 始终为 `DSH_DESKTOP_AUTO_UPDATE_ENV` 选择的部署生成 generic-provider 频道元数据。NSIS 差分包与 macOS ZIP 目标让 electron-updater 可以复用未变化的数据块；供手动安装的 DMG 经过公证，但不生成 blockmap，因为它不是 macOS updater 的载荷。Seed 与桌面壳仍属于同一个签名 Desktop 发布。macOS 签名与公证凭据使用 electron-builder 的标准环境变量；Windows EV 签名使用上文所述的公开证书、已验证 SignTool、SafeNet 容器和 runner PIN。必填 Desktop 发布环境选择构建所验证的应用身份与平台签名身份。
 
-UI 仍在 private loopback 上使用 Web HTTP carrier。packaged `file://` 加 Electron IPC carrier 与自动应用更新仍不在本次实现范围内。Windows 安装包已能构建、其 carrier 测试也在 Windows runner 上运行，但尚无任何一版在 Windows 实机上通过验收。参见[桌面产品决定](../../.agents/notes/proposed/architecture/2026-08-23-science-desktop-product.zh.md)。
+## 产品资源准备
 
-有两个已知的 Windows 缺口，本次均未实现：micromamba 的 `create` 没有传 `--ssl-no-revoke`，所以在一台证书吊销检查本身就连不通的机器上（对中文 locale 默认走的 USTC 镜像来说是可能出现的，`src/source-selection.ts`），包下载可能因吊销检查失败而报错——该标志本可绕开这个问题，但默认不传，因为它会削弱 TLS 证书校验，这是一个本仓库尚未做出的安全取舍。另外，验证本应用真实安装路径的 Windows CI 任务用的是短前缀 `C:\mm\science`（`.github/workflows/ci.yml`），是为了留在 `MAX_PATH` 以内，并不是真实按用户安装时约 99 个字符的前缀（`<user>\.papermachine\desktop-environments\environments\general\<revision>`）——这条信号覆盖了包缓存的 `MAX_PATH` 修复（见[包缓存 Agent Note](../../.agents/notes/implemented/bug-fix/2026-09-05-win32-package-cache-max-path.zh.md)），但没有覆盖真实前缀长度这条完整路径。
+`src/product-version.json` 是 `PAPER_MACHINE_VERSION` 与 electron-builder 安装包名的共同来源：`papermachine-0.1.3-${os}-${arch}.${ext}`。更新元数据与 seed 校验保持内部包版本。`extraResources` 在 `product/` 下包含产品环境声明、内置技能、Host 与遥测配置，以及准备好的可执行文件。遥测配置已存在，但桌面主进程目前不发送遥测。
+
+开发启动器和目标打包入口都会先准备 micromamba。资源准备脚本根据 `resources/micromamba.json` 校验缓存字节，从其中既有的官方发布 URL 下载缺失或摘要不符的资源，并且只在 SHA-256 校验成功后发布文件。Windows 资源准备还会提取固定的应用本地 CRT；Windows 执行与安装包验收是独立检查。`resources/bin/` 中生成的可执行文件由 Git 忽略。
+
+仓库及 Desktop 构建完成后，在仓库根目录运行以下命令，无需触发安装或再次构建：
+
+```sh
+node --import tsx/esm apps/desktop/scripts/prepare-product-resources.ts
+PAPERMACHINE_HOME=/private/tmp/papermachine-desktop-acceptance DSH_TELEMETRY_DISABLED=1 node --import tsx/esm apps/desktop/scripts/dev.ts --skip-build
+```
+
+首跑验收请选择新的无空格主目录。启动器打开首次设置页；安装科学环境需要访问所选 Conda 包源。关闭后以同一主目录重开会保留浏览器存储。若要明确准备其他打包目标的可执行文件，可向资源准备脚本传入 `darwin-arm64`、`darwin-x64` 或 `win32-x64`。
+
+开发启动器使用工作区依赖链接生成项目，并跳过 `DesktopProjectManager.applyRelease()`。它可以验证首次设置、环境准备、Host 启动和 UI 行为，但不能证明 seed 解包、离线安装、暂存激活或已安装 profile 升级。macOS seed 准备入口要求 Developer ID 签名身份与 Team ID，使用 `--prepare-only` 打包时也不例外；目前没有受支持的免签名 macOS seed 准备模式。
+
+## 底层开发覆盖项
+
+`DSH_DESKTOP_NODE_BINARY`、`DSH_DESKTOP_PNPM_ENTRY`、`DSH_DESKTOP_SEED_DIR` 和 `DSH_DESKTOP_DEV_PROJECT_DIR` 可以为未打包 Electron 进程选择明确的资源。打包应用会忽略这些变量，并从 `process.resourcesPath` 解析签名资源。
+
+## 已知限制
+
+- Desktop 禁用 Web 的“在本地应用中打开”操作，因为其 Host 插件依赖 HTTP 路由，而 Desktop 不提供 `webServer`。
+- 发布签名、公证、更新托管和跨上一版本的已安装产物验证需要生产发布环境。
+- 依赖包含 lifecycle script 的桌面插件，只有其包名进入桌面项目经过评审的 `allowBuilds` 策略后才能安装。
+- 桌面壳与 PaperMachine CLI 共享 `$DSH_HOME` 下的会话、设置、凭据、工作区和存储，但可执行包、插件激活、锁文件与包管理器状态彼此隔离。
+
+应用菜单包含 Electron 标准 `editMenu`，将原生复制、剪切、粘贴、全选、撤销和重做交给当前焦点的 renderer。自定义应用操作必须保留该菜单角色，使 macOS 编辑快捷键在各窗口中生效。

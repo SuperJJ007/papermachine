@@ -17,11 +17,11 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import { conversationContextKey } from '@deepseek-ai/dsh-client-ui-conversation/src/client/contract/conversation.ts'
+import type { ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from '../src/client/selection-store.ts'
-import { ScienceArtifactProvenance, type ScienceArtifactProvenanceProps } from '../src/client/ScienceArtifactProvenance.tsx'
+import { ScienceArtifactProvenance, type ScienceArtifactProvenanceProps, type ScienceTranscriptSnapshot } from '../src/client/ScienceArtifactProvenance.tsx'
 import type { ScienceRenderableVersion } from '../src/client/version-summaries.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -81,7 +81,7 @@ function settledInWindow(argsRaw: string, resultText: string): ToolResultNode {
     call: { name: 'run_python', argsRaw },
     callTime: 3_500,
     content: [{ type: 'text', text: resultText }],
-    isError: false, callView: null, resultView: null, subCalls: [],
+    isError: false, subCalls: [],
   }
 }
 
@@ -92,11 +92,11 @@ function settledCallOutOfWindow(resultText: string): ToolResultNode {
     call: null,
     callTime: null,
     content: [{ type: 'text', text: resultText }],
-    isError: false, callView: null, resultView: null, subCalls: [],
+    isError: false, subCalls: [],
   }
 }
 
-function snapshotWith(block: ToolCallBlock | undefined): ConversationSnapshot {
+function snapshotWith(block: ToolCallBlock | undefined): ScienceTranscriptSnapshot {
   const key = conversationContextKey('tool-call', CALL_ID)
   const node = block === undefined ? undefined : { key, kind: 'tool-call' as const, id: CALL_ID, target: 'chat' as const, anchorSeq: 0, location: { kind: 'session' as const }, visibility: 'visible' as const, data: { root: block } }
   return {
@@ -108,10 +108,10 @@ function snapshotWith(block: ToolCallBlock | undefined): ConversationSnapshot {
     chat: {
       nodes: {
         get: (k: string) => (k === key ? node : undefined),
-        values: () => (node === undefined ? [] : [node]),
+        values: () => [{ kind: 'assistant-step', key: conversationContextKey('assistant-step', '1:0'), data: { turn: 1, step: 0 } }, ...(node === undefined ? [] : [node])],
       },
     },
-  } as unknown as ConversationSnapshot
+  } as unknown as ScienceTranscriptSnapshot
 }
 
 function props(over: {
@@ -124,10 +124,9 @@ function props(over: {
   onSubTabChange?: (subTab: ScienceProvenanceSubTab) => void
   onBack?: () => void
   inspectCall?: (callId: string) => void
-  selectDetailed?: () => void
   returnToConversation?: (anchorKey: string) => void
   sourceSessionTitle?: string | undefined
-  snapshot?: ConversationSnapshot
+  snapshot?: ScienceTranscriptSnapshot
 } = {}): Props {
   return {
     chart: over.chart ?? chart(),
@@ -139,7 +138,6 @@ function props(over: {
     onSubTabChange: over.onSubTabChange ?? vi.fn(),
     onBack: over.onBack ?? vi.fn(),
     inspectCall: over.inspectCall ?? vi.fn(),
-    selectDetailed: over.selectDetailed ?? vi.fn(),
     returnToConversation: over.returnToConversation ?? vi.fn(),
     ...('sourceSessionTitle' in over && over.sourceSessionTitle !== undefined ? { sourceSessionTitle: over.sourceSessionTitle } : {}),
     t,
@@ -204,7 +202,7 @@ describe('ScienceArtifactProvenance: code', () => {
   it('renders the code from a still-running call\'s own argsRaw', () => {
     const block: ToolCallBlock = {
       callId: CALL_ID, name: 'run_python', argsRaw: '{"code":"print(2)"}',
-      turn: 1, step: 1, time: 3_000, callView: null, subCalls: [],
+      turn: 1, step: 1, time: 3_000, subCalls: [],
     }
     const view = render(<ScienceArtifactProvenance {...props({ subTab: 'code', run: run({ status: 'running' }), block })} />)
     expect(view.container.textContent).toContain('print(2)')
@@ -240,7 +238,7 @@ describe('ScienceArtifactProvenance: execution log', () => {
       kind: 'tool-result', seq: 4, time: 4_000, callId: CALL_ID,
       call: { name: 'run_python', argsRaw: '{"code":"x"}' }, callTime: 3_500,
       content: [{ type: 'reasoning', text: 'note' }],
-      isError: false, callView: null, resultView: null, subCalls: [],
+      isError: false, subCalls: [],
     }
     const view = render(<ScienceArtifactProvenance {...props({ subTab: 'log', block })} />)
     expect(view.container.textContent).toContain('"type": "reasoning"')
@@ -280,9 +278,8 @@ describe('ScienceArtifactProvenance: execution log', () => {
 describe('ScienceArtifactProvenance: messages', () => {
   it('shows only the bounded question, result, and two distinct local actions', () => {
     const inspectCall = vi.fn()
-    const selectDetailed = vi.fn()
     const returnToConversation = vi.fn()
-    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall, selectDetailed, returnToConversation })} />)
+    const view = render(<ScienceArtifactProvenance {...props({ subTab: 'messages', inspectCall, returnToConversation })} />)
     expect(view.container.textContent).toContain('Build a compact loss chart')
     expect(view.container.textContent).toContain('The chart highlights the convergence trend.')
     expect(view.container.querySelectorAll('section')).toHaveLength(1)
@@ -291,7 +288,6 @@ describe('ScienceArtifactProvenance: messages', () => {
     fireEvent.click(trajectory)
     fireEvent.click(conversation)
     expect(inspectCall).toHaveBeenCalledWith(CALL_ID)
-    expect(selectDetailed).toHaveBeenCalledTimes(1)
     expect(returnToConversation).toHaveBeenCalledWith(conversationContextKey('assistant-step', '1:0'))
   })
 
@@ -305,7 +301,7 @@ describe('ScienceArtifactProvenance: messages', () => {
         { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
         { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: longText }] },
       ],
-    } as unknown as ConversationSnapshot
+    } as unknown as ScienceTranscriptSnapshot
     const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.container.textContent?.match(new RegExp(suffix, 'gu'))).toHaveLength(2)
   })
@@ -318,7 +314,7 @@ describe('ScienceArtifactProvenance: messages', () => {
         { kind: 'steering', seq: 2, content: [{ type: 'image', attachment: {} }, { type: 'text', text: 'Use the compact comparison' }] },
         { kind: 'assistant', seq: 3, turn: 2, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
       ],
-    } as unknown as ConversationSnapshot
+    } as unknown as ScienceTranscriptSnapshot
     const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.container.textContent).toContain('Use the compact comparison')
     expect(view.container.textContent).not.toContain('The chart highlights')
@@ -331,13 +327,13 @@ describe('ScienceArtifactProvenance: messages', () => {
         { kind: 'assistant', seq: 2, turn: 1, step: 0, blocks: [{ kind: 'tool-call', callId: CALL_ID, name: 'run_python' }] },
         { kind: 'assistant', seq: 3, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'Loaded result' }] },
       ],
-    } as unknown as ConversationSnapshot
+    } as unknown as ScienceTranscriptSnapshot
     const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.container.textContent).toContain('Loaded result')
   })
 
   it('reports when the generating message is outside loaded history', () => {
-    const snapshot = { ...snapshotWith(undefined), nodes: [] } as unknown as ConversationSnapshot
+    const snapshot = { ...snapshotWith(undefined), nodes: [] } as unknown as ScienceTranscriptSnapshot
     const view = render(<ScienceArtifactProvenance {...props({ snapshot, subTab: 'messages' })} />)
     expect(view.getByText('The generating message is not loaded.')).toBeTruthy()
   })

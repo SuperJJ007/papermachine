@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceEnvironmentProfileId,
@@ -30,7 +30,7 @@ import {
 
 describe('strict Science fold transitions', () => {
   it('rejects every strict transition discontinuity without mutating the contract', () => {
-    const secondCall = CallId('call-second')
+    const secondCall = ToolCallId('call-second')
     const secondRunId = ScienceRunId('run-2')
     const invalidEnvironment = environment({
       revision: 2,
@@ -119,7 +119,7 @@ describe('strict Science fold transitions', () => {
       ['run without tool call', legalEvents().slice(0, 6).map((candidate, index) => index === 5
         ? event('science/run-started', 5, 140, {
           version: 1,
-          run: runStarted({ toolCallId: CallId('missing-call') }),
+          run: runStarted({ toolCallId: ToolCallId('missing-call') }),
         })
         : candidate), /does not identify one call after its cited request\/header/],
       ['run without environment', legalEvents().slice(0, 6).map((candidate, index) => index === 5
@@ -217,13 +217,13 @@ describe('strict Science fold transitions', () => {
         : candidate), /publication time/],
       ['outcome time regresses', [
         ...legalEvents(),
-        toolCall(11, 185, CallId('call-outcome-2'), 'publish_outcome'),
+        toolCall(11, 185, ToolCallId('call-outcome-2'), 'publish_outcome'),
         event('science/outcome-published', 12, 190, {
           version: 1,
           outcome: outcome({
             revision: 2,
             publishedAt: 178,
-            toolCallId: CallId('call-outcome-2'),
+            toolCallId: ToolCallId('call-outcome-2'),
           }),
         }),
       ], /publication time/],
@@ -497,12 +497,12 @@ describe('strict Science fold transitions', () => {
 
     const twoRuns = [
       ...legalEvents().slice(0, 7),
-      toolCall(7, 160, CallId('call-run-2'), 'run_python'),
+      toolCall(7, 160, ToolCallId('call-run-2'), 'run_python'),
       event('science/run-started', 8, 170, {
         version: 1,
         run: runStarted({
           runId: ScienceRunId('run-2'),
-          toolCallId: CallId('call-run-2'),
+          toolCallId: ToolCallId('call-run-2'),
           startedAt: 169,
           runDirectoryRef: 'runs/run-2/',
         }),

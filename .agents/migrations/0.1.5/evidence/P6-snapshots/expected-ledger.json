@@ -1,0 +1,198 @@
+{
+  "sourceBase": "b150a551b8",
+  "sourceHead": "44575f3bf0",
+  "scienceAdded": 15,
+  "forkModified": 22,
+  "rows": [
+    {
+      "old": "apps/web/tests/snapshots/science-artifact-types/blank-session.expected.md",
+      "current": "apps/web/tests/expected/science-artifact-types/blank-session.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifact-types/library.expected.md",
+      "current": "apps/web/tests/expected/science-artifact-types/library.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifact-types/panel.expected.md",
+      "current": "apps/web/tests/expected/science-artifact-types/panel.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifact-types/transcript.expected.md",
+      "current": "apps/web/tests/expected/science-artifact-types/transcript.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifacts/panel-and-provenance.expected.md",
+      "current": "apps/web/tests/expected/science-artifacts/panel-and-provenance.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifacts/reference-elements.expected.md",
+      "current": "apps/web/tests/expected/science-artifacts/reference-elements.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifacts/reference-input.expected.md",
+      "current": "apps/web/tests/expected/science-artifacts/reference-input.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-artifacts/title-preview.expected.md",
+      "current": "apps/web/tests/expected/science-artifacts/title-preview.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-file-library/file-switch.expected.md",
+      "current": "apps/web/tests/expected/science-file-library/file-switch.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-file-library/library.expected.md",
+      "current": "apps/web/tests/expected/science-file-library/library.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-file-library/lightbox.expected.md",
+      "current": "apps/web/tests/expected/science-file-library/lightbox.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-preset/session.jsonl",
+      "current": "snapshots/web/science-preset/session.v3.jsonl",
+      "status": "real API V3 recorded; formal Web replay 4/4 passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-trace-process/history.expected.md",
+      "current": "apps/web/tests/expected/science-trace-process/history.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-trace-process/process.expected.md",
+      "current": "apps/web/tests/expected/science-trace-process/process.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/science-transcript-chrome/ui.expected.md",
+      "current": "apps/web/tests/expected/science-transcript-chrome/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/agent-preset-authoring/created.expected.md",
+      "current": "apps/web/tests/expected/agent-preset-authoring/created.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/agent-preset-authoring/damaged.expected.md",
+      "current": "apps/web/tests/expected/agent-preset-authoring/damaged.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/agent-preset-authoring/section.expected.md",
+      "current": "apps/web/tests/expected/agent-preset-authoring/section.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/agent-preset-selection/menu.expected.md",
+      "current": "apps/web/tests/expected/agent-preset-selection/menu.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/bash-abort-row/ui.expected.md",
+      "current": "snapshots/web/bash-abort-row/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/cordis-tool-round/ui.expected.md",
+      "current": "snapshots/web/cordis-tool-round/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/goal-multi-turn-actions/ui.expected.md",
+      "current": "snapshots/web/goal-multi-turn-actions/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/lifecycle-chrome/hero.expected.md",
+      "current": "snapshots/web/lifecycle-chrome/hero.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/lifecycle-chrome/plan-active.expected.md",
+      "current": "snapshots/web/lifecycle-chrome/plan-active.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/message-actions/ui.expected.md",
+      "current": "snapshots/web/message-actions/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/plugin-config/section.expected.md",
+      "current": "apps/web/tests/expected/plugin-config/section.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/seeded-history/command-row.expected.md",
+      "current": "snapshots/web/seeded-history/command-row.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/seeded-history/feedback-row.expected.md",
+      "current": "snapshots/web/seeded-history/feedback-row.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "apps/web/tests/snapshots/seeded-history/ui.expected.md",
+      "current": "snapshots/web/seeded-history/ui.expected.md",
+      "status": "replay passed"
+    },
+    {
+      "old": "examples/acp-agent/tests/snapshots/persistent-pwsh-tool-turn/session.jsonl",
+      "current": "snapshots/session/persistent-pwsh-tool-turn/session.v3.jsonl",
+      "status": "migrated to headless owner; P3 corpus evidence; P6 skipped because pwsh unavailable"
+    },
+    {
+      "old": "examples/acp-agent/tests/snapshots/pwsh-tool-turn/tool-schemas.expected.json",
+      "current": "snapshots/session/pwsh-tool-turn/tool-schemas.expected.json",
+      "status": "migrated to headless owner; P3 corpus evidence; P6 skipped because pwsh unavailable"
+    },
+    {
+      "old": "examples/headless-agent/tests/snapshots/advanced-toolchain/session.1.jsonl",
+      "current": "snapshots/session/advanced-toolchain/session.1.v3.jsonl",
+      "status": "inventory-enabled replay passed with real overlay package provenance; original composition and expected unchanged"
+    },
+    {
+      "old": "examples/headless-agent/tests/snapshots/advanced-toolchain/session.2.jsonl",
+      "current": "snapshots/session/advanced-toolchain/session.2.v3.jsonl",
+      "status": "inventory-enabled replay passed with real overlay package provenance; original composition and expected unchanged"
+    },
+    {
+      "old": "examples/headless-agent/tests/snapshots/advanced-toolchain/session.jsonl",
+      "current": "snapshots/session/advanced-toolchain/session.v3.jsonl",
+      "status": "inventory-enabled replay passed with real overlay package provenance; original composition and expected unchanged"
+    },
+    {
+      "old": "examples/headless-agent/tests/snapshots/compaction-recovery/session.jsonl",
+      "current": "snapshots/session/compaction-recovery/session.v3.jsonl",
+      "status": "inventory-enabled replay passed with real overlay package provenance; original composition and expected unchanged"
+    },
+    {
+      "old": "examples/headless-agent/tests/snapshots/pty-tools/session.jsonl",
+      "current": "snapshots/session/pty-tools-sandbox-backend/session.v3.jsonl",
+      "status": "inventory-enabled replay passed with real overlay package provenance; original composition and expected unchanged"
+    },
+    {
+      "old": "scripts/snapshots/translation-prompt-v4/request-response.expected.json",
+      "current": "scripts/translation-prompt.expected.spec.ts",
+      "status": "owner-local unit test passed 1/1; no script or expected edits"
+    }
+  ],
+  "summary": {
+    "replayOrOwnerTestVerified": 35,
+    "platformSkippedPwshUnavailable": 2,
+    "missing": 0
+  }
+}

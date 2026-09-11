@@ -1,0 +1,645 @@
+{
+ "base": "rc.2",
+ "upstream_rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+ "candidate": "0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+ "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+ "historical_range": "ce76a86204..6528088e9f8c579024124add2642cde5a062ff16",
+ "row_count": 52,
+ "rows_matching_historical": 31,
+ "rows_drifted": 21,
+ "historical_total": [
+  2560,
+  737
+ ],
+ "against_rc2_total": [
+  4957,
+  718
+ ],
+ "rows": [
+  {
+   "path": "packages/api/remotes",
+   "historical": [
+    6,
+    3
+   ],
+   "against_rc2": [
+    5,
+    2
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/api/settings-controller",
+   "historical": [
+    1,
+    0
+   ],
+   "against_rc2": [
+    6,
+    4
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/attachment/attachment",
+   "historical": [
+    17,
+    2
+   ],
+   "against_rc2": [
+    17,
+    2
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/attachment/attachment-local",
+   "historical": [
+    71,
+    4
+   ],
+   "against_rc2": [
+    71,
+    4
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/boot/app-boot",
+   "historical": [
+    4,
+    0
+   ],
+   "against_rc2": [
+    8,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/bundle/headless",
+   "historical": [
+    19,
+    10
+   ],
+   "against_rc2": [
+    61,
+    10
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/client/connection",
+   "historical": [
+    2,
+    0
+   ],
+   "against_rc2": [
+    3,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/client/locale",
+   "historical": [
+    2,
+    1
+   ],
+   "against_rc2": [
+    2,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/client/ui-agent-preset",
+   "historical": [
+    49,
+    45
+   ],
+   "against_rc2": [
+    66,
+    45
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/client/ui-permission-presets",
+   "historical": [
+    2,
+    0
+   ],
+   "against_rc2": [
+    2,
+    0
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/client/ui-settings",
+   "historical": [
+    13,
+    5
+   ],
+   "against_rc2": [
+    23,
+    7
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/client/ui-settings-models",
+   "historical": [
+    36,
+    30
+   ],
+   "against_rc2": [
+    36,
+    30
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/client/ui-settings-plugins",
+   "historical": [
+    3,
+    3
+   ],
+   "against_rc2": [
+    3,
+    3
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/client/ui-theme",
+   "historical": [
+    1,
+    0
+   ],
+   "against_rc2": [
+    1,
+    0
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/compaction/compaction-tool-result-pruner",
+   "historical": [
+    98,
+    7
+   ],
+   "against_rc2": [
+    98,
+    7
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/core/agent-loop",
+   "historical": [
+    35,
+    2
+   ],
+   "against_rc2": [
+    35,
+    2
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/e2b/e2b",
+   "historical": [
+    4,
+    0
+   ],
+   "against_rc2": [
+    4,
+    0
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/e2b/subprocess-e2b",
+   "historical": [
+    109,
+    17
+   ],
+   "against_rc2": [
+    170,
+    17
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/experimental/webworker-runtime",
+   "historical": [
+    3,
+    0
+   ],
+   "against_rc2": [
+    38,
+    16
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/extensions/tool-cordis",
+   "historical": [
+    90,
+    27
+   ],
+   "against_rc2": [
+    672,
+    12
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/fs/tool-fs",
+   "historical": [
+    435,
+    47
+   ],
+   "against_rc2": [
+    435,
+    47
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/fs/tool-fs-search",
+   "historical": [
+    5,
+    1
+   ],
+   "against_rc2": [
+    5,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/llm/plugin-package-inventory-deepseek",
+   "historical": [
+    1,
+    1
+   ],
+   "against_rc2": [
+    1,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/lsp/lsp-stdio",
+   "historical": [
+    1,
+    0
+   ],
+   "against_rc2": [
+    1,
+    0
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/mcp/mcp-client",
+   "historical": [
+    411,
+    47
+   ],
+   "against_rc2": [
+    442,
+    47
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/preset/agent-presets",
+   "historical": [
+    178,
+    68
+   ],
+   "against_rc2": [
+    219,
+    67
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/sandbox/sandbox",
+   "historical": [
+    231,
+    2
+   ],
+   "against_rc2": [
+    231,
+    2
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/sandbox/sandbox-local",
+   "historical": [
+    13,
+    7
+   ],
+   "against_rc2": [
+    13,
+    7
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/sandbox/sandbox-windows-acl",
+   "historical": [
+    179,
+    3
+   ],
+   "against_rc2": [
+    179,
+    3
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/session/session-attachment-index",
+   "historical": [
+    50,
+    34
+   ],
+   "against_rc2": [
+    1087,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/session/session-projection",
+   "historical": [
+    34,
+    11
+   ],
+   "against_rc2": [
+    88,
+    11
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/settings/settings",
+   "historical": [
+    89,
+    3
+   ],
+   "against_rc2": [
+    98,
+    4
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/shell/bash-local",
+   "historical": [
+    6,
+    5
+   ],
+   "against_rc2": [
+    6,
+    5
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/shell/bash-sandbox",
+   "historical": [
+    31,
+    155
+   ],
+   "against_rc2": [
+    31,
+    155
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/shell/pwsh-local",
+   "historical": [
+    6,
+    3
+   ],
+   "against_rc2": [
+    6,
+    3
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/shell/pwsh-sandbox",
+   "historical": [
+    17,
+    136
+   ],
+   "against_rc2": [
+    17,
+    136
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/shell/tool-bash-persistent",
+   "historical": [
+    1,
+    1
+   ],
+   "against_rc2": [
+    1,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/shell/tool-pwsh-persistent",
+   "historical": [
+    1,
+    1
+   ],
+   "against_rc2": [
+    1,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/subagent/subagent-acp",
+   "historical": [
+    14,
+    10
+   ],
+   "against_rc2": [
+    14,
+    10
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/subagent/subagent-claude-code",
+   "historical": [
+    3,
+    1
+   ],
+   "against_rc2": [
+    3,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/subagent/subagent-codex",
+   "historical": [
+    3,
+    1
+   ],
+   "against_rc2": [
+    3,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/subprocess/subprocess",
+   "historical": [
+    59,
+    7
+   ],
+   "against_rc2": [
+    59,
+    7
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/subprocess/subprocess-local",
+   "historical": [
+    159,
+    24
+   ],
+   "against_rc2": [
+    217,
+    25
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/terminal/terminal-bash",
+   "historical": [
+    17,
+    10
+   ],
+   "against_rc2": [
+    17,
+    10
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/terminal/tool-terminal",
+   "historical": [
+    1,
+    1
+   ],
+   "against_rc2": [
+    1,
+    1
+   ],
+   "drifted": false
+  },
+  {
+   "path": "packages/test-support/client-runtime",
+   "historical": [
+    2,
+    0
+   ],
+   "against_rc2": [
+    3,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "packages/test-support/session-snapshot",
+   "historical": [
+    2,
+    2
+   ],
+   "against_rc2": [
+    330,
+    8
+   ],
+   "drifted": true
+  },
+  {
+   "path": "scripts/check-workspace-constraints.spec.ts",
+   "historical": [
+    21,
+    0
+   ],
+   "against_rc2": [
+    45,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "scripts/check-workspace-constraints.ts",
+   "historical": [
+    5,
+    0
+   ],
+   "against_rc2": [
+    16,
+    2
+   ],
+   "drifted": true
+  },
+  {
+   "path": "scripts/gen-cordis-catalog.ts",
+   "historical": [
+    6,
+    0
+   ],
+   "against_rc2": [
+    53,
+    0
+   ],
+   "drifted": true
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.spec.ts",
+   "historical": [
+    10,
+    0
+   ],
+   "against_rc2": [
+    10,
+    0
+   ],
+   "drifted": false
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.ts",
+   "historical": [
+    4,
+    0
+   ],
+   "against_rc2": [
+    4,
+    0
+   ],
+   "drifted": false
+  }
+ ],
+ "note_delivery_sha": "the carrying delivery commit is reported in the handoff write-up; the measured basis here is the immutable code candidate"
+}

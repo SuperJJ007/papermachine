@@ -1,12 +1,14 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect } from 'react'
 import clsx from 'clsx'
-import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
 } from '../contract/slots.ts'
-import type { ViewTab } from '../contract/views.ts'
+import { conversationPhase } from '../contract/snapshot.ts'
+import { resolveActiveView } from '../view-selection.ts'
 import css from './ConversationRoot.module.css'
 
 /** Full props composed from the strict session body contract. */
@@ -19,15 +21,6 @@ interface Breadcrumb {
   readonly id: SessionId
   readonly displayTitle: string
   readonly subagent: boolean
-}
-
-const DEFAULT_VIEW_ID = 'chat'
-
-/** Resolve by id and keep stale persisted selections on the stable Chat fallback. */
-function resolveActiveView(tabs: readonly ViewTab[], selectedId: string | null): ViewTab | undefined {
-  const requestedId = selectedId ?? DEFAULT_VIEW_ID
-  return tabs.find(view => view.id === requestedId)
-    ?? tabs.find(view => view.id === DEFAULT_VIEW_ID)
 }
 
 function deriveAncestry(list: SessionListState, id: SessionId): readonly Breadcrumb[] {
@@ -61,114 +54,107 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 /**
  * Renders Session header chrome above the resident conversation scrollport.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns the hidden blank-session header or visible title and tabs.
+ * @returns the corner control for a blank Session, otherwise the title and tabs.
  */
 export function ConversationSessionHeader({
-  sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, openDetailsView, toggleDetails, bindDetailsToggler, t,
+  sessionId, useSession, useSessions, useConversation, useConversationViews, useStore,
+  renderSlot, open, selectView, t,
 }: ConversationSessionHeaderProps) {
-  useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list(sessionId)
+  const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
-  // The panel's selected entry is the header's own store read, so header
-  // controls resolve their click here rather than each entry mirroring which
-  // Details view is showing: a repeat click on the showing entry flips the
-  // panel closed, any other click routes to that entry and opens it.
-  const detailsView = useStore(s => s.detailsView)
-  const toggleDetailsView = (id: string) => {
-    if (id === detailsView) toggleDetails()
-    else openDetailsView(id)
-  }
-  useEffect(() => bindDetailsToggler?.(toggleDetailsView), [bindDetailsToggler, detailsView, openDetailsView, toggleDetails])
   const ancestry = useSessions(s => deriveAncestry(s, sessionId), equalBreadcrumbs)
-  const composerPhase = useSession(s => s.composerPhase)
-  const blank = useSession(s => s.blank)
-  const hideChrome = blank && composerPhase === 'blank'
+  const session = useSession(s => s)
+  const conversation = useConversation(s => s)
+  const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
+
+  if (hideChrome) {
+    return (
+      <header className={css.headerBlank}>
+        {renderSlot('conversation.session.header.corner', {})}
+      </header>
+    )
+  }
 
   return (
-    <header
-      className={clsx(css.header, hideChrome && css.headerHidden)}
-      aria-hidden={hideChrome || undefined}
-    >
-      {!hideChrome && (
-        <>
-          <div className={css.titleRow}>
-            <div className={css.titleCluster}>
-              <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
-                {ancestry.map((summary, index) => {
-                  const last = index === ancestry.length - 1
-                  const title = (
-                    <button
-                      type="button"
-                      className={clsx(
-                        css.crumb,
-                        summary.subagent && css.crumbSubagent,
-                        last && css.crumbCurrent,
-                      )}
-                      disabled={last}
-                      onClick={() => { open(summary.id) }}
-                    >
-                      {summary.displayTitle}
-                    </button>
-                  )
-                  const lineage = last || summary.subagent
-                  const lineageOwner = {
-                    lineageSessionId: summary.id,
-                    displayTitle: summary.displayTitle,
-                    ...last ? {} : { openTitle: () => { open(summary.id) } },
-                  }
-                  return (
-                    <span key={summary.id} className={css.crumbSeg}>
-                      {index > 0 && <span className={css.crumbSep}>/</span>}
-                      {lineage
-                        ? summary.subagent
-                          ? renderSlot(
+    <header className={css.header}>
+      <div className={css.titleRow}>
+        <div className={css.titleCluster}>
+          <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
+            {ancestry.map((summary, index) => {
+              const last = index === ancestry.length - 1
+              const title = (
+                <button
+                  type="button"
+                  className={clsx(
+                    css.crumb,
+                    summary.subagent && css.crumbSubagent,
+                    last && css.crumbCurrent,
+                  )}
+                  disabled={last}
+                  onClick={() => { open(summary.id) }}
+                >
+                  {summary.displayTitle}
+                </button>
+              )
+              const lineage = last || summary.subagent
+              const lineageOwner = {
+                lineageSessionId: summary.id,
+                displayTitle: summary.displayTitle,
+                ...last ? {} : { openTitle: () => { open(summary.id) } },
+              }
+              return (
+                <span key={summary.id} className={css.crumbSeg}>
+                  {index > 0 && <span className={css.crumbSep}>/</span>}
+                  {lineage
+                    ? summary.subagent
+                      ? renderSlot(
+                        'conversation.session.header.lineage',
+                        lineageOwner,
+                        { fallback: title },
+                      )
+                      : (
+                        <>
+                          {title}
+                          {renderSlot(
                             'conversation.session.header.lineage',
                             lineageOwner,
-                            { fallback: title },
-                          )
-                          : (
-                            <>
-                              {title}
-                              {renderSlot(
-                                'conversation.session.header.lineage',
-                                lineageOwner,
-                                { fallback: null },
-                              )}
-                            </>
-                          )
-                        : title}
-                    </span>
-                  )
-                })}
-                {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
-              </nav>
-              <div className={css.headerActions}>
-                {renderSlot('conversation.session.header.actions', { detailsView, toggleDetailsView })}
-              </div>
-            </div>
-            <div className={css.headerUtilities}>
-              {renderSlot('conversation.session.header.utilities', { detailsView, toggleDetailsView })}
-            </div>
+                            { fallback: null },
+                          )}
+                        </>
+                      )
+                    : title}
+                </span>
+              )
+            })}
+            {ancestry.length === 0 && <span className={css.crumbCurrent}>{sessionId}</span>}
+          </nav>
+          <div className={css.headerActions}>
+            {renderSlot('conversation.session.header.actions', {})}
           </div>
-          {tabs.length > 1 && (
-            <div className="dsh-header-tabs" role="tablist">
-              {tabs.map(viewTab => (
-                <button
-                  key={viewTab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={viewTab.id === active?.id}
-                  className={clsx('dsh-header-tab', viewTab.id === active?.id && 'dsh-header-tab-active')}
-                  onClick={() => { actions.setView(viewTab.id) }}
-                >
-                  {viewTab.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+        </div>
+        <div className={css.headerUtilities}>
+          {renderSlot('conversation.session.header.utilities', {})}
+        </div>
+        <div className={css.headerCorner} data-conversation-header-corner="">
+          {renderSlot('conversation.session.header.corner', {})}
+        </div>
+      </div>
+      {tabs.length > 1 && (
+        <div className={css.tabs} role="tablist">
+          {tabs.map(viewTab => (
+            <button
+              key={viewTab.id}
+              type="button"
+              role="tab"
+              aria-selected={viewTab.id === active?.id}
+              className={clsx(css.tab, viewTab.id === active?.id && css.tabActive)}
+              onClick={() => { selectView(viewTab.id) }}
+            >
+              {viewTab.label}
+            </button>
+          ))}
+        </div>
       )}
     </header>
   )
@@ -181,19 +167,17 @@ export function ConversationSessionHeader({
  * @returns the active view area, or null while the Session remains blank.
  */
 export function ConversationSession({
-  sessionId, useSession, useInput, inputActions, useStore, actions,
-  renderSlot, views, bindDraftMirror, releaseSessionImages,
+  useSession, useConversation, useConversationViews, useInput, inputActions, useStore, actions,
+  renderSlot, bindDraftMirror, openView,
 }: ConversationSessionProps) {
-  useSyncExternalStore(views.subscribe, views.version)
-  const tabs = views.list(sessionId)
+  const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
   const active = resolveActiveView(tabs, selectedId)
-  const composerPhase = useSession(s => s.composerPhase)
-  const blank = useSession(s => s.blank)
+  const session = useSession(s => s)
+  const conversation = useConversation(s => s)
   const inputState = useInput(s => s)
   const storedDraft = useStore(s => s.draft)
-  // `?? null`: persisted snapshots from before the inspect field rehydrate without it.
-  const inspect = useStore(s => s.inspect ?? null)
+  const viewRequest = useStore(s => s.viewRequest ?? null)
 
   useEffect(() => {
     if (inputState.draft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
@@ -203,22 +187,13 @@ export function ConversationSession({
     // the machine mirror, not this seed effect.
   }, [inputActions])
 
-  useEffect(() => () => {
-    releaseSessionImages(sessionId)
-  }, [releaseSessionImages, sessionId])
-
-  if (blank && composerPhase === 'blank') return null
+  if (session.blank && conversationPhase(session, conversation) === 'blank') return null
   return (
     <div className={css.viewArea}>
       {active !== undefined && renderSlot('conversation.view', {
-        inspect,
-        onInspectDone: () => { actions.setInspect(null) },
-        // Unregistered 'trajectory' id is safe: the tab ring falls back to
-        // the first view, and the untouched inspect target stays inert.
-        inspectCall: (callId) => {
-          actions.setInspect({ callId })
-          actions.setView('trajectory')
-        },
+        viewRequest,
+        openView,
+        completeViewRequest: actions.completeViewRequest,
       }, { only: active.id })}
     </div>
   )

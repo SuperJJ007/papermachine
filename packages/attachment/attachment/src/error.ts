@@ -15,22 +15,24 @@ const IMAGE_ADMISSION_ERROR_CODES = [
 /** Caller-correctable attachment failure codes raised while admitting image input. */
 export type ImageAdmissionErrorCode = typeof IMAGE_ADMISSION_ERROR_CODES[number]
 
-/** Caller-correctable attachment failure codes raised while admitting text input. */
-export type TextAdmissionErrorCode = 'INVALID_TEXT' | 'TEXT_TOO_LARGE'
+const ATTACHMENT_ERROR_CODES = [
+  ...IMAGE_ADMISSION_ERROR_CODES,
+  'INVALID_FILE_BASE64',
+  'INVALID_ATTACHMENT_REF',
+  'ATTACHMENT_CORRUPT',
+  'ATTACHMENT_WRITE_FAILED',
+  'ATTACHMENT_NOT_FOUND',
+  'ATTACHMENT_READ_FAILED',
+  'ATTACHMENT_PROJECTION_UNSUPPORTED',
+  'ATTACHMENT_FILES_UNSUPPORTED',
+] as const
 
 /** Stable attachment failure codes used for protocol error routing. */
-export type AttachmentErrorCode =
-  | ImageAdmissionErrorCode
-  | TextAdmissionErrorCode
-  | 'INVALID_ATTACHMENT_REF'
-  | 'ATTACHMENT_CORRUPT'
-  | 'ATTACHMENT_WRITE_FAILED'
-  | 'ATTACHMENT_NOT_FOUND'
-  | 'ATTACHMENT_READ_FAILED'
-  | 'ATTACHMENT_PROJECTION_UNSUPPORTED'
+export type AttachmentErrorCode = typeof ATTACHMENT_ERROR_CODES[number]
 
 /** Runtime membership for structurally compatible errors crossing package boundaries. */
 const IMAGE_ADMISSION_ERROR_CODE_SET: ReadonlySet<string> = new Set(IMAGE_ADMISSION_ERROR_CODES)
+const ATTACHMENT_ERROR_CODE_SET: ReadonlySet<string> = new Set(ATTACHMENT_ERROR_CODES)
 
 /**
  * Stable failures suitable for host RPC error mapping.
@@ -55,6 +57,18 @@ export class AttachmentError extends Error {
     this.name = 'AttachmentError'
     this.code = code
   }
+}
+
+/**
+ * Identify attachment failures by their stable code across duplicate package installations.
+ * @param error - failure raised while validating, persisting, or reading an attachment.
+ * @returns whether the failure carries a recognized attachment error code.
+ */
+export function isAttachmentError(error: unknown): error is AttachmentError {
+  return error instanceof Error
+    && 'code' in error
+    && typeof error.code === 'string'
+    && ATTACHMENT_ERROR_CODE_SET.has(error.code)
 }
 
 /**

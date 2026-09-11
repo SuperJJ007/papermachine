@@ -1,0 +1,39 @@
+{
+  "result": "inventory enabled; five original failures fixed; six final replays pass",
+  "manifestChanges": false,
+  "buildInstallRun": false,
+  "logs": [
+    {
+      "file": "pm-p6-inventory-enabled-replay.log",
+      "sha256": "4b6bc6cea97a6bdb7cd355d063c664613de5066b5d562f191e0fade358195345"
+    },
+    {
+      "file": "pm-p6-inventory-fixed-replay.log",
+      "sha256": "736a9d7e823342c7df3462fc4c7a4eefea6472d7a1fc3140c6ab414362c4060f"
+    },
+    {
+      "file": "pm-p6-inventory-final-replay.log",
+      "sha256": "5f83fb855a8e2680601c18b720cb7ccb74e28f9cb6a121a943fc349231f45593"
+    },
+    {
+      "file": "pm-p6-inventory-owner-unit.log",
+      "sha256": "e876013bb21a94a116a24cac02db148ae4b0abe0b3a2fae55dd511cf65b7b52e"
+    },
+    {
+      "file": "pm-p6-loader-overlay-coverage.log",
+      "sha256": "8b3443efc40cc9e74b3acfc69116a188f06b20a75da901e5b93e4a9cffdca5da"
+    },
+    {
+      "file": "pm-p6-loader-overlay-lint.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "pm-p6-loader-overlay-doc-links.log",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "file": "pm-p6-loader-overlay-pairing.log",
+      "sha256": "d0a74be51e1931f7bca41e8c12292e48068cfafd9b5b22eeb7e2226008e6bb40"
+    }
+  ]
+}

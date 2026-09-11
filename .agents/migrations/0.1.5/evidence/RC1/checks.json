@@ -1,0 +1,149 @@
+{
+  "baseline": "5dda764ed3aa172535a7967b06ff95d9cbfe536a",
+  "sourceCheckpoint": "df03df3e26",
+  "upstream": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+  "checkout": "/Users/superjj/ccproj/pm-replant",
+  "node": "24.14.0",
+  "pnpm": "11.7.0",
+  "python": "3.12.9",
+  "validationContext": "Integration working tree committed together with this report. P6 failures remain explicit.",
+  "checks": [
+    {
+      "command": "pnpm install --lockfile-only --ignore-scripts; CI=true pnpm install --frozen-lockfile",
+      "exit": 0,
+      "log": "pm-rc1-install-final.log"
+    },
+    {
+      "command": "pnpm run typecheck",
+      "exit": 0,
+      "log": "pm-rc1-typecheck-final.log"
+    },
+    {
+      "command": "DSH_CLIENT_BUILD_PROFILE=papermachine DSH_CLIENT_TITLE=PaperMachine pnpm run build",
+      "exit": 0,
+      "log": "pm-rc1-build-accepted.log",
+      "clientArtifacts": 238
+    },
+    {
+      "command": "pnpm run lint:contracts-ready",
+      "exit": 0,
+      "log": "pm-rc1-lint-final.log"
+    },
+    {
+      "command": "pnpm run duplication",
+      "exit": 0,
+      "log": "pm-rc1-duplication.log"
+    },
+    {
+      "command": "pnpm run constraints; pnpm run verify-package-dependencies",
+      "exit": 0,
+      "logs": [
+        "pm-rc1-constraints-final.log",
+        "pm-rc1-dependencies-final.log"
+      ]
+    },
+    {
+      "command": "vitest run packages/mcp/mcp-client packages/api/workspace-files packages/science/science-session packages/science/tool-science --maxWorkers=2",
+      "exit": 0,
+      "files": 35,
+      "tests": 610,
+      "log": "pm-rc1-host-tests.log"
+    },
+    {
+      "command": "vitest run packages/client/ui-science/tests --maxWorkers=2",
+      "exit": 0,
+      "files": 30,
+      "tests": 524,
+      "log": "rc1-science-tests-final.log"
+    },
+    {
+      "command": "vitest run --config vitest.snapshot.config.ts snapshots/sdk/sdk.snapshot.ts snapshots/session/headless.snapshot.ts --maxWorkers=2",
+      "exit": 1,
+      "passed": 110,
+      "failed": 2,
+      "conditionalSkipped": 2,
+      "log": "pm-rc1-snapshots.log"
+    },
+    {
+      "command": "vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t 'cordis-inspect-jsdoc|ptc-python-turn' --maxWorkers=2",
+      "exit": 0,
+      "passed": 2,
+      "notSelected": 94,
+      "log": "pm-rc1-snapshot-retry.log",
+      "reason": "Regenerated API was rebuilt; Python 3.12 was selected through PATH. No expected file changed."
+    },
+    {
+      "command": "pnpm run hygiene",
+      "exit": 1,
+      "passed": 14,
+      "failed": 2,
+      "log": "pm-rc1-hygiene.log",
+      "remaining": "package invariants from P6; constraints failure from removed-package residue subsequently fixed and rechecked"
+    },
+    {
+      "command": "pnpm run doc-sync",
+      "exit": 1,
+      "passed": 25,
+      "failed": 9,
+      "log": "pm-rc1-doc-sync-final.log",
+      "remaining": "P6 families: doc graphs, links, tool/config catalogs, doc refs, subsystem pages, README summaries/model experience, doc standard tests"
+    }
+  ],
+  "browser": "See RC1.md and archived logs for per-scenario passes and narrowly retried failures.",
+  "realEvidence": [
+    "real-v0.json",
+    "real-headless.json",
+    "python-replay.json"
+  ],
+  "logFiles": [
+    "dsh-rc1-build.log",
+    "dsh-rc1-focused.log",
+    "dsh-rc1-install.log",
+    "dsh-rc1-native.log",
+    "dsh-rc1-typecheck.log",
+    "pm-rc1-acceptance-sdk-minimal-in-history-replay-host.log",
+    "pm-rc1-acceptance-sdk-minimal-in-history-replay.log",
+    "pm-rc1-acceptance-sdk-minimal-replay-host.log",
+    "pm-rc1-acceptance-sdk-minimal-replay.log",
+    "pm-rc1-acceptance-sdk-restart-replay.log",
+    "pm-rc1-acceptance-sdk-snapshot-replay.log",
+    "pm-rc1-acceptance-v0.log",
+    "pm-rc1-build-accepted.log",
+    "pm-rc1-build-final.log",
+    "pm-rc1-build.log",
+    "pm-rc1-client-catalog-final.log",
+    "pm-rc1-client-catalog.log",
+    "pm-rc1-constraints-final.log",
+    "pm-rc1-cordis-catalog-final.log",
+    "pm-rc1-cordis-catalog.log",
+    "pm-rc1-dependencies-final.log",
+    "pm-rc1-doc-sync-final.log",
+    "pm-rc1-doc-sync.log",
+    "pm-rc1-duplication.log",
+    "pm-rc1-host-tests.log",
+    "pm-rc1-hygiene.log",
+    "pm-rc1-inspect-catalog-final.log",
+    "pm-rc1-inspect-catalog.log",
+    "pm-rc1-install-final.log",
+    "pm-rc1-install-lock-final.log",
+    "pm-rc1-install-lock.log",
+    "pm-rc1-install.log",
+    "pm-rc1-lint-final.log",
+    "pm-rc1-lint.log",
+    "pm-rc1-module-graph-final.log",
+    "pm-rc1-paths.log",
+    "pm-rc1-snapshot-retry.log",
+    "pm-rc1-snapshots.log",
+    "pm-rc1-typecheck-final.log",
+    "pm-rc1-typecheck.log",
+    "rc1-science-browser-refresh.log",
+    "rc1-science-browser-replay.log",
+    "rc1-science-browser.log",
+    "rc1-science-composition-tests.log",
+    "rc1-science-file-library-final.log",
+    "rc1-science-final-browser.log",
+    "rc1-science-footer-tests.log",
+    "rc1-science-tests-final.log",
+    "rc1-science-tests.log"
+  ]
+}

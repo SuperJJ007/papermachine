@@ -130,8 +130,7 @@ export interface TranslationPairingManifest {
 }
 
 const README_ARTIFACT = /(?:^|\/)readme(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
-const ROOT_CONTRIBUTING_ARTIFACT = /^contributing(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
-const ROOT_BRAND_GUIDELINES_ARTIFACT = /^brand_guidelines(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
+const ROOT_PAIRED_DOCUMENT_ARTIFACT = /^(?:brand_guidelines|contributing|safety)(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
 const NON_SOURCE_DIRECTORIES = new Set([
   'node_modules',
   'lib',
@@ -165,13 +164,9 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '**/__pycache__/**',
   '**/.pytest_cache/**',
   'apps/web/dist/**',
-  // Packaged desktop output: `.stage/host` is a deployed Host closure and
-  // `release/` holds the built `.app` bundles, both of which carry copies of
-  // documentation whose relative links no longer resolve from their new depth.
-  'apps/desktop/.stage/**',
-  'apps/desktop/release/**',
+  'apps/desktop/.desktop-build/**',
   '.artifacts/**',
-  'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*/**',
+  'python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/**',
   'vendor/**',
 ]
@@ -183,7 +178,8 @@ function isTranslationSourceExcluded(file: string): boolean {
       || segment.startsWith('.doc-typecheck-')
     || segment.startsWith('.node-next-types-'))
     || file.startsWith('apps/web/dist/')
-    || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-')
+    || file.startsWith('apps/desktop/.desktop-build/')
+    || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-')
     || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/')
 }
 
@@ -191,8 +187,7 @@ function isTranslationSourceExcluded(file: string): boolean {
 export function isTranslationScopeFile(file: string): boolean {
   return !file.startsWith('.agents/notes/archived/')
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
-    || ROOT_CONTRIBUTING_ARTIFACT.test(file)
-    || ROOT_BRAND_GUIDELINES_ARTIFACT.test(file)
+    || ROOT_PAIRED_DOCUMENT_ARTIFACT.test(file)
     || file.startsWith('.agents/notes/')
     || file.startsWith('docs/')
     || file.startsWith('python/'))

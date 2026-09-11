@@ -44,10 +44,6 @@ describe('windows-acl win32 chain (LocalSandboxProvider)', () => {
     expect(confined.enforcement).toBe('partial')
     expect(confined.denialSignatures).toEqual(['access is denied', 'access to the path', 'permission denied'])
     expect(confined.runnerFailureRules).toEqual([{ allowedExitCodes: [127], fatalSignatures: ['windows-acl-run: '] }])
-    // The rung re-execs process.execPath (a packaged Electron binary): without
-    // this, that binary boots a second app instance instead of running the
-    // runner as Node.
-    expect(confined.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
     // A sole candidate is selected unprobed.
     expect(probeWindowsAcl).not.toHaveBeenCalled()
   })
@@ -58,6 +54,5 @@ describe('windows-acl win32 chain (LocalSandboxProvider)', () => {
     expect(confined.argv.slice(-4)).toEqual(['--mode', 'read-only', '--', 'true'])
     expect(confined.enforcement).toBe('partial')
     expect(confined.runnerFailureRules).toEqual([{ allowedExitCodes: [127], fatalSignatures: ['windows-acl-run: '] }])
-    expect(confined.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
   })
 })

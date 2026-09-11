@@ -1,412 +1,455 @@
-/** Host child-process supervision for the Electron development carrier. */
+/** Upstream-Node child lifecycle and streaming custom-protocol carrier. */
 
-import { Buffer } from 'node:buffer'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { constants } from 'node:fs'
-import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import { MAX_HOST_LOG_ROTATED_FILES } from './host-config.ts'
+import { once } from 'node:events'
+import { stopProcessGroup } from './provisioning.ts'
+import { RotatingHostLog, drainHostStderr, redactHostStderr, type HostStderrLog } from './host-log.ts'
+import { join } from 'node:path'
+import { Readable, Writable } from 'node:stream'
+import {
+  DESKTOP_HOST_PROTOCOL_VERSION,
+  DESKTOP_PIPE_CHUNK_BYTES,
+  DESKTOP_REQUEST_PIPE_FD,
+  DESKTOP_RESPONSE_PIPE_FD,
+  DesktopHostResponseDecoder,
+  encodeDesktopRequestCancel,
+  encodeDesktopRequestData,
+  encodeDesktopRequestEnd,
+  encodeDesktopRequestStart,
+  type DesktopHostCommand,
+  type DesktopHostEvent,
+  type DesktopHostResponseFrame,
+} from './host-protocol.ts'
 
-/** Persisted, bounded stderr destination for one Host command. */
-export interface HostStderrLog {
-  /** Exact `<dshHome>/logs/host.log` path. */
-  readonly path: string
-  /** Maximum bytes retained in the active file. */
-  readonly maxBytes: number
-  /** Number of numbered rotated files retained beside the active file. */
-  readonly maxRotatedFiles: number
+interface PendingResponse {
+  readonly resolve: (response: Response) => void
+  readonly reject: (error: Error) => void
+  responseStarted: boolean
+  uploadOpen: boolean
+  controller?: ReadableStreamDefaultController<Uint8Array>
+  requestReader?: ReadableStreamDefaultReader<Uint8Array>
+  removeAbort?: () => void
 }
 
-/** A complete process launch specification with no ambient shell parsing. */
-export interface HostCommand {
-  /** Executable path. */
-  executable: string
-  /** Exact argument vector. */
-  args: readonly string[]
-  /** Working directory inherited by the Host. */
-  cwd: string
-  /** Complete environment inherited by the Host. */
-  env: NodeJS.ProcessEnv
-  /** Private bounded destination for redacted Host stderr. */
-  stderrLog: HostStderrLog
+function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
+  if (typeof message !== 'object' || message === null || !('type' in message)) return false
+  const candidate = message as Record<string, unknown>
+  switch (candidate.type) {
+    case 'ready':
+      return candidate.protocolVersion === DESKTOP_HOST_PROTOCOL_VERSION && typeof candidate.dshVersion === 'string'
+    case 'fatal':
+      return typeof candidate.message === 'string'
+    default:
+      return false
+  }
 }
 
-/** Unexpected Host termination reported after the process was ready. */
-export interface HostExit {
-  /** Numeric exit status, or `null` for signal termination. */
-  code: number | null
-  /** Terminating signal, or `null` for ordinary exit. */
-  signal: NodeJS.Signals | null
+function errorOf(reason: unknown, fallback: string): Error {
+  return reason instanceof Error ? reason : new Error(fallback)
 }
 
-/** Options controlling one Host supervisor. */
-export interface HostProcessSupervisorOptions {
-  /** Called only when a ready Host terminates without an active stop request. */
-  onUnexpectedExit?: (exit: HostExit) => void
-  /** Milliseconds {@link HostProcessSupervisor.stop} allows for cooperative Cordis disposal before escalating to SIGKILL. */
-  graceMs: number
-}
-
-const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?:\s|$)/
-const SENSITIVE_ENV_NAME = /(credential|key|password|secret|token)/i
-const REDACTED = '[REDACTED]'
-const OVERSIZED_LINE = '[host stderr line omitted: exceeded configured logMaxBytes]\n'
-// Milliseconds `HostProcessSupervisor`'s exit handling waits for the stderr
-// drain to settle before deciding the launch/exit outcome without it. The
-// drain only resolves at end-of-pipe; a grandchild that inherited the
-// Host's stderr file descriptor (subagent processes spawn with
-// `stderr: 'inherit'`) can keep that pipe open long after the Host itself
-// has exited, and a launch failure or crash must still be reported.
-const EXIT_LOG_DRAIN_TIMEOUT_MS = 500
-
-/** Return an errno match without weakening unknown caught values. */
-function hasCode(error: unknown, code: string): boolean {
-  return typeof error === 'object' && error !== null
-    && (error as { readonly code?: unknown }).code === code
-}
-
-/** Replace credentials before any Host stderr bytes enter persistent storage. */
-function redactHostStderr(text: string, env: NodeJS.ProcessEnv): string {
-  let redacted = text
-  const exactValues = Object.entries(env)
-    .filter(([name, value]) => SENSITIVE_ENV_NAME.test(name) && typeof value === 'string' && value.length > 0)
-    .map(([, value]) => value as string)
-    .sort((left, right) => right.length - left.length)
-  for (const value of exactValues) redacted = redacted.replaceAll(value, REDACTED)
-  return redacted
-    .replace(/\bBearer\s+[^\s,;]+/gi, `Bearer ${REDACTED}`)
-    .replace(/(\b(?:api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi, `$1${REDACTED}`)
-    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, REDACTED)
-}
-
-/**
- * Resolve when `drain` settles or after {@link EXIT_LOG_DRAIN_TIMEOUT_MS},
- * whichever comes first. `drain` (`HostProcessSupervisor.logDrain`) already
- * catches its own rejection internally, so this never rejects either way.
- */
-function withBoundedDrain(drain: Promise<void>): Promise<void> {
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve()
-    }
-    const timer = setTimeout(finish, EXIT_LOG_DRAIN_TIMEOUT_MS)
-    void drain.then(finish)
+async function exitsWithin(exit: Promise<void>, milliseconds: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => { resolve(false) }, milliseconds)
+    timer.unref()
   })
-}
-
-/** Require a regular non-symlink log file, returning its byte size when present. */
-async function regularFileSize(path: string): Promise<number | undefined> {
   try {
-    const entry = await lstat(path)
-    if (!entry.isFile() || entry.isSymbolicLink()) {
-      throw new Error(`desktop host: log path ${JSON.stringify(path)} must be a regular file`)
-    }
-    return entry.size
-  } catch (error) {
-    if (hasCode(error, 'ENOENT')) return undefined
-    throw error
+    return await Promise.race([exit.then(() => true), timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 
-/** Remove one exact old rotation without following a symlink. */
-async function removeRotationTarget(path: string): Promise<void> {
-  try {
-    const entry = await lstat(path)
-    if (entry.isDirectory() && !entry.isSymbolicLink()) {
-      throw new Error(`desktop host: rotated log path ${JSON.stringify(path)} must not be a directory`)
-    }
-    await unlink(path)
-  } catch (error) {
-    if (!hasCode(error, 'ENOENT')) throw error
-  }
+/** Ready facts reported by one installed dsh child. */
+export interface DesktopHostReady {
+  readonly protocolVersion: typeof DESKTOP_HOST_PROTOCOL_VERSION
+  readonly dshVersion: string
 }
 
-/** Rename one present regular log without accepting a link-shaped source. */
-async function rotateIfPresent(source: string, target: string): Promise<void> {
-  const size = await regularFileSize(source)
-  if (size === undefined) return
-  await rename(source, target)
-}
-
-/** Serialized writer that keeps the active and numbered Host logs within their configured byte/count bounds. */
-class RotatingHostLog {
-  private queue: Promise<void> = Promise.resolve()
-  private activeBytes: number | undefined
-
-  constructor(
-    private readonly config: HostStderrLog,
-    private readonly env: NodeJS.ProcessEnv,
-  ) {}
-
-  /** Largest raw line retained for redaction; larger lines become a fixed diagnostic. */
-  get lineBufferMaxBytes(): number {
-    return this.config.maxBytes
-  }
-
-  /** Queue one complete stderr line after credential redaction. */
-  write(line: string): void {
-    const safe = Buffer.byteLength(line) > this.config.maxBytes
-      ? OVERSIZED_LINE
-      : redactHostStderr(line, this.env)
-    this.queue = this.queue.then(async () => { await this.append(Buffer.from(safe)) })
-    // The supervisor observes the same rejection through `flush`; this
-    // handler only prevents an early queue rejection from becoming unhandled.
-    this.queue.catch(() => {})
-  }
-
-  /** Resolve after every queued write closes its file handle. */
-  flush(): Promise<void> {
-    return this.queue
-  }
-
-  /** Create and validate the private log directory and active file state once. */
-  private async prepare(): Promise<void> {
-    if (this.activeBytes !== undefined) return
-    const directory = dirname(this.config.path)
-    await mkdir(directory, { recursive: true, mode: 0o700 })
-    const entry = await lstat(directory)
-    if (!entry.isDirectory() || entry.isSymbolicLink()) {
-      throw new Error(`desktop host: log directory ${JSON.stringify(directory)} must be a private directory`)
-    }
-    await chmod(directory, 0o700)
-    for (let index = this.config.maxRotatedFiles + 1; index <= MAX_HOST_LOG_ROTATED_FILES; index += 1) {
-      await removeRotationTarget(`${this.config.path}.${String(index)}`)
-    }
-    this.activeBytes = await regularFileSize(this.config.path) ?? 0
-    if (this.activeBytes >= this.config.maxBytes) await this.rotate()
-  }
-
-  /** Move the active file through the configured numbered retention set. */
-  private async rotate(): Promise<void> {
-    for (let index = this.config.maxRotatedFiles; index >= 1; index -= 1) {
-      const target = `${this.config.path}.${String(index)}`
-      const source = index === 1 ? this.config.path : `${this.config.path}.${String(index - 1)}`
-      await removeRotationTarget(target)
-      await rotateIfPresent(source, target)
-    }
-    this.activeBytes = 0
-  }
-
-  /** Append one already-redacted line without splitting it across rotations. */
-  private async append(data: Buffer): Promise<void> {
-    await this.prepare()
-    if ((this.activeBytes as number) > 0 && (this.activeBytes as number) + data.byteLength > this.config.maxBytes) {
-      await this.rotate()
-    }
-    const handle = await open(
-      this.config.path,
-      constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | constants.O_NOFOLLOW,
-      0o600,
-    )
-    try {
-      const entry = await handle.stat()
-      if (!entry.isFile()) throw new Error(`desktop host: log path ${JSON.stringify(this.config.path)} must be a regular file`)
-      await handle.chmod(0o600)
-      await handle.writeFile(data)
-    } finally {
-      await handle.close()
-    }
-    this.activeBytes = (this.activeBytes as number) + data.byteLength
-  }
-}
-
-/** Drain Host stderr by complete bounded lines so credentials split across stream chunks are still redacted. */
-function drainHostStderr(child: ChildProcess, log: RotatingHostLog): Promise<void> {
-  const stderr = child.stderr
-  if (stderr === null) return Promise.reject(new Error('desktop host: stderr pipe is unavailable'))
-  stderr.setEncoding('utf8')
-  return new Promise<void>((resolve, reject) => {
-    let buffered = ''
-    let discardingOversizedLine = false
-    let finished = false
-    const finish = (error?: Error): void => {
-      if (finished) return
-      finished = true
-      if (!discardingOversizedLine && buffered.length > 0) log.write(buffered)
-      void log.flush().then(
-        () => {
-          if (error === undefined) resolve()
-          else reject(error)
-        },
-        reject,
-      )
-    }
-    stderr.on('data', (incoming: string) => {
-      let chunk = incoming
-      if (discardingOversizedLine) {
-        const newline = chunk.indexOf('\n')
-        if (newline === -1) return
-        chunk = chunk.slice(newline + 1)
-        discardingOversizedLine = false
-      }
-      buffered += chunk
-      while (true) {
-        const newline = buffered.indexOf('\n')
-        if (newline === -1) break
-        log.write(buffered.slice(0, newline + 1))
-        buffered = buffered.slice(newline + 1)
-      }
-      if (Buffer.byteLength(buffered) > log.lineBufferMaxBytes) {
-        log.write(OVERSIZED_LINE)
-        buffered = ''
-        discardingOversizedLine = true
-      }
-    })
-    stderr.once('end', () => { finish() })
-    stderr.once('error', (error) => { finish(new Error('desktop host: stderr pipe failed', { cause: error })) })
-  })
-}
-
-/**
- * Parse the stable Web readiness line without accepting a LAN address or unrelated URL.
- * @param line - one complete stdout line.
- * @returns the loopback URL, or `undefined` when the line is not readiness.
- */
-export function parseHostReadyLine(line: string): URL | undefined {
-  const match = READY_LINE.exec(line)
-  if (match?.[1] === undefined) return undefined
-  return new URL(match[1])
-}
-
-/** One restartable Host process whose process group belongs to this supervisor. */
-export class HostProcessSupervisor {
+/** One dsh backend running under the bundled upstream Node.js executable. */
+export class DesktopHostProcess {
   private child: ChildProcess | undefined
-  private stopping = false
-  private ready = false
-  private logDrain: Promise<void> = Promise.resolve()
+  private requestPipe: Writable | undefined
+  private responsePipe: Readable | undefined
+  private readonly responseDecoder = new DesktopHostResponseDecoder()
+  private requestWriteTail: Promise<void> = Promise.resolve()
+  private nextStreamId = 1
+  private readonly pending = new Map<number, PendingResponse>()
+  private readonly blockedResponses = new Set<number>()
+  private readyResolve!: (ready: DesktopHostReady) => void
+  private readyReject!: (error: Error) => void
+  private readonly readyPromise = new Promise<DesktopHostReady>((resolve, reject) => {
+    this.readyResolve = resolve
+    this.readyReject = reject
+  })
+  private exitPromise: Promise<void> | undefined
+  private watchdog: ChildProcess | undefined
+  private logDrain: Promise<void> | undefined
+  private stopping: Promise<void> | undefined
+  private stderr = ''
 
+  /**
+   * @param node - absolute bundled upstream Node.js executable.
+   * @param projectDir - active or staged desktop npm project.
+   * @param home - Resolved PaperMachine home shared by active and staged hosts.
+   * @param inspectPort - optional loopback inspector port for workspace development.
+   */
   constructor(
-    private readonly command: HostCommand,
-    private readonly options: HostProcessSupervisorOptions,
+    private readonly node: string,
+    private readonly projectDir: string,
+    private readonly home: string,
+    private readonly inspectPort?: number,
+    private readonly supervision?: { readonly log: HostStderrLog; readonly watchdogEntry: string; readonly onExit: (error: Error) => void },
   ) {}
 
-  /** Active Host pid, available synchronously after {@link start} begins. */
-  get pid(): number | undefined {
-    return this.child?.pid
-  }
-
-  /**
-   * Start one Host and resolve only after its stable readiness line.
-   * @returns the private loopback URL loaded by Electron.
-   */
-  start(): Promise<URL> {
-    if (this.child !== undefined) throw new Error('desktop host: already running')
-    this.stopping = false
-    this.ready = false
-    const child = spawn(this.command.executable, [...this.command.args], {
-      cwd: this.command.cwd,
-      env: this.command.env,
+  /** Start the child once and resolve only after its complete composition is active. */
+  async start(): Promise<DesktopHostReady> {
+    if (this.child !== undefined) return this.readyPromise
+    const entry = join(this.projectDir, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'index.js')
+    const child = spawn(this.node, [
+      ...(this.inspectPort === undefined ? [] : [`--inspect=127.0.0.1:${String(this.inspectPort)}`]),
+      entry,
+      this.projectDir,
+      ...(this.inspectPort === undefined ? [] : ['--allow-linked-profile']),
+    ], {
       detached: process.platform !== 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: this.projectDir,
+      env: {
+        ...Object.fromEntries(Object.entries(process.env).filter(([name]) => (
+          name !== 'NODE_OPTIONS' && !/^DSH_DESKTOP_/u.test(name) && !/^(?:npm|pnpm|corepack)_/iu.test(name)
+        ))),
+        DSH_HOME: this.home,
+        PAPERMACHINE_HOME: this.home,
+      },
+      stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe', 'ipc'],
     })
+    const requestPipe = child.stdio[DESKTOP_REQUEST_PIPE_FD]
+    const responsePipe = child.stdio[DESKTOP_RESPONSE_PIPE_FD]
+    if (!(requestPipe instanceof Writable) || !(responsePipe instanceof Readable)) {
+      child.kill('SIGTERM')
+      throw new Error('dsh desktop host did not expose the required byte pipes and IPC channel')
+    }
     this.child = child
-    const log = new RotatingHostLog(this.command.stderrLog, this.command.env)
-    this.logDrain = drainHostStderr(child, log).catch((error: unknown) => {
-      console.error(`desktop host: stderr logging failed: ${String(error)}`)
-    })
-    let stdout = ''
-    child.stdout.setEncoding('utf8')
-    return new Promise<URL>((resolve, reject) => {
-      let settled = false
-      const rejectStartup = (error: Error): void => {
-        if (settled) return
-        settled = true
-        reject(error)
+    this.requestPipe = requestPipe
+    this.responsePipe = responsePipe
+    child.stderr?.setEncoding('utf8')
+    child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-65_536) })
+    if (this.supervision !== undefined) {
+      this.logDrain = drainHostStderr(child, new RotatingHostLog(this.supervision.log, process.env))
+      this.logDrain.catch((error: unknown) => { console.error('desktop: Host log failed', error) })
+      if (process.platform !== 'win32' && child.pid !== undefined) {
+        this.watchdog = spawn(this.node, [this.supervision.watchdogEntry, String(process.pid), String(child.pid)], {
+          detached: true, stdio: 'ignore', env: { PATH: process.env.PATH },
+        })
+        this.watchdog.once('error', (error) => { this.fail(error) })
+        this.watchdog.unref()
       }
-      child.once('error', (error) => {
-        if (this.child === child) this.child = undefined
-        void this.logDrain.then(() => {
-          rejectStartup(new Error(`desktop host: failed to start: ${error.message}`, { cause: error }))
-        })
+    }
+    child.stdout?.pipe(process.stdout)
+    child.once('exit', (code, signal) => {
+      if (this.stopping === undefined) {
+        this.supervision?.onExit(new Error(`desktop: Host exited (${String(code ?? signal)})`))
+      }
+    })
+    responsePipe.on('data', (chunk: Buffer) => { this.acceptResponseBytes(chunk) })
+    responsePipe.once('end', () => {
+      try {
+        this.responseDecoder.finish()
+        this.fail(new Error('dsh desktop host response pipe ended'))
+      } catch (error) {
+        this.fail(errorOf(error, 'dsh desktop host response pipe failed'))
+      }
+    })
+    requestPipe.once('error', (error) => { this.fail(error) })
+    responsePipe.once('error', (error) => { this.fail(error) })
+    child.on('message', (message: unknown) => {
+      if (!isDesktopHostEvent(message)) {
+        this.fail(new Error('dsh desktop host sent an invalid IPC event'))
+        child.kill('SIGTERM')
+        return
+      }
+      this.handleMessage(message)
+    })
+    child.once('error', (error) => { this.fail(error) })
+    this.exitPromise = new Promise<void>((resolve) => {
+      child.once('exit', (code) => {
+        const suffix = this.stderr.trim() === '' ? '' : `: ${redactHostStderr(this.stderr.trim(), process.env)}`
+        if (code !== 0 && code !== null) this.fail(new Error(`dsh desktop host exited with ${String(code)}${suffix}`))
+        else this.fail(new Error(`dsh desktop host stopped${suffix}`))
+        resolve()
       })
-      child.stdout.on('data', (chunk: string) => {
-        stdout += chunk
-        while (true) {
-          const newline = stdout.indexOf('\n')
-          if (newline === -1) break
-          const line = stdout.slice(0, newline).replace(/\r$/, '')
-          stdout = stdout.slice(newline + 1)
-          const url = parseHostReadyLine(line)
-          if (url === undefined || settled) continue
-          settled = true
-          this.ready = true
-          resolve(url)
-        }
-      })
-      child.once('exit', (code, signal) => {
-        const wasStopping = this.stopping
-        const wasReady = this.ready
-        if (this.child === child) this.child = undefined
-        this.ready = false
-        // Bounded, not `this.logDrain` directly: see EXIT_LOG_DRAIN_TIMEOUT_MS.
-        void withBoundedDrain(this.logDrain).then(() => {
-          if (!wasReady) {
-            rejectStartup(new Error(
-              `desktop host: exited before readiness (${String(code ?? signal)})`,
-            ))
-            return
-          }
-          if (!wasStopping) this.options.onUnexpectedExit?.({ code, signal })
+    })
+    return this.readyPromise
+  }
+
+  /** Forward one `dsh-app://app` request to the child without buffering its body. */
+  async fetch(request: Request): Promise<Response> {
+    await this.start()
+    const child = this.child
+    if (child === undefined || !child.connected || this.requestPipe === undefined) {
+      throw new Error('dsh desktop host is unavailable')
+    }
+    if (this.nextStreamId > 0xffff_ffff) throw new Error('dsh desktop host exhausted its request stream ids')
+    const streamId = this.nextStreamId++
+    const method = request.method.toUpperCase()
+    const hasBody = method !== 'GET' && method !== 'HEAD' && request.body !== null
+    return new Promise<Response>((resolve, reject) => {
+      const pending: PendingResponse = {
+        resolve,
+        reject,
+        responseStarted: false,
+        uploadOpen: hasBody,
+      }
+      const abort = (): void => {
+        if (!this.pending.has(streamId)) return
+        const error = errorOf(request.signal.reason, 'request aborted')
+        pending.uploadOpen = false
+        void pending.requestReader?.cancel(error).catch(() => undefined)
+        this.enqueueRequestFrame(encodeDesktopRequestCancel(streamId)).catch((pipeError: unknown) => {
+          this.fail(errorOf(pipeError, 'dsh desktop request pipe failed'))
         })
+        if (pending.controller === undefined) pending.reject(error)
+        else pending.controller.error(error)
+        this.finishPending(streamId, false)
+      }
+      if (request.signal.aborted) {
+        reject(errorOf(request.signal.reason, 'request aborted'))
+        return
+      }
+      request.signal.addEventListener('abort', abort, { once: true })
+      pending.removeAbort = () => { request.signal.removeEventListener('abort', abort) }
+      this.pending.set(streamId, pending)
+      this.pumpRequest(streamId, request, hasBody).catch((error: unknown) => {
+        this.failPending(streamId, errorOf(error, 'dsh desktop request upload failed'))
       })
     })
   }
 
-  /**
-   * Stop the Host process group, escalating to SIGKILL after
-   * {@link HostProcessSupervisorOptions.graceMs} if anything in the group
-   * survives. The direct child exiting cleanly is not sufficient: a Host
-   * that disposes itself on SIGTERM while a kernel grandchild ignores it
-   * would otherwise leave that grandchild alive forever, so the grace
-   * period polls the whole process group rather than only the direct
-   * child's own exit.
-   */
-  async stop(): Promise<void> {
+  /** Request graceful teardown, then wait for child exit. */
+  stop(): Promise<void> {
+    this.stopping ??= this.stopOwned()
+    return this.stopping
+  }
+
+  private async stopOwned(): Promise<void> {
     const child = this.child
-    if (child?.pid === undefined) {
-      await this.logDrain
+    if (child === undefined) return
+    this.blockedResponses.clear()
+    this.responsePipe?.resume()
+    if (child.connected) this.send({ type: 'shutdown' })
+    // Closing the parent-owned write end releases the Host's pending Windows pipe read.
+    this.requestPipe?.destroy()
+    const exited = this.exitPromise ?? Promise.resolve()
+    if (!await exitsWithin(exited, 10_000)) child.kill('SIGTERM')
+    if (!await exitsWithin(exited, 5_000)) {
+      child.kill('SIGKILL')
+      if (!await exitsWithin(exited, 5_000)) {
+        throw new Error('dsh desktop host did not exit after SIGKILL')
+      }
+    }
+    if (process.platform !== 'win32') await stopProcessGroup(child)
+    const watchdog = this.watchdog
+    if (watchdog !== undefined && watchdog.exitCode === null && watchdog.signalCode === null) {
+      const done = once(watchdog, 'exit')
+      watchdog.kill('SIGTERM')
+      await done
+    }
+    await this.logDrain
+    this.child = undefined
+    this.requestPipe = undefined
+    this.responsePipe = undefined
+  }
+
+  private async pumpRequest(streamId: number, request: Request, hasBody: boolean): Promise<void> {
+    await this.enqueueRequestFrame(encodeDesktopRequestStart(streamId, {
+      url: request.url,
+      method: request.method.toUpperCase(),
+      headers: [...request.headers.entries()],
+      hasBody,
+    }))
+    if (!hasBody) return
+    const body = request.body
+    if (body === null) throw new Error('dsh desktop request body disappeared before upload')
+    const reader = body.getReader()
+    const pending = this.pending.get(streamId)
+    if (pending === undefined) {
+      await reader.cancel()
       return
     }
-    this.stopping = true
-    const exit = new Promise<void>(resolve => child.once('exit', () => { resolve() }))
-    signalProcessTree(child, 'SIGTERM')
-    const deadline = Date.now() + this.options.graceMs
-    while (isProcessTreeAlive(child) && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS))
+    pending.requestReader = reader
+    try {
+      for (;;) {
+        const next = await reader.read()
+        if (next.done) break
+        for (let offset = 0; offset < next.value.byteLength; offset += DESKTOP_PIPE_CHUNK_BYTES) {
+          if (!this.pending.has(streamId)) return
+          await this.enqueueRequestFrame(encodeDesktopRequestData(
+            streamId,
+            next.value.subarray(offset, offset + DESKTOP_PIPE_CHUNK_BYTES),
+          ))
+        }
+      }
+      const live = this.pending.get(streamId)
+      if (live !== undefined) {
+        await this.enqueueRequestFrame(encodeDesktopRequestEnd(streamId))
+        live.uploadOpen = false
+      }
+    } finally {
+      reader.releaseLock()
+      const live = this.pending.get(streamId)
+      if (live?.requestReader === reader) delete live.requestReader
     }
-    if (isProcessTreeAlive(child)) signalProcessTree(child, 'SIGKILL')
-    await exit
-    await this.logDrain
   }
-}
 
-// Interval this module polls the Host's process group for liveness during
-// HostProcessSupervisor.stop's grace period.
-const STOP_POLL_MS = 100
-
-/** Signal the process group on POSIX and the direct child on Windows. */
-function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return
-  try {
-    if (process.platform === 'win32') child.kill(signal)
-    else process.kill(-child.pid, signal)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  private enqueueRequestFrame(frame: Buffer): Promise<void> {
+    const write = this.requestWriteTail.then(async () => {
+      const pipe = this.requestPipe
+      if (pipe === undefined || pipe.destroyed) throw new Error('dsh desktop host request pipe is unavailable')
+      if (!pipe.write(frame)) await once(pipe, 'drain')
+    })
+    this.requestWriteTail = write.catch(() => undefined)
+    return write
   }
-}
 
-/** Whether the direct child or, on POSIX, any other member of its process group is still alive. */
-function isProcessTreeAlive(child: ChildProcess): boolean {
-  if (child.pid === undefined) return false
-  try {
-    if (process.platform === 'win32') process.kill(child.pid, 0)
-    else process.kill(-child.pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  private send(message: DesktopHostCommand): void {
+    const child = this.child
+    if (child === undefined || !child.connected) throw new Error('dsh desktop host IPC is unavailable')
+    child.send(message)
+  }
+
+  private acceptResponseBytes(chunk: Buffer): void {
+    try {
+      for (const frame of this.responseDecoder.push(chunk)) this.handleResponseFrame(frame)
+    } catch (error) {
+      this.fail(errorOf(error, 'dsh desktop host response pipe failed'))
+      this.child?.kill('SIGTERM')
+    }
+  }
+
+  private handleResponseFrame(frame: DesktopHostResponseFrame): void {
+    const pending = this.pending.get(frame.streamId)
+    if (pending === undefined) {
+      if (frame.streamId >= this.nextStreamId) {
+        throw new Error(`dsh desktop host responded for unknown stream ${String(frame.streamId)}`)
+      }
+      return
+    }
+    switch (frame.type) {
+      case 'start': {
+        if (pending.responseStarted) throw new Error(`dsh desktop host started stream ${String(frame.streamId)} twice`)
+        pending.responseStarted = true
+        let body: ReadableStream<Uint8Array> | null = null
+        if (frame.hasBody) {
+          body = new ReadableStream<Uint8Array>({
+            start: (controller) => { pending.controller = controller },
+            pull: () => {
+              this.blockedResponses.delete(frame.streamId)
+              this.resumeResponsePipe()
+            },
+            cancel: (reason) => { this.cancelResponse(frame.streamId, reason) },
+          })
+        }
+        pending.resolve(new Response(body, {
+          status: frame.status,
+          headers: new Headers(frame.headers.map(([name, value]) => [name, value] as [string, string])),
+        }))
+        return
+      }
+      case 'data': {
+        const controller = pending.controller
+        if (!pending.responseStarted || controller === undefined) {
+          throw new Error(`dsh desktop host sent body data before a body start for stream ${String(frame.streamId)}`)
+        }
+        controller.enqueue(frame.data)
+        if ((controller.desiredSize ?? 0) <= 0) {
+          this.blockedResponses.add(frame.streamId)
+          this.responsePipe?.pause()
+        }
+        return
+      }
+      case 'end':
+        if (!pending.responseStarted) {
+          throw new Error(`dsh desktop host ended stream ${String(frame.streamId)} before its response start`)
+        }
+        pending.controller?.close()
+        this.finishPending(frame.streamId, true)
+        return
+      case 'error':
+        this.failPending(frame.streamId, new Error(frame.message))
+        return
+      default:
+        frame satisfies never
+    }
+  }
+
+  private cancelResponse(streamId: number, reason: unknown): void {
+    const pending = this.pending.get(streamId)
+    if (pending === undefined) return
+    pending.uploadOpen = false
+    void pending.requestReader?.cancel(reason).catch(() => undefined)
+    this.enqueueRequestFrame(encodeDesktopRequestCancel(streamId)).catch((error: unknown) => {
+      this.fail(errorOf(error, 'dsh desktop request pipe failed'))
+    })
+    this.finishPending(streamId, false)
+  }
+
+  private failPending(streamId: number, error: Error): void {
+    const pending = this.pending.get(streamId)
+    if (pending === undefined) return
+    pending.uploadOpen = false
+    void pending.requestReader?.cancel(error).catch(() => undefined)
+    if (pending.controller === undefined) pending.reject(error)
+    else pending.controller.error(error)
+    this.enqueueRequestFrame(encodeDesktopRequestCancel(streamId)).catch((pipeError: unknown) => {
+      this.fail(errorOf(pipeError, 'dsh desktop request pipe failed'))
+    })
+    this.finishPending(streamId, false)
+  }
+
+  private finishPending(streamId: number, cancelOpenUpload: boolean): void {
+    const pending = this.pending.get(streamId)
+    if (pending === undefined) return
+    if (cancelOpenUpload && pending.uploadOpen) {
+      pending.uploadOpen = false
+      void pending.requestReader?.cancel().catch(() => undefined)
+      this.enqueueRequestFrame(encodeDesktopRequestCancel(streamId)).catch((error: unknown) => {
+        this.fail(errorOf(error, 'dsh desktop request pipe failed'))
+      })
+    }
+    pending.removeAbort?.()
+    this.pending.delete(streamId)
+    this.blockedResponses.delete(streamId)
+    this.resumeResponsePipe()
+  }
+
+  private resumeResponsePipe(): void {
+    if (this.blockedResponses.size === 0) this.responsePipe?.resume()
+  }
+
+  private handleMessage(message: DesktopHostEvent): void {
+    switch (message.type) {
+      case 'ready':
+        this.readyResolve(message)
+        return
+      case 'fatal':
+        this.fail(new Error(message.message))
+        return
+      default:
+        message satisfies never
+    }
+  }
+
+  private fail(error: Error): void {
+    this.readyReject(error)
+    for (const pending of this.pending.values()) {
+      void pending.requestReader?.cancel(error).catch(() => undefined)
+      if (pending.controller === undefined) pending.reject(error)
+      else pending.controller.error(error)
+      pending.removeAbort?.()
+    }
+    this.pending.clear()
+    this.blockedResponses.clear()
+    this.responsePipe?.resume()
   }
 }

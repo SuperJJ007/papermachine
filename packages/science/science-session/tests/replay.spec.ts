@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionLogOffset, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ScienceSessionDomain from '../src/index.ts'
 import { replayScience, toClientScienceProjection } from '../src/index.ts'
@@ -20,6 +20,8 @@ import {
   mode,
   outcome,
 } from './fixtures.ts'
+
+const checkpointHeader: SessionHeader = { version: SESSION_FORMAT_VERSION, id: SessionId('science-replay'), createdAt: 0, isSeeded: false, agentPreset: 'science' }
 
 interface ScienceCheckpointState {
   readonly observedSeq: number
@@ -40,6 +42,7 @@ async function harness(): Promise<Context> {
 
 function appendPreModeMessageOutcome(session: Session): void {
   const message = session.append('assistant/message', {
+    stream: [],
     turn: 1,
     step: 1,
     message: createMessage({
@@ -47,7 +50,7 @@ function appendPreModeMessageOutcome(session: Session): void {
       content: [{ type: 'text', text: 'pre-mode evidence' }],
       source: { kind: 'model', provider: 'test', model: 'test-model' },
     }),
-  }, { surfaceOp: 'append', sourceEventSeqs: [] })
+  }, { surfaceOp: 'append' })
   session.append('science/mode-bound', { version: 1, mode: mode() })
   const request = session.append('request/header', {
     header: { config: { provider: 'test', model: 'test-model' } },
@@ -79,11 +82,11 @@ describe('Science cold replay', () => {
     })
     appendPreModeMessageOutcome(liveSession)
     const live = liveCtx.sessionProjections.snapshot(liveSession).values.science
-    expect(live).toEqual(clientOf(liveSession.events))
+    expect(live).toEqual(clientOf(liveSession.snapshotEvents()))
 
     const coldCtx = await harness()
     const coldSession = coldCtx.sessions.create(SessionId('science-pre-mode-message-cold'), {
-      seed: JSON.parse(JSON.stringify(liveSession.events)) as SessionEvent[],
+      seed: JSON.parse(JSON.stringify(liveSession.snapshotEvents())) as SessionEvent[],
       meta: { agentPreset: 'science' },
     })
     expect(coldCtx.sessionProjections.snapshot(coldSession).values.science).toEqual(live)
@@ -100,7 +103,7 @@ describe('Science cold replay', () => {
     // reconstruction has nothing left to interrupt and matches live exactly
     // ('derives interrupted only when cold construction closes an unmatched
     // seed run', below, owns the open-kernel/open-run divergence).
-    const openKernel = replayScience(liveSession.events)!.kernels[0]!
+    const openKernel = replayScience(liveSession.snapshotEvents())!.kernels[0]!
     if (openKernel.state !== 'started') throw new Error('fixture kernel is not open')
     liveSession.append('science/kernel-state', {
       version: 1,
@@ -116,8 +119,8 @@ describe('Science cold replay', () => {
       },
     })
     const live = liveCtx.sessionProjections.snapshot(liveSession).values.science
-    expect(live).toEqual(clientOf(liveSession.events))
-    const seed = JSON.parse(JSON.stringify(liveSession.events)) as SessionEvent[]
+    expect(live).toEqual(clientOf(liveSession.snapshotEvents()))
+    const seed = JSON.parse(JSON.stringify(liveSession.snapshotEvents())) as SessionEvent[]
 
     const coldCtx = await harness()
     const coldSession = coldCtx.sessions.create(SessionId('science-cold'), {
@@ -126,7 +129,7 @@ describe('Science cold replay', () => {
     })
     const cold = coldCtx.sessionProjections.snapshot(coldSession).values.science
     expect(cold).toEqual(live)
-    expect(cold).toEqual(clientOf(coldSession.events))
+    expect(cold).toEqual(clientOf(coldSession.snapshotEvents()))
   })
 
   it('round-trips a projection checkpoint and preserves the cold value', async () => {
@@ -156,9 +159,11 @@ describe('Science cold replay', () => {
     }
     expect(ctx.sessionProjections.viewCheckpoint(tampered)).not.toHaveProperty('science')
     expect(ctx.sessionProjections.restoreFloor(tampered)).toBe(0)
-    expect(() => ctx.sessionProjections.restore(tampered, [], science.seq + 1))
+    expect(() => ctx.sessionProjections.restore(tampered, [], SessionLogOffset(science.seq + 1), checkpointHeader, SessionLogOffset(0)))
       .toThrow(/re-read from seq 0/)
-    const refolded = ctx.sessionProjections.restore(tampered, session.events, 0)
+    const refolded = ctx.sessionProjections.restore(
+      tampered, session.snapshotEvents(), SessionLogOffset(0), session.header, SessionLogOffset(0),
+    )
     expect(refolded.snapshot.values.science).toEqual(live)
     expect(ctx.sessionProjections.snapshot(session).values.science).toEqual(live)
   })
@@ -182,16 +187,21 @@ describe('Science cold replay', () => {
     }
     expect(ctx.sessionProjections.viewCheckpoint(spliced)).not.toHaveProperty('science')
     expect(ctx.sessionProjections.restoreFloor(spliced)).toBe(0)
-    expect(() => ctx.sessionProjections.restore(spliced, [], events.length))
+    expect(() => ctx.sessionProjections.restore(spliced, [], SessionLogOffset(events.length), checkpointHeader, SessionLogOffset(0)))
       .toThrow(/re-read from seq 0/)
 
-    const restored = ctx.sessionProjections.restore(spliced, events, 0)
+    const restored = ctx.sessionProjections.restore(spliced, events, SessionLogOffset(0), checkpointHeader, SessionLogOffset(0))
     expect(restored.snapshot.values.science).toEqual(clientOf(events))
+    const prepared = ctx.sessions.create(SessionId('science-hydrate-watermark'), { meta: { agentPreset: 'science' } })
+    expect(() => ctx.sessionProjections.hydrate(prepared, spliced, [], SessionLogOffset(events.length)))
+      .toThrow(/re-read from seq 0/)
+    expect(ctx.sessionProjections.hydrate(prepared, spliced, events, SessionLogOffset(0)).values.science)
+      .toEqual(clientOf(events))
     expect((restored.checkpoint.science?.val as ScienceCheckpointState).observedSeq)
       .toBe(events.at(-1)!.seq)
   })
 
-  it('discards a version-mismatched checkpoint and refolds the complete log', async () => {
+  it('discards the previous checkpoint version and refolds the complete log', async () => {
     const ctx = await harness()
     const session = ctx.sessions.create(SessionId('science-checkpoint-version'), {
       meta: { agentPreset: 'science' },
@@ -202,16 +212,18 @@ describe('Science cold replay', () => {
     const science = checkpoint.science!
     const mismatched = {
       ...checkpoint,
-      science: { ...science, ver: science.ver + 1 },
+      science: { ...science, ver: science.ver - 1 },
     }
 
     expect(ctx.sessionProjections.viewCheckpoint(mismatched)).not.toHaveProperty('science')
     expect(ctx.sessionProjections.restoreFloor(mismatched)).toBe(0)
-    const restored = ctx.sessionProjections.restore(mismatched, session.events, 0)
+    const restored = ctx.sessionProjections.restore(
+      mismatched, session.snapshotEvents(), SessionLogOffset(0), session.header, SessionLogOffset(0),
+    )
     expect(restored.snapshot.values.science).toEqual(live)
     expect(restored.checkpoint.science?.ver).toBe(SCIENCE_PROJECTION_STATE_VERSION)
 
-    const empty = ctx.sessionProjections.restore(mismatched, [], 0)
+    const empty = ctx.sessionProjections.restore(mismatched, [], SessionLogOffset(0), session.header, SessionLogOffset(0))
     expect(empty.snapshot.values.science).toBeNull()
   })
 
@@ -223,7 +235,7 @@ describe('Science cold replay', () => {
     appendFixtureEvents(source, legalEvents().slice(0, 6))
     expect(sourceCtx.sessionProjections.snapshot(source).values.science?.runs[0]?.status).toBe('running')
 
-    const seed = JSON.parse(JSON.stringify(source.events)) as SessionEvent[]
+    const seed = JSON.parse(JSON.stringify(source.snapshotEvents())) as SessionEvent[]
     const resumedCtx = await harness()
     const resumed = resumedCtx.sessions.create(SessionId('science-open-resumed'), {
       seed,
@@ -236,6 +248,6 @@ describe('Science cold replay', () => {
       interruptedAtSeq: seed.length,
     })
     expect(resumedCtx.sessionProjections.snapshot(resumed).values.science)
-      .toEqual(clientOf(resumed.events))
+      .toEqual(clientOf(resumed.snapshotEvents()))
   })
 })

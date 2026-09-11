@@ -6,28 +6,26 @@ English | [中文](2026-08-31-science-viewer-lifecycle.zh.md)
 
 ## Problem
 
-One viewer displays unrelated files and artifact versions. Retaining a previous file's error can conceal the next file, placing maximize inside the editable branch excludes cross-session images, and recreating a preview callback after its response schedules the same edit again.
+Artifact reads and edit previews can finish after the user selects another version, closes a pane, or changes sessions.
 
 ## Decision
 
-Workspace file previews mount by path. Changing the active path clears both the previous result and its error before starting the next read; a response arriving after that mount ends cannot replace the active file. Successful reads and failed reads follow the same lifetime.
+Native artifact panes scope asynchronous reads and preview work to their current immutable version and lifetime. Late completion cannot overwrite a newer selection. Preview result callbacks update presentation without being treated as a fresh edit that restarts the debounce cycle. Page-local undo and draft state end with their owning editor. Discard also ends the direct-control draft lifetime: remounting the control group restores text, font, legend, and checkbox values from the saved chart together, while clearing pending operations invalidates in-flight previews. Clearing only the operation list leaves visible inputs and later combined font edits inconsistent with the saved version.
 
-The artifact viewer owns the toolbar lightbox for every PNG, including project-library artifacts produced by another session. The lightbox is keyed by immutable version identity. Its availability does not depend on whether the current session can edit the artifact.
-
-A chart's preview callback keeps its identity while its artifact, version, and injected transport remain unchanged. Publishing the returned preview image must not restart the edit panel's debounce. Only a change to pending operations or their addressed version requests another preview. This complements the Runtime's [saved-version baseline isolation](2026-08-31-chart-edit-baseline-isolation.md), which owns rendered content rather than browser request scheduling.
-
-The sidebar Artifacts destination has three states. It toggles the Details column when the Science artifact library is already selected, opens the library when the column is closed, and returns an open artifact or Files tab to the artifact library without closing the column. The mounted viewer publishes only the current library predicate; `ui-conversation` retains ownership of selection-aware Details toggling.
+Maximizing or restoring a pane changes layout, not session authorization. Cross-session viewing does not turn the viewed producer into the active editing session; Remote authorization and Runtime admission remain authoritative.
 
 ## Alternatives considered
 
-Resetting only successful file content leaves failed reads attached to the next path. A second library-only lightbox duplicates the viewer's version selection and dismissal behavior. Removing the callback from debounce dependencies prevents legitimate transport or target changes from being observed.
+**Use whichever response finishes last.** A slow old request would overwrite the user’s current selection.
+
+**Watch preview callbacks as edit dependencies.** Each completed preview would schedule another preview.
+
+**Infer edit permission from a maximized viewer.** Layout state does not prove project or session authority.
 
 ## Consequences
 
-Returning to a file starts a fresh read. The library and editable viewer use the same maximize state without granting editing rights to library artifacts. Preview requests remain cancellable when operations or their target change. Repeated sidebar Artifacts clicks close and reopen the selected library without making an open artifact tab harder to return from.
+Closing a pane must invalidate pending presentation updates. Request cancellation is useful but insufficient by itself because completion may race cancellation; identity and lifetime checks still protect the result.
 
-## Verification
+## Related
 
-Component tests cover direct file switches after success and failure, late responses, cross-session maximize/close, one request after a title edit settles, and the sidebar destination's three states. Assembled browser fixtures exercise file-tab navigation, the shared lightbox, and the preview RPC through the mounted Science service.
-
-The Details column's open/selected-entry state persists across a page reload (`dsh.conversation.chat`). A browser fixture that reloads with the Science library already open must not click the sidebar Artifacts destination again to "ensure" it stays open — that click now hits the toggle-closed branch above and collapses the column instead.
+Related owners: [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.md); [chart-edit-baseline-isolation](2026-08-31-chart-edit-baseline-isolation.md).

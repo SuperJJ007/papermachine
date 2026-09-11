@@ -1,6 +1,6 @@
 /** Wire validation for the public Science projection value. */
 
-import { isJsonValue } from '@deepseek-ai/dsh-session'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import type { ZodType } from 'zod'
 import { decodeScienceMode } from './codec.ts'

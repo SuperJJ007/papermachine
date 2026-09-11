@@ -1,10 +1,4 @@
-// Web e2e scenario: a completed Science turn with a context-injection
-// message and recorded step timing must NOT show the injection row or the
-// per-turn run-time/TTFT/throughput metadata in the transcript flow — both
-// stay reconstructable from the durable log, and Science's own denser
-// transcript cells and Turn-end artifact groups make the main flow noisy if
-// they persist. A non-Science Session (turn-tail-actions.e2e.ts) keeps both,
-// proving the suppression is Session-scoped, not a global removal.
+// Completed Science history retains native turn metrics and recorded kernel state.
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -20,15 +14,16 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
+  openScienceSeed,
   seedSession,
   watchConsole,
   webSnapshotMode,
   type WebScaffold,
-} from './scaffold.ts'
+} from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/science-transcript-chrome', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/science-transcript-chrome/ui.expected.md', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/science-transcript-chrome', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('./expected/science-transcript-chrome/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'science-transcript-chrome-web-e2e'
 const DONE = 'SCIENCE_CHROME_DONE'
@@ -43,7 +38,7 @@ function scienceFixture(): string {
     mode: { modeId: 'science', presetId: 'science', modeRevision: 'science-chrome-browser' },
   })
   session.append('science/environment-bound', { version: 1, environment: {
-    revision: 1, profileId: ScienceEnvironmentProfileId('science'), configuredAt: eventTimeOrigin + session.events.length * 1_000, validatedAt: eventTimeOrigin + session.events.length * 1_000,
+    revision: 1, profileId: ScienceEnvironmentProfileId('science'), configuredAt: eventTimeOrigin + session.snapshotEvents().length * 1_000, validatedAt: eventTimeOrigin + session.snapshotEvents().length * 1_000,
     status: 'applied', python: {
       language: 'python', configuredPrefix: '/private/host/science', canonicalPrefix: '/private/host/science',
       executable: '/private/host/science/bin/python', executableIdentity: 'dev:1-ino:2', languageVersion: '3.12.0',
@@ -57,7 +52,7 @@ function scienceFixture(): string {
     },
   } })
   const kernel = { kernelEpoch: 1, language: 'python' as const, environmentRevision: 1, environmentFingerprint: 'b'.repeat(64) }
-  session.append('science/kernel-state', { version: 1, kernel: { ...kernel, state: 'started', at: eventTimeOrigin + session.events.length * 1_000 } })
+  session.append('science/kernel-state', { version: 1, kernel: { ...kernel, state: 'started', at: eventTimeOrigin + session.snapshotEvents().length * 1_000 } })
   const user = session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: 'Summarize the dataset.' }],
     source: { kind: 'user' },
@@ -77,8 +72,7 @@ function scienceFixture(): string {
   // opens it, this token delta stamps first-token time, and the settled
   // assistant/message's own event time closes it — the ttft/duration the
   // suppressed footer would otherwise show.
-  session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: DONE } })
-  session.append('assistant/message', {
+  session.append('assistant/message', { stream: [{ type: 'text-chunks', time0: eventTimeOrigin + session.snapshotEvents().length * 1_000, index: 0, dt: [0], texts: [DONE] }],
     turn: 1,
     step: 1,
     message: createMessage({
@@ -92,13 +86,13 @@ function scienceFixture(): string {
 
   const header = {
     type: 'session',
-    version: SESSION_FORMAT_VERSION,
+    version: SESSION_FORMAT_VERSION, isSeeded: false, delegationDepth: 0,
     id: '{{sessionId}}',
     createdAt: eventTimeOrigin,
     cwd: '{{cwd}}',
     agentPreset: 'science',
   }
-  const events = session.events.map(event => ({ ...event, time: eventTimeOrigin + event.seq * 1_000 }))
+  const events = session.snapshotEvents().map(event => ({ ...event, time: eventTimeOrigin + event.seq * 1_000 }))
   foldScience(events)
   return [
     JSON.stringify(header),
@@ -107,27 +101,24 @@ function scienceFixture(): string {
   ].join('\n')
 }
 
-describe('web e2e: Science transcript flow drops process-detail chrome', () => {
+describe('web e2e: Science transcript uses native Chat process chrome', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
-  const allowResume = Promise.withResolvers<undefined>()
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, scienceFixture(), SEED_ID, 'science')
-    const cold = await scaffold.ctx.sessionProjectionCache.coldSnapshot(SessionId(SEED_ID))
-    expect(cold.values.science).toMatchObject({ kernels: [{ state: 'started' }] })
+    const reader = await scaffold.ctx.sessionPersistence.open(SessionId(SEED_ID), 'read')
+    try {
+      const cold = scaffold.ctx.sessionProjectionCache.coldSnapshot(reader.header, reader.inheritedEventCount, (await reader.read()).events)
+      expect(cold.values.science).toMatchObject({ kernels: [{ state: 'started' }] })
+    } finally { await reader.close() }
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
-    await page.route('**/api/**', async (route) => {
-      const request = route.request()
-      if (!request.url().endsWith('/session.history') && request.postData()?.includes(SEED_ID)) await allowResume.promise
-      await route.continue()
-    })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -136,17 +127,13 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     await scaffold?.close()
   })
 
-  it.skipIf(MODE === 'record')('hides the context-injection row and the run-time/TTFT/throughput metadata', async () => {
+  it.skipIf(MODE === 'record')('uses native context visibility and turn metrics while retaining kernel status', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-transcript-chrome'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
-    await sessionRow.waitFor({ timeout: 10_000 })
-    await sessionRow.click()
+    await openScienceSeed(page, 'Summarize the dataset.')
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
-    await expect.poll(() => page.getByText('python · epoch 1 · started', { exact: true }).count()).toBe(1)
-    allowResume.resolve(undefined)
+    // History observation promotes the Agent asynchronously, potentially before first paint.
+    // The cold snapshot above pins the recorded state; the UI must show settled reconciliation.
+    await scaffold.ctx.sessionController.resolveAgent(SessionId(SEED_ID))
     await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
 
     const centerCol = page.locator('[class*="centerCol"]')
@@ -158,8 +145,8 @@ describe('web e2e: Science transcript flow drops process-detail chrome', () => {
     // down this same column legitimately keeps its own "TTFT avg … tok/s"
     // aggregate text.
     const turnTail = centerCol.locator('[data-turn-tail]')
-    expect(await turnTail.getByText(/Ran for|TTFT|tok\/s/).count()).toBe(0)
-    // The action row itself (copy/branch) is unaffected — only the metrics text drops.
+    expect(await turnTail.getByText(/Ran for|TTFT|tok\/s/).count()).toBeGreaterThan(0)
+    // Native turn metrics and actions remain available under the upstream folding policy.
     expect(await centerCol.getByRole('button', { name: 'Branch into a new conversation' }).count()).toBe(1)
 
     expect(await centerCol.getByText('Latest kernel records', { exact: true }).count()).toBe(1)

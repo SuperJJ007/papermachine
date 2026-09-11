@@ -38,7 +38,7 @@
 .badge {
   flex: none;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 999px; corner-shape: round;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;

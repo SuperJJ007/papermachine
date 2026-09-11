@@ -1,0 +1,359 @@
+{
+  "initial": [
+    {
+      "name": "annotate_artifact",
+      "description": "Add a human-readable title and optional caption to an artifact your code already produced (see the artifact list in the run result or get_science_state). A curated artifact is highlighted for the reader — use it for the file that best demonstrates your result, not every intermediate output. If the user names an artifact you have no record of, call this tool with that exact name anyway and relay its diagnostic — never create a substitute file in place of one you cannot find. Returns a text receipt; never file bytes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "logical_name": {
+            "type": "string",
+            "description": "The artifact's logical_name, exactly as it appeared in a run result or get_science_state, or exactly as the user named it when you have no record of it."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Exact existing version of logical_name to curate. Defaults to its latest version."
+          },
+          "title": {
+            "type": "string",
+            "description": "Human-readable artifact title."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional human-readable caption."
+          }
+        },
+        "required": [
+          "logical_name",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "edit",
+      "description": "Edit an existing UTF-8 text file by replacing literal text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to edit, resolved by the filesystem backend."
+          },
+          "old_string": {
+            "type": "string",
+            "description": "Literal text to replace. Must match exactly."
+          },
+          "new_string": {
+            "type": "string",
+            "description": "Literal replacement text. Use an empty string to delete the match."
+          },
+          "replace_all": {
+            "type": "boolean",
+            "description": "Replace all matches. Defaults to false; when false, old_string must appear exactly once."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "old_string",
+          "new_string"
+        ]
+      }
+    },
+    {
+      "name": "get_science_state",
+      "description": "Return the current Science session state: mode, sanitized bound environment, every language kernel's state (running/exited/interrupted, with its epoch, end reason, and start time), and recent run, artifact-version, and direct-edit histories with omitted counts. Takes no arguments.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "install_science_packages",
+      "description": "Install one or more packages into this session's bound Python or R environment through conda-forge, persisting them across kernel restarts — unlike an in-kernel `pip install`/`install.packages()`, which is lost on restart. Package specs use conda syntax, e.g. \"numpy\" or \"numpy=1.26\"; R packages install as prebuilt conda-forge binaries, so no local compiler toolchain is required. On success the affected language's current kernel restarts on its next run_python/run_r call (an environment re-bind — the same event a run result already names), clearing whatever that kernel held in memory; nothing durable changes on failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Interpreter whose environment receives the install.",
+            "enum": [
+              "python",
+              "r"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "One or more conda-forge package specs, e.g. \"numpy\" or \"numpy=1.26\".",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "language",
+          "packages"
+        ]
+      }
+    },
+    {
+      "name": "present",
+      "description": "Declare existing files accessible through the Session filesystem as final deliverables. When a file you create or update is an output the user asked to receive, you must call present after writing it and before your final response, including files created through Bash or code execution. Mentioning its path in your reply does not replace this call. The files must already exist. The user opens the current source files; their contents are not copied or preserved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path of an existing regular file. Relative paths use the Session working directory."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Brief description for the user."
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read a UTF-8 text file and return line-numbered content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to read, resolved by the filesystem backend."
+          },
+          "offset": {
+            "type": "number",
+            "description": "1-based first line to return. Defaults to 1."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of lines to return. Defaults to 2000."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "read_image",
+      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches. Requires the current model to accept image input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to the image file, resolved by the filesystem backend."
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "run_python",
+      "description": "Run Python source against this session's persistent Python kernel: variables, imports, and definitions stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `pip install` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An exception is a result to inspect in stdout/stderr, not a tool failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Non-empty source to execute."
+          },
+          "artifact_inputs": {
+            "type": "array",
+            "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "edit_of": {
+            "type": "array",
+            "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "raster_artifacts": {
+            "type": "array",
+            "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "run_r",
+      "description": "Run R source against this session's persistent R kernel: variables and loaded packages stay in memory across calls until the kernel restarts. The current directory is a private scratch directory that is not captured; write outputs under SCIENCE_ARTIFACT_DIR, and access workspace files through SCIENCE_WORKSPACE_DIR or an absolute path. Materialize exact artifact versions under SCIENCE_INPUT_DIR with `artifact_inputs`; use `edit_of` to name the exact parent version for each output path being edited. The kernel restarts on an idle timeout, when the environment is re-bound to a new revision, after an interrupt escalation, on a crash, or when the session ends — each restart clears everything held in memory, and the next run result says so. `install.packages()` inside a run only affects the running kernel and is lost on restart; use install_science_packages to persist a package into the environment across kernels. An error condition is a result to inspect in stdout/stderr, not a tool failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Non-empty source to execute."
+          },
+          "artifact_inputs": {
+            "type": "array",
+            "description": "Exact artifact versions to materialize below SCIENCE_INPUT_DIR. Each item is {artifactId, version, path}, where path is relative to SCIENCE_INPUT_DIR.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "edit_of": {
+            "type": "array",
+            "description": "Exact parent versions for edited outputs. Each item is {artifactId, version, path}, where path is relative to SCIENCE_ARTIFACT_DIR and must be unique.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "artifactId",
+                "version",
+                "path"
+              ]
+            }
+          },
+          "raster_artifacts": {
+            "type": "array",
+            "description": "Relative paths (under SCIENCE_ARTIFACT_DIR) of PNG files this run writes that should become artifacts. Declare each PNG here to capture it; otherwise the file is left uncaptured.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "write",
+      "description": "Create or fully replace a UTF-8 text file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path to write, resolved by the filesystem backend."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full UTF-8 text content to write."
+          },
+          "sandbox_permissions": {
+            "type": "string",
+            "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+            "enum": [
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "justification": {
+            "type": "string",
+            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access."
+          }
+        },
+        "required": [
+          "file_path",
+          "content"
+        ]
+      }
+    }
+  ],
+  "changes": []
+}

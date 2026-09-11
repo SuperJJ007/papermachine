@@ -9,12 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
-      "path": "../runtime"
-    },
-    {
       "path": "../ui-conversation"
     },
     {
@@ -22,6 +16,18 @@
     },
     {
       "path": "../ui-sidebar"
+    },
+    {
+      "path": "../store"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../locale"
     },
     {
       "path": "../ui-slots"

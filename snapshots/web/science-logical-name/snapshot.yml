@@ -1,0 +1,9 @@
+version: 1
+scenario: science-logical-name
+profile: web
+composition: web-science
+recording: live
+platform: posix
+header:
+  class: web-science-logical-name
+  pin: true

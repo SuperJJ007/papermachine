@@ -353,7 +353,7 @@ const PROXY_ENV_NAMES = new Set(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_
  * Fixed ambient Windows system variables carried through unchanged from the
  * Host process into a win32 provisioning child (micromamba, and the Python
  * or R health-check interpreter it installs). Duplicated from
- * science-runtime's `kernel-process.ts` `WIN32_AMBIENT_ENVIRONMENT_KEYS`
+ * science-runtime's `execution.ts` `WIN32_AMBIENT_ENVIRONMENT_KEYS`
  * rather than imported — this application cannot depend on science-runtime,
  * which runs as a separate Host process staged into the package — and kept
  * identical to it by a source-text comparison test in

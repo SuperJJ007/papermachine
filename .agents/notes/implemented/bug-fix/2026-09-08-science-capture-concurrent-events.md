@@ -19,3 +19,7 @@ Accepting discontinuous sequence numbers would conceal missing facts from every 
 ## Consequences
 
 A real kernel exits during extraction while its durable exit event is held until an artifact-store write completes. Capture must return the saved PNG and its unavailable-chart diagnostic, and the next run must use a fresh kernel epoch. The runnable Science snapshot also appends a user title during a store write and preserves the artifact transcript through cold history reload. The existing store/session reconciliation decision remains independently applicable to failed durable commits.
+
+## Related
+
+Related owners: [science-auto-capture](../feature/2026-08-19-science-auto-capture.md); [artifact-store-session-reconciliation](../architecture/2026-09-01-artifact-store-session-reconciliation.md).

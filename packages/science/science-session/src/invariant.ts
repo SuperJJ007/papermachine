@@ -1,7 +1,7 @@
 /** Package-owned pre-commit invariants for durable Science session facts. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { assertScienceSessionApplicability } from './applicability.ts'
@@ -42,14 +42,14 @@ function applyChecked(
 
 /**
  * The resolved preset immediately after one candidate event, matching
- * `@deepseek-ai/dsh-agent-presets`' `resolveSessionPreset` newest-selection-
+ * `@deepseek-ai/dsh-agent-presets`' `agentPreset` projection newest-selection-
  * wins rule — carried forward through this cursor rather than rescanning
- * `session.events` on every dispatched event: `agent-preset/selected` is the
+ * `session.snapshotEvents()` on every dispatched event: `agent-preset/selected` is the
  * only event type that moves it, and it takes effect starting with the event
  * immediately after it.
  */
 function nextPreset(preset: string | undefined, event: SessionEvent): string | undefined {
-  return event.type === 'agent-preset/selected' ? event.data.agentPreset : preset
+  return agentPresetProjectionDefinition.apply(preset ?? null, event) ?? undefined
 }
 
 /** Install an independent incremental fold over every attached session. */
@@ -59,8 +59,8 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
 
   const seed = (session: Session): ScienceInvariantCursor => {
     const state = emptyScienceFoldState()
-    let preset = session.header.agentPreset
-    for (const event of session.events) {
+    let preset = agentPresetProjectionDefinition.init(session.header) ?? undefined
+    for (const event of session.snapshotEvents()) {
       applyChecked(preset, state, event, fail)
       preset = nextPreset(preset, event)
     }

@@ -1,0 +1,166 @@
+$ tsx scripts/run-gates.ts doc-quick
+run-gates: doc-quick running 16 gate(s) with 4 worker(s) from 10 available CPU(s), doc-quick cap 4.
+run-gates: start markdown links
+run-gates: start type equivalence
+run-gates: start translation pairing
+run-gates: start markdown wrap
+run-gates: PASS markdown wrap (27.60s)
+run-gates: start public repository links
+run-gates: PASS public repository links (4.58s)
+run-gates: start doc refs
+run-gates: PASS type equivalence (33.33s)
+run-gates: start package README Summaries
+
+== FAILED package README Summaries (1.13s) ==
+command: pnpm run verify-package-readme-summaries
+outcome: exit 1
+$ tsx scripts/verify-package-readme-summaries.ts
+verify-package-readme-summaries: violations found:
+  packages/client/ui-science/README.md: missing `## Summary`
+  packages/science/science-artifact-store/README.md: missing `## Summary`
+  packages/science/science-runtime/README.md: missing `## Summary`
+  packages/science/science-session/README.md: missing `## Summary`
+  packages/science/tool-science/README.md: missing `## Summary`
+  packages/session/session-attachment-index/README.md: missing `## Summary`
+  packages/util/byte-size/README.md: missing `## Summary`
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start package README model experience
+
+== FAILED doc refs (2.38s) ==
+command: pnpm run verify-doc-refs
+outcome: exit 1
+$ tsx scripts/verify-doc-refs.ts
+verify-doc-refs: broken documentation references found in source comments (target does not exist):
+  packages/science/science-session/src/transition.ts:242  .agents/notes/implemented/architecture/2026-09-02-science-artifact-event-slimming.md
+  packages/science/science-runtime/src/execution.ts:43  .agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md
+  packages/science/science-runtime/src/index.ts:885  .agents/notes/implemented/feature/2026-09-01-science-package-install.md
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start agent note classification
+run-gates: PASS agent note classification (0.86s)
+run-gates: start agent note format
+run-gates: PASS agent note format (1.12s)
+run-gates: start archived agent notes
+run-gates: PASS archived agent notes (1.43s)
+run-gates: start skill invocation metadata
+run-gates: PASS skill invocation metadata (0.92s)
+run-gates: start translation prompt
+run-gates: PASS translation prompt (0.83s)
+run-gates: start doc budgets
+run-gates: PASS doc budgets (0.76s)
+run-gates: start documentation standard tests
+
+== FAILED documentation standard tests (2.43s) ==
+command: pnpm exec vitest run scripts/doc-standard.spec.ts
+outcome: exit 1
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+ ❯ |thread-safe| scripts/doc-standard.spec.ts (12 tests | 2 failed) 93ms
+     × maps package README kinds to their documentation standards 53ms
+     × keeps every package README on the summary, contents, and Dev Note skeleton 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |thread-safe| scripts/doc-standard.spec.ts > dsh-doc skill consolidation > maps package README kinds to their documentation standards
+AssertionError: packages/client/ui-science/README.md: YAML frontmatter: expected null not to be null
+ ❯ readFrontmatter scripts/doc-standard.spec.ts:99:50
+     97|   const source = readFileSync(resolve(root, file), 'utf8')
+     98|   const match = /^---\n([\s\S]*?)\n---\n/u.exec(source)
+     99|   expect(match, `${file}: YAML frontmatter`).not.toBeNull()
+       |                                                  ^
+    100|   const metadata = load(match?.[1] ?? '')
+    101|   expect(metadata, `${file}: frontmatter object`).toBeTypeOf('object')
+ ❯ scripts/doc-standard.spec.ts:199:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |thread-safe| scripts/doc-standard.spec.ts > dsh-doc skill consolidation > keeps every package README on the summary, contents, and Dev Note skeleton
+AssertionError: packages/bundle/science-app/README.md: expected [ 'missing Table of Contents', …(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "missing Table of Contents",
++   "missing Dev Note",
++ ]
+
+ ❯ scripts/doc-standard.spec.ts:219:64
+    217|     for (const file of packageReadmes().filter(file => file.split('/')…
+    218|       const source = readFileSync(resolve(root, file), 'utf8')
+    219|       expect(packageReadmeStructureErrors(file, source), file).toEqual…
+       |                                                                ^
+    220|     }
+    221|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  01:24:31
+   Duration  586ms (transform 321ms, setup 356ms, import 22ms, tests 93ms, environment 0ms)
+
+run-gates: start package README limitations
+
+== FAILED translation pairing (45.18s) ==
+command: pnpm run verify-translation-pairing
+outcome: exit 1
+$ tsx scripts/verify-translation-pairing.ts
+verify-translation-pairing: bilingual pairing rules violated (see docs/i18n/README.md):
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md:15: link target "2026-08-31-released-session-format-migrations.md" uses the wrong locale; expected "2026-08-31-released-session-format-migrations.zh.md"
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md:27: link target "../../../../docs/user/papermachine-0.1.3-release-notes.md" uses the wrong locale; expected "../../../../docs/user/papermachine-0.1.3-release-notes.zh.md"
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md: missing language switcher — no link to 2026-09-10-science-required-session-events.md
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.md ↔ .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md: link target #1 diverges between the pair: "dsh-translation-target:.agents/notes/implemented/architecture/2026-08-3… vs "dsh-translation-target:.agents/notes/implemented/architecture/2026-09-1…
+  docs/persistence-catalog.md: out of sync — content no longer matches the pair's last confirmed-consistent state in docs/persistence-catalog.i18n.yaml (bring the other side along, then re-record with --write)
+  docs/user/papermachine-0.1.3-release-notes.zh.md: missing language switcher — no link to papermachine-0.1.3-release-notes.md
+  docs/user/papermachine-0.1.3-release-notes.md ↔ docs/user/papermachine-0.1.3-release-notes.zh.md: link target #1 diverges between the pair: nothing vs "dsh-translation-target:docs/user/papermachine-0.1.3-release-notes.md"
+[ELIFECYCLE] Command failed with exit code 1.
+
+== FAILED package README model experience (16.57s) ==
+command: pnpm run verify-package-readme-model-experience
+outcome: exit 1
+$ tsx scripts/verify-package-readme-model-experience.ts
+verify-package-readme-model-experience failed:
+  packages/bundle/science-app/README.md: must contain one or more complete model-context entries
+  packages/client/ui-brand-papermachine/README.md: must contain one or more complete model-context entries
+  packages/client/ui-science/README.md: line 123: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-artifact-store/README.md: line 137: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-runtime/README.md: line 152: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/science-session/README.md: line 35: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/science/tool-science/README.md: line 87: tool-catalog link fragment "deepseek-aidsh-tool-science" does not name an H2 section
+  packages/session/session-attachment-index/README.md: line 38: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+  packages/util/byte-size/README.md: line 29: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE
+[ELIFECYCLE] Command failed with exit code 1.
+
+== FAILED markdown links (52.73s) ==
+command: pnpm run verify-md-links
+outcome: exit 1
+$ tsx scripts/verify-md-links.ts
+verify-md-links: broken relative cross-links found:
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.md:29  ../../../migrations/0.1.5/P3.md  (target does not exist)
+  .agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md:29  ../../../migrations/0.1.5/P3.md  (target does not exist)
+  packages/science/tool-science/README.md:87  ../../../docs/tool-catalog.md#deepseek-aidsh-tool-science  (no such anchor in target)
+  packages/science/tool-science/README.zh.md:87  ../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-science  (no such anchor in target)
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: PASS package README limitations (16.78s)
+
+run-gates: 10 passed, 6 failed, 0 skipped in 59.72s.
+run-gates: unsuccessful gates:
+  - FAILED markdown links (52.73s, exit 1)
+    pnpm run verify-md-links
+  - FAILED translation pairing (45.18s, exit 1)
+    pnpm run verify-translation-pairing
+  - FAILED doc refs (2.38s, exit 1)
+    pnpm run verify-doc-refs
+  - FAILED package README Summaries (1.13s, exit 1)
+    pnpm run verify-package-readme-summaries
+  - FAILED package README model experience (16.57s, exit 1)
+    pnpm run verify-package-readme-model-experience
+  - FAILED documentation standard tests (2.43s, exit 1)
+    pnpm exec vitest run scripts/doc-standard.spec.ts
+[ELIFECYCLE] Command failed with exit code 1.

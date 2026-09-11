@@ -379,7 +379,7 @@ export class ScienceEditService extends TypertRemoteService {
    */
   @Remote('submit')
   async submit(agent: Agent, request: ScienceEditRequest): Promise<ScienceEditReceipt> {
-    const state = foldScience(agent.session.events)
+    const state = foldScience(agent.session.snapshotEvents())
     const resolved = await resolveScienceEdit(state.artifacts, request, async (artifact) => {
       const store = await this.ctx.scienceArtifactStore.getVersion(artifact.projectId, artifact.versionId)
       if (store === undefined) {
@@ -485,7 +485,7 @@ export class ScienceEditService extends TypertRemoteService {
    */
   @Remote('addArtifactNote')
   addArtifactNote(agent: Agent, request: ScienceArtifactNoteAddRequest): ScienceArtifactNoteReceipt {
-    const state = foldScience(agent.session.events)
+    const state = foldScience(agent.session.snapshotEvents())
     const artifact = state.artifacts.find(candidate =>
       candidate.artifactId === request.artifactId && candidate.version === request.version)
     if (artifact === undefined) {
@@ -501,7 +501,7 @@ export class ScienceEditService extends TypertRemoteService {
       artifactVersion: artifact.version,
       text,
       createdAt: Date.now(),
-    }, { ignorable: true })
+    })
     return { accepted: true }
   }
 
@@ -513,7 +513,7 @@ export class ScienceEditService extends TypertRemoteService {
    */
   @Remote('removeArtifactNote')
   removeArtifactNote(agent: Agent, request: ScienceArtifactNoteRemoveRequest): ScienceArtifactNoteReceipt {
-    const activeNotes = agent.session.events.reduce<ScienceArtifactNotesProjection>(applyScienceArtifactNotes, [])
+    const activeNotes = agent.session.snapshotEvents().reduce<ScienceArtifactNotesProjection>(applyScienceArtifactNotes, [])
     const active = activeNotes.some(note => note.seq === request.noteSeq && note.artifactId === request.artifactId)
     if (!active) {
       throw new ScienceEditError('Science artifact note does not identify an active note', 'SCIENCE_EDIT_TARGET_NOT_FOUND')
@@ -523,7 +523,7 @@ export class ScienceEditService extends TypertRemoteService {
       artifactId: request.artifactId,
       noteSeq: request.noteSeq,
       removedAt: Date.now(),
-    }, { ignorable: true })
+    })
     return { accepted: true }
   }
 

@@ -1,0 +1,31 @@
+build-exe-for-python-sdk: targets: node24-macos-arm64
+build-exe-for-python-sdk: staging: /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+build-exe-for-python-sdk: runtime dependency closure: pnpm run verify-runtime-closure
+$ tsx scripts/verify-runtime-closure.ts
+verify-runtime-closure: 4 agent presets and 133 workspace packages form a closed runtime dependency graph.
+build-exe-for-python-sdk: skipping pnpm run build (--skip-build)
+build-exe-for-python-sdk: deploy: pnpm --filter dsh-python-runtime-closure deploy --legacy --prod --config.node-linker=hoisted --config.auto-install-peers=false --config.link-workspace-packages=true /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+[WARN] Shared workspace lockfile detected but configuration forces legacy deploy implementation.
+.                                        | [WARN] A pnpm-lock.yaml file exists. The current configuration prohibits to read or write a lockfile
+Packages are cloned from the content-addressable store to the virtual store.
+  Content-addressable store is at: /Users/superjj/Library/pnpm/store/v11
+  Virtual store is at:             python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/node_modules/.pnpm
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 1048, reused 0, downloaded 0, added 0
+[ERR_PNPM_UNUSED_PATCH] The following patches were not used: app-builder-lib@26.15.3
+
+Either remove them from "patchedDependencies" or update them to match packages in your dependencies.
+/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596
+        reject(new Error(`build-exe-for-python-sdk: ${label} failed (${cause}): ${printable}`))
+               ^
+
+Error: build-exe-for-python-sdk: deploy failed (exit code 1): pnpm --filter dsh-python-runtime-closure deploy --legacy --prod --config.node-linker=hoisted --config.auto-install-peers=false --config.link-workspace-packages=true /Users/superjj/ccproj/pm-replant/python/sdk-runtime/src/deepseek_harness_runtime/runtime/node
+    at ChildProcess.<anonymous> (/Users/superjj/ccproj/pm-replant/scripts/build-exe-for-python-sdk.ts:596:16)
+    at Object.onceWrapper (node:events:623:26)
+    at ChildProcess.emit (node:events:508:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:294:12)
+
+Node.js v24.14.0

@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
+import { inspect } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -48,10 +49,17 @@ function requireRepresentableGrace(graceMs: number): void {
   }
 }
 
+function validateNoNullByte(subject: string, value: string): void {
+  if (!value.includes('\0')) return
+  const error = new TypeError(`${subject} must be a string without null bytes. Received ${inspect(value)}`)
+  Object.assign(error, { code: 'ERR_INVALID_ARG_VALUE' })
+  throw error
+}
+
 /** E2B command manager registered as `ctx.subprocess`. */
 export class E2BSubprocessRuntime extends SubprocessRuntime {
-  /** E2B commands run in a remote sandbox, not on host paths. */
-  override readonly executionWorld = 'remote' as const
+  readonly executionWorld = 'remote' as const
+
   static inject = ['e2b']
 
   static Config: z<Config> = z.object({
@@ -147,7 +155,22 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
     }
     requireRepresentableGrace(spec.graceMs)
     if (spec.signal?.aborted === true) {
-      throw new Error(`aborted before spawn: ${String(spec.signal.reason)}`)
+      let reason = 'aborted'
+      try {
+        reason = String(spec.signal.reason ?? reason)
+      } catch {
+        // Arbitrary caller-owned reasons cannot escape the stable Error boundary.
+      }
+      throw new Error(`aborted before spawn: ${reason}`)
+    }
+    spec.argv.forEach((value, index) => {
+      validateNoNullByte(index === 0 ? "The argument 'file'" : `The argument 'args[${String(index - 1)}]'`, value)
+    })
+    validateNoNullByte("The property 'options.cwd'", spec.cwd)
+    for (const [key, value] of Object.entries(spec.env ?? {})) {
+      if (value === undefined) continue
+      validateNoNullByte(`The property 'options.env['${key}']'`, key)
+      validateNoNullByte(`The property 'options.env['${key}']'`, value)
     }
     const stateDir = posix.join(this.ctx.e2b.runtimeRoot, 'processes', randomUUID())
     const handle = new E2BSubprocessHandle(this.ctx.e2b, spec, stateDir, this.pollMs)

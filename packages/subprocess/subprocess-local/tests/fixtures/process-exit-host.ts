@@ -33,6 +33,7 @@ const fiber = await ctx.plugin(LocalSubprocessRuntime)
 const listenersAfterLoad = process.listenerCount('exit')
 if (kind === 'ordinary') {
   ctx.subprocess.spawn({
+    environmentBase: 'scrubbed-parent' as const,
     argv: [process.execPath, managedTree, treeState],
     cwd: process.cwd(),
     stdio: {
@@ -41,7 +42,6 @@ if (kind === 'ordinary') {
       stderr: { maxBytes: 1024 },
     },
     graceMs: trigger === 'dispose' ? 100 : 30_000,
-    environmentBase: 'scrubbed-parent',
   })
 } else {
   await ctx.subprocess.spawnTerminal({

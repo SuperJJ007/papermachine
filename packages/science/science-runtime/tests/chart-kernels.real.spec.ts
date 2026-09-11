@@ -85,7 +85,7 @@ for (const language of ['python', 'r'] as const) {
         rasterArtifacts: language === 'r' ? ['plot.png', 'ggsave.png', 'base.png', 'multiple.png', 'overwritten.png'] : ['plot.png'], ...authorizeRun(session, language), signal: new AbortController().signal })
       const result = await run.done
       expect(result.terminal.status, JSON.stringify(result)).toBe('success')
-      const artifact = replayScience(session.events)?.artifacts.find(value => value.logicalName === 'plot.png')
+      const artifact = replayScience(session.snapshotEvents())?.artifacts.find(value => value.logicalName === 'plot.png')
       expect(artifact).toBeDefined()
       const chart = await chartOf(ctx, artifact!)
       expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()
@@ -97,7 +97,7 @@ for (const language of ['python', 'r'] as const) {
         expect(hits[0]!.bbox).not.toEqual(hits[1]!.bbox)
       } else {
         expect(chart!.png).toMatchObject({ width: 480, height: 360, dpi: 120 })
-        const artifacts = replayScience(session.events)!.artifacts
+        const artifacts = replayScience(session.snapshotEvents())!.artifacts
         const ggsaveArtifact = artifacts.find(value => value.logicalName === 'ggsave.png')
         expect(ggsaveArtifact).toBeDefined()
         expect(await chartOf(ctx, ggsaveArtifact!)).toBeDefined()
@@ -153,7 +153,9 @@ for (const language of ['python', 'r'] as const) {
         code: (language === 'python' ? pythonSource : rSource).replaceAll("'Original'", "'Regenerated'"),
         rasterArtifacts: ['plot.png'], ...authorizeRun(session, language, `regenerate-${language}`), signal: new AbortController().signal })
       expect((await regenerated.done).terminal.status).toBe('success')
-      const regeneratedArtifact = replayScience(session.events)!.artifacts.findLast(value => value.artifactId === artifact!.artifactId)!
+      const regeneratedArtifact = replayScience(session.snapshotEvents())!.artifacts.findLast(
+        value => value.artifactId === artifact!.artifactId,
+      )!
       const regeneratedSave = await runtime.applyChartEdit({ ...target, version: regeneratedArtifact.version,
         ops: [{ op: 'set_axis_label', axes: language === 'python' ? 0 : null, axis: 'x', text: 'Regenerated x' }] })
       const regeneratedChart = await chartOf(ctx, regeneratedSave.artifact)
@@ -173,7 +175,7 @@ for (const language of ['python', 'r'] as const) {
         rasterArtifacts: ['multiline.png'], ...authorizeRun(session, language, `multiline-${language}`), signal: new AbortController().signal })
       const result = await run.done
       expect(result.terminal.status, JSON.stringify(result)).toBe('success')
-      const artifact = replayScience(session.events)?.artifacts.find(value => value.logicalName === 'multiline.png')
+      const artifact = replayScience(session.snapshotEvents())?.artifacts.find(value => value.logicalName === 'multiline.png')
       expect(artifact).toBeDefined()
       const chart = await chartOf(ctx, artifact!)
       expect(chart, readdirSync(root, { recursive: true }).filter(file => String(file).includes('chart-extract-result')).map(file => readFileSync(join(root, String(file)), 'utf8')).join('\n')).toBeDefined()

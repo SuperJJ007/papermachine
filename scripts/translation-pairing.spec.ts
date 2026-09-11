@@ -32,6 +32,15 @@ import {
   translationStructureSignature,
 } from './translation-pairing.ts'
 
+describe('Desktop build documentation discovery', () => {
+  it('excludes copied build documents while retaining authored desktop READMEs', () => {
+    expect(isTranslationScopeFile('apps/desktop/.desktop-build/targets/mac-arm64/runtime/README.md')).toBe(false)
+    expect(isTranslationScopeFile('apps/desktop/.desktop-build/targets/win-x64/artifacts/README.zh.md')).toBe(false)
+    expect(isTranslationScopeFile('apps/desktop/README.md')).toBe(true)
+    expect(isTranslationScopeFile('apps/desktop/resources/README.md')).toBe(true)
+  })
+})
+
 const fixturePairSource = (): boolean => true
 
 function signature(markdown: string) {
@@ -40,7 +49,7 @@ function signature(markdown: string) {
     'counterpart.zh.md',
     {
       repoRoot: process.cwd(), sourcePath: 'counterpart.md',
-      isTranslationPairSource: fixturePairSource, markdown,
+      isTranslationPairSource: fixturePairSource, repositoryFileExists: () => true, markdown,
     },
   )
 }
@@ -250,6 +259,30 @@ describe('translation pairing switchers', () => {
   })
 })
 
+describe('translation pairing link language parity', () => {
+  it('compares a .zh.md target and its .md sibling as the same document', () => {
+    const en = 'See [docs](persistence.md) and [notes](note.md#anchor).'
+    const zh = '参见[文档](persistence.zh.md)与[笔记](note.zh.md#anchor)。'
+    expect(
+      translationStructureDiff(
+        signature(en),
+        signature(zh),
+      ),
+    ).toEqual([])
+  })
+
+  it('still rejects a genuinely different target', () => {
+    const en = 'See [docs](persistence.md).'
+    const zh = '参见[文档](other.md)。'
+    expect(
+      translationStructureDiff(
+        signature(en),
+        signature(zh),
+      ),
+    ).not.toEqual([])
+  })
+})
+
 describe('translation pairing records', () => {
   const paths = translationPairPaths('docs/foo.md')
   const record = {
@@ -285,6 +318,9 @@ describe('translation scope discovery', () => {
     'BRAND_GUIDELINES.md',
     'BRAND_GUIDELINES.zh.md',
     'BRAND_GUIDELINES.i18n.yaml',
+    'SAFETY.md',
+    'SAFETY.zh.md',
+    'SAFETY.i18n.yaml',
     'apps/cli/README.md',
     'future/subtree/readme.md',
     'packages/example/README.zh.md',
@@ -300,14 +336,14 @@ describe('translation scope discovery', () => {
     'packages/example/guide.md',
     'packages/example/CONTRIBUTING.md',
     'packages/example/BRAND_GUIDELINES.md',
-    'examples/tutorial.md',
+    'other/tutorial.md',
     'website/reference.md',
     'packages/example/README.txt',
     'vendor/example/README.md',
     'packages/example/node_modules/dependency/README.md',
     'packages/example/lib/README.md',
     'coverage/report/README.md',
-    'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-macos-arm64/README.md',
+    'python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-macos-arm64/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/README.md',
   ])('excludes non-source or non-README path %s', (file) => {
     expect(isTranslationScopeFile(file)).toBe(false)

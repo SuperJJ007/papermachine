@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-07-06-parallel-pre-push-gates.md) | 中文
 
-本记录中的本地钩子部分已由[快速本地 Git 钩子](2026-07-22-fast-local-git-hooks.zh.md) 取代。有界门禁调度器和包级 `publint` 并行机制仍用于 CI、`doc-sync` 和显式本地命令。
+本记录中的本地钩子部分已由[快速本地 Git 钩子](../../archived/process/2026-07-22-fast-local-git-hooks.md) 取代。有界门禁调度器和包级 `publint` 并行机制仍用于 CI、`doc-sync` 和显式本地命令。调度器的快速失败选项记录在[门禁运行器快速失败](../../archived/process/2026-08-27-gate-runner-fail-fast.md)。
 
 ## 问题
 
@@ -21,6 +21,8 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 [scripts/publint-all.ts](../../../../scripts/publint-all.ts) 从 `packages/<group>/<pkg>` 发现包，并以根据 `availableParallelism()` 确定大小的 worker 池运行 `publint`。`DSH_PUBLINT_CONCURRENCY` 可以针对资源配置不同的本地机器和 CI runner 限制或提高 worker 数量。结果按包缓冲，并按确定性的包顺序打印，因此并行执行不会打乱各包的日志块。
 
 各门禁的包脚本仍是临时本地运行所用的命令入口。`hygiene` 调用包含相同十三道检查且限制为本地四个 worker 的调度器模式，而 `doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)）。
+
+进程表遍历对每个 PID 最多访问一次，并排除根进程。Windows 父进程 PID 重用可能使观测表出现环；资源采样和终止枚举均不得沿环无限遍历。遍历使用独立队列并逐个加入子进程，避免宽进程表超过 JavaScript 参数数量限制。这些检查限制枚举工作量，但不能证明 PID 重用前后的进程身份。
 
 ## 验证
 

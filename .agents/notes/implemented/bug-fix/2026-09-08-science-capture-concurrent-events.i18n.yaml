@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-08-science-capture-concurrent-events.md
-2026-09-08-science-capture-concurrent-events.md: 4f982c009159836134b00cbc8399c600997517ba
-2026-09-08-science-capture-concurrent-events.zh.md: 35a54316ce0f54746ea7e77e66aa03d436aa62ad
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-09-08-science-capture-concurrent-events.md: 0f23a4fab73cfc99d619a401d78397cae6fd5faf
+2026-09-08-science-capture-concurrent-events.zh.md: b826f8d3c77f8714537bd383a43678348b85eb0c

@@ -84,7 +84,7 @@ async function chartHarness(language: ScienceLanguage, prefix: string) {
       ...authorizeRun(session, language, `chart-${++call}`), signal })
     const result = await handle.done
     expect(result.terminal.status, result.stderr.text).toBe('success')
-    const artifact = replayScience(session.events)!.artifacts.findLast(a => a.logicalName === filename)!
+    const artifact = replayScience(session.snapshotEvents())!.artifacts.findLast(a => a.logicalName === filename)!
     const chart = await chartOf(ctx, artifact)
     if (addressable) expect(chart, JSON.stringify(result.capture)).toBeDefined()
     else expect(chart).toBeUndefined()
@@ -108,10 +108,10 @@ for (const language of ['python', 'r'] as const) {
       const latestChart = await chartOf(ctx, latest)
       expect(latestChart!.png.dpi).toBe(language === 'python' ? 125 : 100)
       expect(latestChart!.elements.find(e => e.kind === 'title')?.current).toBe('Original title')
-      const eventsBefore = session.events.length
+      const eventsBefore = session.snapshotEvents().length
       await preview(latest, [labelOp])
       const edited = await preview(latest, [titleOp])
-      expect(session.events).toHaveLength(eventsBefore)
+      expect(session.snapshotEvents()).toHaveLength(eventsBefore)
       expect(edited.failedOps).toEqual([])
       expect(edited.chart.png).toEqual(latestChart!.png)
       expect(edited.chart.elements.find(e => e.kind === 'x_label')?.current).toBe('Original X')
@@ -126,7 +126,7 @@ for (const language of ['python', 'r'] as const) {
       const warm = await preview(saved.artifact, secondOps)
       expect(warm.chart.elements.find(e => e.kind === 'title')?.current).toBe('Edited title')
       expect(warm.chart.elements.find(e => e.kind === 'x_label')?.current).toBe('Saved X')
-      const runCount = replayScience(session.events)!.runs.length
+      const runCount = replayScience(session.snapshotEvents())!.runs.length
       await runtimeFiber.dispose()
       await ctx.plugin(ScienceRuntime, config)
       const cold = await preview(saved.artifact, secondOps)
@@ -136,7 +136,7 @@ for (const language of ['python', 'r'] as const) {
         version: saved.artifact.version, ops: secondOps, signal })
       const savedAgainChart = await chartOf(ctx, savedAgain.artifact)
       expect(savedAgainChart!.ops).toEqual([titleOp, ...secondOps])
-      expect(replayScience(session.events)!.runs).toHaveLength(runCount)
+      expect(replayScience(session.snapshotEvents())!.runs).toHaveLength(runCount)
       const bytes = await ctx.scienceArtifactStore.readBlob(savedAgain.artifact.projectId, savedAgain.artifact.sha256)
       expect(Buffer.from(bytes).equals(Buffer.from(warm.png)), 'saved and preview PNGs match').toBe(true)
       if (language === 'python') {

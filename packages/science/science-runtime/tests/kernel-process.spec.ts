@@ -151,11 +151,11 @@ const roots: string[] = []
 const contexts: Context[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   capturedReadStreams.length = 0
   capturedStdinStreams.length = 0
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-  vi.restoreAllMocks()
 })
 
 /** Shared probe/kernel adapter with native interpreter paths on each host. */
@@ -406,7 +406,7 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
     const start = startKernel(harness, 'python', { driverPath: NO_READY_DRIVER_PATH, signal: AbortSignal.abort() })
     const rejection = expect(start).rejects.toThrow(transport === 'fifo' ? KernelProtocolError : /response channel/)
     try {
-      await subprocess.observing.promise
+      await Promise.race([subprocess.observing.promise, start])
       expect(existsSync(join(planKernelScratch(harness.services.sessionScratch, 'python', 0).directory, 'resp.fifo'))).toBe(transport === 'fifo')
     } finally {
       subprocess.proof.resolve(undefined)
@@ -1076,10 +1076,11 @@ describe.each(process.platform === 'win32' ? ['tcp'] as const : ['fifo', 'tcp'] 
   it.skipIf(process.platform === 'win32')('interrupt() delivers SIGINT and the driver replies DONE interrupted', async () => {
     const harness = await createHarness('kernel-interrupt-trapped')
     const kernel = await startKernel(harness, 'python')
+    const signalReadyPath = join(harness.root, 'signal-ready')
     const pending = kernel.execute(await prepareRun(harness.root, 'run-interrupt', {
-      action: 'sleep', sleepMs: 10_000, trapSigint: true,
+      action: 'sleep', sleepMs: 10_000, trapSigint: true, signalReadyPath,
     }))
-    await new Promise(resolve => setTimeout(resolve, 300))
+    await vi.waitFor(() => { expect(existsSync(signalReadyPath)).toBe(true) })
     kernel.interrupt()
     await expect(pending).resolves.toMatchObject({ status: 'interrupted', detail: '' })
     await kernel.end('test-teardown')
@@ -1179,7 +1180,7 @@ describe('kernelEnvironment', () => {
       // `kernelEnvironment`'s own branch, not for Node/libuv's read of this
       // key) the override does take effect, so the exact-value check still
       // applies there. Either way, this key's presence in `env` still proves
-      // win32AmbientEnvironment carries it through at all.
+      // windowsEnvironment carries it through at all.
       for (const [key, value] of Object.entries(ambient)) {
         if (key === 'NUMBER_OF_PROCESSORS' && hostPlatform === 'win32') {
           expect(env).toHaveProperty(key)

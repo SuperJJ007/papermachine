@@ -36,7 +36,7 @@ The chart-edit panel rendered no control at all for Title when the runtime had n
 
 **Keep the R `.dsh_font_available` strict identity check and special-case only `"sans"`/`"serif"`/`"mono"`, matching the pre-existing `systemfonts`-unavailable fallback.** Rejected: the shared panel's font control stages the CSS-style `"sans-serif"`/`"monospace"` spelling as its own default regardless of which language produced the chart (`fontInitial`'s `'sans-serif'` fallback), so a chart-agnostic fix needs both spellings or the same defect resurfaces for any R chart with no font element yet.
 
-**Thread structured `failedOps` through the thrown commit error instead of formatting them into the message text.** Rejected for this change's scope: it would widen `ScienceRuntimeError`, the `ScienceEditError` RPC boundary, and the client's `RpcError` shape to carry structured detail. The chosen message format (`op <n> <op name> — <reason>`) is deliberately unambiguous so the panel's single-token substitution stays reliable without full structural propagation.
+**Thread structured `failedOps` through the thrown commit error instead of formatting them into the message text.** Rejected for this change's scope: it would require a coordinated structured-error representation from Runtime through the domain Remote to the client. The chosen message format (`op <n> <op name> — <reason>`) is deliberately unambiguous so the panel's single-token substitution stays reliable without full structural propagation.
 
 **Split `CHART_ELEMENT_NOT_FOUND` into a code per failure reason.** Rejected: one commit can combine element-resolution and font-resolution failures across its ops, and `translateChartRuntimeError` already maps both existing codes identically to `CHART_OP_INVALID`, so a new split code would carry no distinguishable behavior for any current consumer.
 
@@ -45,3 +45,7 @@ The chart-edit panel rendered no control at all for Title when the runtime had n
 ## Consequences
 
 `set_font` with a generic alias — the panel's own default and its `FONT_FAMILIES` list — now succeeds for both languages; a size-only edit that re-sends the current family no longer fails. A whole-request commit rejection names which op failed and why, matching the detail a preview of the same ops already reports; the runtime README documents the enriched message. The chart-edit panel can add a title to any figure, titled or not, from one row; `x_label`/`y_label` remain unavailable to add where the runtime extracted none, so a titleless figure with default axis labels still needs a code-side edit for those two element kinds.
+
+## Related
+
+Related owners: [science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.md); [chart-edit-baseline-isolation](2026-08-31-chart-edit-baseline-isolation.md).

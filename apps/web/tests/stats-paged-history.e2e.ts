@@ -1,5 +1,5 @@
 // Web e2e scenario: full-session stats over paged history. A deterministic
-// 28-turn log (56 surface messages — more than one 50-message history page)
+// 28-turn log (56 chat messages — more than one 50-message history page)
 // seeded cold through the REAL persistence API must render whole-log turn/step
 // counts from the sessionStats projection on first open, and loading the
 // older page must NOT change them. This pins the bug the projection fixed:
@@ -9,32 +9,35 @@
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { createSystemMessage } from '@deepseek-ai/dsh-llm'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/stats-paged-history', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/stats-paged-history/ui.expected.md', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/stats-paged-history', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('./expected/stats-paged-history/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'stats-paged-history-web-e2e'
 
-/** Turn count: 2 surface messages per turn, so 28 turns overflow one 50-message page. */
+/** Turn count: 2 chat messages per turn, so 28 turns overflow one 50-message page. */
 const TURNS = 28
-const FULL_COUNTS = `${TURNS} turns · ${TURNS} steps`
+const FULL_COUNTS = `${TURNS} turns ${TURNS} steps`
 
 /**
  * Generate the seed: TURNS closed single-step turns of one short user prompt
- * and one short assistant reply each. Times are fixed so the fixture is
- * byte-deterministic; message ids are synthetic uuids (aria normalizes them).
+ * and one short assistant reply each. Fixed times pin displayed dates;
+ * the empty system head precedes every user message in the current format.
  * @param turns - closed turns to generate.
  * @returns session.jsonl text for {@link seedSession}.
  */
 function buildSeed(turns: number): string {
   const lines = [JSON.stringify({
-    type: 'session', version: 0, id: '{{sessionId}}', createdAt: 1784974100000, cwd: '{{cwd}}/workspace',
+    type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
+    createdAt: 1784974100000, cwd: '{{cwd}}/workspace', isSeeded: false, delegationDepth: 0,
   })]
   let seq = 0
   let time = 1784974100000
@@ -43,15 +46,28 @@ function buildSeed(turns: number): string {
   }
   for (let turn = 1; turn <= turns; turn++) {
     at({ type: 'turn/start', data: { turn } })
+    at({ type: 'step/start', data: { turn, step: 1 } })
+    if (turn === 1) {
+      at({
+        type: 'system/message',
+        data: { turn, step: 1, message: createSystemMessage('', '@deepseek-ai/dsh-system-prompt') },
+        surfaceOp: 'append',
+      })
+    }
     at({
       type: 'user/message',
-      data: { content: [{ type: 'text', text: `m${turn}` }], source: { kind: 'user' } },
+      data: {
+        id: `00000000-0000-4000-9000-${String(turn).padStart(12, '0')}`,
+        role: 'user',
+        content: [{ type: 'text', text: `m${turn}` }],
+        source: { kind: 'user' },
+      },
       surfaceOp: 'append',
     })
-    at({ type: 'step/start', data: { turn, step: 1 } })
     at({
       type: 'assistant/message',
       data: {
+        stream: [],
         turn,
         step: 1,
         message: {
@@ -61,7 +77,6 @@ function buildSeed(turns: number): string {
           source: { kind: 'model', provider: 'snapshot', model: 'snapshot-replier' },
         },
       },
-      sourceEventSeqs: [],
       surfaceOp: 'append',
     })
     at({ type: 'step/end', data: { turn, step: 1 } })
@@ -83,7 +98,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -99,24 +114,9 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await groupRow.click()
     const sessionRow = page.locator('[role="treeitem"]').nth(1)
     await sessionRow.waitFor({ timeout: 10_000 })
-    const inspect = scaffold.ctx.sessionPersistence.inspect.bind(scaffold.ctx.sessionPersistence)
-    let coldRead: Promise<void> | undefined
-    const inspection = vi.spyOn(scaffold.ctx.sessionPersistence, 'inspect').mockImplementation(async (id) => {
-      const result = await inspect(id)
-      if (id === SEED_ID) {
-        // The real browser must survive a cold read beyond the former 30-second transport bound.
-        coldRead ??= new Promise(resolve => setTimeout(resolve, 35_000))
-        await coldRead
-      }
-      return result
-    })
-    try {
-      await sessionRow.click()
-      await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 90_000 }).toBe(1)
-    } finally {
-      inspection.mockRestore()
-    }
-    await page.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash/ }).waitFor({ timeout: 15_000 })
+    await sessionRow.click()
+    // Settled barrier: the newest recorded reply renders from the tail page.
+    await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     // The tail page is partial (56 messages > one 50-message page): the first
     // turns are NOT loaded, yet the strip already reports the whole log —
     // the sessionStats projection, not the window fold.
@@ -134,7 +134,7 @@ describe('web e2e: whole-session stats survive history paging', () => {
     // settled turn — the loaded-window probe the scroll/perf lanes count now
     // that the strip is whole-log-scoped.
     expect(await page.locator('[data-chat-flow-key^="9:turn-tail"]').count()).toBe(TURNS)
-  }, 120_000)
+  }, 60_000)
 
   it('matches the paged-stats aria golden', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-stats-paged-aria'))

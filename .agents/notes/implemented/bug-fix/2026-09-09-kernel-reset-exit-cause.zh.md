@@ -1,4 +1,4 @@
-# Agent Note：内核 reset 分类以进程退出为依据
+# Agent Note: 内核 reset 分类以进程退出为依据
 
 Status: implemented
 
@@ -25,3 +25,7 @@ Reset 分类可能等待现有的后代进程退出宽限期。不引入额外�
 ## 验证
 
 内核测试覆盖随后退出进程的 reset，以及进程保持存活时的 reset。TCP 生命周期测试保留 commanded/crash 预期，关闭期间尚未完成的图表提取根据进程退出证据拒绝。
+
+## 相关决策
+
+相关 owner：[win32-kernel-response-transport](../feature/2026-09-05-win32-kernel-response-transport.zh.md).

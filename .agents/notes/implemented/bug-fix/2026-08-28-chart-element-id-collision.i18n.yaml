@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-chart-element-id-collision.md
-2026-08-28-chart-element-id-collision.md: 5c37a523594f1d665bcf7592d7295ef29beac4b6
-2026-08-28-chart-element-id-collision.zh.md: 89fe605d85a85e06e9ab793ef8c55b15a4fa0ef4
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-08-28-chart-element-id-collision.md: 29221159cda464b09c6e991f4f06d0bcd7563a24
+2026-08-28-chart-element-id-collision.zh.md: 1ac601031b9e62cb7f53ee4257de50694373a768

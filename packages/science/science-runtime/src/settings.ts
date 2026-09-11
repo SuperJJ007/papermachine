@@ -13,12 +13,12 @@
  */
 
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
+import { type SettingsProvider } from '@deepseek-ai/dsh-settings'
 import { parseProfiles } from './config.ts'
 import type { Config, ConfiguredProfile, ScienceEnvironmentProfileConfig } from './config.ts'
 
 /** Namespace carrying only the `science-runtime` Conda profile map. */
-export const SCIENCE_RUNTIME_SETTINGS_NAMESPACE = settingsNamespace('science-runtime')
+export const SCIENCE_RUNTIME_SETTINGS_NAMESPACE = 'science-runtime'
 
 /**
  * Settings schema for the profile map: the same closed per-profile fields

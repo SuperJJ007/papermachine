@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   decodeScienceArtifact,
@@ -84,7 +84,7 @@ describe('strict Science fold', () => {
         () => decodeScienceDomainEvent({
           ...candidate,
           data: { ...data, unexpected: true },
-        } as SessionEvent),
+        } as unknown as SessionEvent),
         candidate.type,
       ).toThrow()
     }
@@ -433,13 +433,13 @@ describe('strict Science fold', () => {
     duplicateRun.push(event('tool/call', 7, 160, {
       turn: 1,
       step: 2,
-      callId: CallId('call-run-again'),
+      callId: ToolCallId('call-run-again'),
       name: 'run_python',
       arguments: '{}',
     }))
     duplicateRun.push(event('science/run-started', 8, 170, {
       version: 1,
-      run: runStarted({ toolCallId: CallId('call-run-again'), startedAt: 169 }),
+      run: runStarted({ toolCallId: ToolCallId('call-run-again'), startedAt: 169 }),
     }))
     expect(() => foldScience(duplicateRun)).toThrow(/duplicate Science runId/)
 
@@ -511,7 +511,7 @@ describe('strict Science fold', () => {
       artifact: artifact({ version: 4 }),
     })
 
-    const runCall = CallId('call-run-continue')
+    const runCall = ToolCallId('call-run-continue')
     const run = runStarted({
       runId: ScienceRunId('run-continue'),
       toolCallId: runCall,
@@ -583,7 +583,7 @@ describe('strict Science fold', () => {
       sha256: '3'.repeat(64),
       seenAt: 179,
     })
-    const secondRunCall = CallId('call-run-with-input')
+    const secondRunCall = ToolCallId('call-run-with-input')
     const secondRun = runStarted({
       runId: ScienceRunId('run-with-input'),
       toolCallId: secondRunCall,

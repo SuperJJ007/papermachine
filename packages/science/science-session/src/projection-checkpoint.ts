@@ -1,6 +1,6 @@
 /** Strict validation of private persisted Science projection state. */
 
-import { isJsonValue } from '@deepseek-ai/dsh-session'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'

@@ -1,12 +1,38 @@
+---
+description: "在会话的持久化内核中执行 Python 和 R，并将输出捕获为项目产物版本。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-science-runtime
 
 [English](README.md) | 中文
 
+## 概述
+
+在会话的持久化内核中执行 Python 和 R，并将输出捕获为项目产物版本。跨调用复用变量，并将执行绑定到配置的 Conda 环境。工具包负责面向模型的请求与结果呈现。
+
+## 目录
+
+- [包职责](#package-section-0)
+- [组装](#package-section-1)
+- [绑定 settings 的入口](#package-section-2)
+- [操作](#package-section-3)
+- [限制与环境](#package-section-4)
+- [验证](#package-section-5)
+- [运行时断言](#package-section-6)
+- [模型体验](#package-section-7)
+- [已知限制与暂缓事项](#package-section-8)
+- [开发备注](#dev-note)
+
+<a id="package-section-0"></a>
+## 包职责
+
 `@deepseek-ai/dsh-science-runtime` 提供折叠的、host-local 的 Conda Science Runtime，用于持久化 environment、run 与 artifact 事实。它拥有 `ctx.scienceRuntime`、按 Session 隔离的私有 scratch、按 (session, language) 持久化的 Python/R kernel process、稳定 prefix 观测、精确 Session lease、终态结果分类、把 run 写出的文件自动捕获为带版本的 artifact，以及对已捕获 artifact 版本的纯元数据策展重标注能力。它不注册面向模型的工具、提示词、preset 或 UI。
 
+<a id="package-section-1"></a>
 ## 组装
 
-在 Host 加载 `@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-science-session`、`@deepseek-ai/dsh-science-artifact-store`、`@deepseek-ai/dsh-subprocess-local`、`@deepseek-ai/dsh-sandbox-local` 和本包；在准入 Science Session fact 的组合中选择 `@deepseek-ai/dsh-science-session/invariant`。Runtime 要求 project artifact store、`host-local` subprocess provider，以及报告级别不低于所配置 `minimumEnforcement`（默认 `'full'`）的 sandbox provider——不需要附件 provider:产物字节及其跨 session 索引都存放在 project artifact store 里，而非 session 级的附件存储。它的 `./invariant` 配套模块不重复事件关系，因为 Science Session invariant 负责 durable stream 校验。
+在 Host 加载 `@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-science-session`、`@deepseek-ai/dsh-science-artifact-store`、`@deepseek-ai/dsh-subprocess-local`、`@deepseek-ai/dsh-sandbox-local` 和本包；在准入 Science Session fact 的组合中选择 `@deepseek-ai/dsh-science-session/invariant`。Runtime 要求 project artifact store、`host-local` subprocess provider，以及报告级别不低于所配置 `minimumEnforcement`（默认 `'full'`）的 sandbox provider——不需要附件 provider:产物字节及其跨 session 索引都存放在 project artifact store 里，而非 session 级的附件存储。
 
 包配置只命名现有的 absolute Conda prefix。它不调用 Conda，也不创建、克隆、更新、安装到、修复或删除 prefix。
 
@@ -27,6 +53,7 @@
 
 <a id="settings-bound-entry"></a>
 
+<a id="package-section-2"></a>
 ## 绑定 settings 的入口
 
 `@deepseek-ai/dsh-science-runtime/with-settings` 以同一份 `Config` 提供同一个 service，并额外通过 restart-scoped `science-runtime` user-settings namespace 解析 `profiles`，该 namespace 只保存这张 map。Cordis `profiles` map 是它的 composition `base`。Runtime 在 load 时对解析后的 map 做一次快照，并且不 watch，因此一次成功 write 只影响下一次 Host start。`pythonPrefix` 与 `rPrefix` 在每份面向浏览器的 settings descriptor 上都是只写 secret。
@@ -35,7 +62,10 @@
 
 两个入口提供的是同一个 `ctx.scienceRuntime` Cordis service，而该 service 只持有一个 provider：二者是互斥的替代关系，不会同时挂载。已发布的 Web bundle 默认在 Cordis entry id `science-runtime` 下挂载 `with-settings`；若某个 deployment 改为仅凭 Cordis 配置拥有自己的 profile map，应按 id 覆盖该行（与其它 bundle 行覆盖方式一致的 patch 替换），而不是 `insert` 第二个 Runtime 行——插入第二行会在 load 时抛出 `service "scienceRuntime" has been registered`。
 
+<a id="package-section-3"></a>
 ## 操作
+
+捕获在任何候选文件进入 store 或 Session 之前，先按共享的[逻辑名称规则](../science-artifact-store/README.zh.md)预检全部符合条件的候选。输入目标另行拒绝平台别名；编辑基线和光栅声明只标识已有输出。`ScienceRunResult.captureFailure` 将无效名称、文件系统失败、意外捕获失败、Session 分离及事件追加失败与不变的解释器终态区分开。追加失败可能留下先前已持久化的捕获版本；重试前应检查投影。位于 `/tmp` 下的 checkout 可把 `DSH_SCIENCE_TEST_SCRATCH_PARENT` 设为已有的非临时目录；测试清理负责其随机子目录。
 
 `bindEnvironment({ session, profileId, signal })` 要求精确的 live Science Session object 已含 durable `science/mode-bound` fact，观测所选 profile，并追加一个完整的 `science/environment-bound` 值。从其它 preset 重组进 `science` 的 blank session 会凭该 durable fact 满足要求，即使其冻结的 creation header 仍命名原 preset。静态缺失或不可用的 interpreter 会成为 `invalid` 值；取消、超时、prefix I/O 失败、confinement 报告的级别低于所配置的 `minimumEnforcement`，或可写 root 重叠，都会拒绝且不追加 environment event。成功时，confinement 实际报告的 enforcement 级别会记录在追加的 binding 上，即 `sandboxEnforcement`——当两种已声明语言都跑过时，取两者各自报告级别中较弱的一个(它们在同一个 sandbox provider 下、按同一个所配置最低值 confine，实践中会报告相同的级别，但记录下来的值仍是一个诚实的最小值，而不取决于哪一个恰好先跑)。每个可用 interpreter 的 identity 还携带一份 package inventory：对完整观测结果排序并计算 digest 后的 name/version pair，再按 `packagesMaxEntries`/`packagesMaxBytes` 截留；超出任一上限都会截断保留列表并置位 `packagesTruncated`，而 digest 仍覆盖截断前的完整 inventory。若 package-inventory probe 未产生可解析的输出，整个 interpreter 观测会成为 `invalid`，与 version 和 UTF-8 probe 的诚实失败行为一致。session 一旦存在任何 run，`bindEnvironment` 自身就会拒绝再次调用(`ScienceRuntimeError('ENVIRONMENT_NOT_READY', …)`)；挡在本 Runtime 与"对一个已经跑过 run 的 session 表达一个更新的 environment revision"之间的正是这道 guard，而非 durable projection——只要当下没有 run 正在进行，Science Session 的 fold 早已能接纳一个取代更早 revision 的 `applied` revision。在已发布的产品中，`bindEnvironment` 自身从未被第二次调用：`installPackages`(见下方"操作"一节)通过一条完全独立、刻意不设 guard 的追加路径抵达更新的 environment revision，而不是解除这道 guard。
 
@@ -88,9 +118,9 @@ series 或 annotation 的 id 会嵌入底层图形文本(series 标签、annotat
 
 `applyChartEdit({ session, artifactId, version, ops, signal })` 把非空且受限的操作列表施加到确切的当前可寻址 PNG 版本。其来源是该产物最近的运行产出版本，而非另一次保存同名文件的运行。每次预览和保存都会复制来源版本保存的图对象，依次应用已提交操作和本次请求操作，再按原保存设置导出。若登记已经过期，运行时会在具有独立 home、状态目录和包安装目录的一次性解释器中，以确切的物化输入重新执行源码。恢复无法修改分析内核的变量、可变对象、模块或进程设置，也不产生科学运行或持久内核状态事件。依赖未声明内存对象或内核本地安装包的源码以 `CHART_NOT_ADDRESSABLE` 失败。无法重建已提交操作时，以 `CHART_NOT_ADDRESSABLE` 拒绝，而非静默丢掉版本中的部分修改。
 
-现有 `timeoutMs` 约束整个预览或保存操作，包括冷启动和源码回放；`chartExtractTimeoutMs` 还约束每次图协议交互。操作被取消或达到 `timeoutMs` 时，以 `OPERATION_CANCELLED` 或 `OPERATION_TIMED_OUT` 拒绝，等待恢复进程清理后释放会话 lease。恢复失败保留分析内核；被中断的温图操作会退役其所属内核。参见[冷恢复隔离](../../../.agents/notes/implemented/bug-fix/2026-08-31-science-cold-replay-isolation.zh.md)。
+现有 `timeoutMs` 约束整个预览或保存操作，包括冷启动和源码回放；`chartExtractTimeoutMs` 还约束每次图协议交互。操作被取消或达到 `timeoutMs` 时，以 `OPERATION_CANCELLED` 或 `OPERATION_TIMED_OUT` 拒绝，等待恢复进程清理后释放会话 lease。恢复失败保留分析内核；被中断的温图操作会退役其所属内核。参见[冷恢复隔离](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/bug-fix/2026-08-31-science-cold-replay-isolation.md)。
 
-每次成功保存都会向 project artifact store 追加一个不可变的 `content_origin: 'human-edit'` PNG 版本:`baseVersionId` 命名所请求版本(`baseExplicit: true`)，`environmentRevision`/`environmentFingerprint` 原样复制自该版本自身的 store 行(是赋值，不是重新校验的 fold check)，且不带任何 producer run/tool-call 字段，唯一例外是 `producerTurn`——会话最后一次已开始的轮次，在 `applyChartEdit` 被调用时读取一次、此后不再重读，因此在两轮之间的空闲间隙里应用的编辑会归属于当时正当前的轮次，而不是 store 写入提交那一刻恰好最新的轮次。新版本在 store 的 `figure_state` 侧表里依次持有先前成功操作与本次成功的新操作。另有一次 `annotateVersion` 调用(`actor: 'human'`)把所请求版本的当前 title/caption 继承到新版本上；模型从不为这次元数据修改授权。部分目标无法解析时，会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝，其信息列出每个被拒绝操作从 1 开始的序号、操作名和解析失败原因(例如 `set_font` 唯一的原因 `font_not_found`)，而不是一句通用总结。`previewChartEdit` 不发布版本，也不改变保存的图对象，即使全部待提交操作都失败也如此。因此，放弃预览不会影响后续保存。标题与轴标签编辑保留既有文字样式。紧裁剪导出的外围边界可能随修改后的文字范围变化，但裁剪策略本身保持不变。参见[编辑隔离决策](../../../.agents/notes/implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.zh.md)。
+每次成功保存都会向 project artifact store 追加一个不可变的 `content_origin: 'human-edit'` PNG 版本:`baseVersionId` 命名所请求版本(`baseExplicit: true`)，`environmentRevision`/`environmentFingerprint` 原样复制自该版本自身的 store 行(是赋值，不是重新校验的 fold check)，且不带任何 producer run/tool-call 字段，唯一例外是 `producerTurn`——会话最后一次已开始的轮次，在 `applyChartEdit` 被调用时读取一次、此后不再重读，因此在两轮之间的空闲间隙里应用的编辑会归属于当时正当前的轮次，而不是 store 写入提交那一刻恰好最新的轮次。新版本在 store 的 `figure_state` 侧表里依次持有先前成功操作与本次成功的新操作。另有一次 `annotateVersion` 调用(`actor: 'human'`)把所请求版本的当前 title/caption 继承到新版本上；模型从不为这次元数据修改授权。部分目标无法解析时，会提交成功操作并报告带索引的 `failedOps`；没有任何操作成功解析的请求以 `CHART_ELEMENT_NOT_FOUND` 拒绝，其信息列出每个被拒绝操作从 1 开始的序号、操作名和解析失败原因(例如 `set_font` 唯一的原因 `font_not_found`)，而不是一句通用总结。`previewChartEdit` 不发布版本，也不改变保存的图对象，即使全部待提交操作都失败也如此。因此，放弃预览不会影响后续保存。标题与轴标签编辑保留既有文字样式。紧裁剪导出的外围边界可能随修改后的文字范围变化，但裁剪策略本身保持不变。参见[编辑隔离决策](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/bug-fix/2026-08-31-chart-edit-baseline-isolation.md)。
 
 确切版本与可寻址性失败分别以 `CHART_STALE_VERSION` 和 `CHART_NOT_ADDRESSABLE` 拒绝；格式错误或超过上限的操作以 `CHART_OP_INVALID` 拒绝。若源 run 的保留 scratch 已不可用，Runtime 无法恢复，也不会猜测。Consumer 向之后的模型回合公开直接编辑时，只给出操作名称、元素 target 与 `editCount`；标题文本、标签文本、图例位置与网格可见性不会进入净化后的 state 与 receipt 摘要。
 
@@ -118,16 +148,18 @@ Runtime 对发布前的误用或能力失败以 `ScienceRuntimeError` 拒绝。s
 
 当某逻辑名在 store 里的当前 head 是直接人工编辑(`content_origin: 'human-edit'`)时，自动捕获还会忽略未声明、且字节仍与该 artifact 完整 store 历史中最近 run 产出祖先相同的文件。这样，私有 artifact 目录中编辑前遗留的陈旧文件不会在一次无关的后续 run 中回滚人工 version。若在 `editBaselines` 中指名该输出路径，就表示这次写入是有意的，因此模型编辑或显式回滚仍会正常提交。人工编辑 version 本身仍可作为 `artifactInputs` 与 `editBaselines` 来源。
 
+<a id="package-section-4"></a>
 ## 限制与环境
 
-每次 probe、kernel spawn 与包安装都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd，以及要求报告级别不低于所配置 `minimumEnforcement` 的 `workspace-write` confinement——与一次性进程所需的 confinement 完全相同，只是它现在贯穿 kernel 的整个生命周期，而不是每次 run 都重新来一遍。`minimumEnforcement` 默认为 `'full'`；仅当受支持的 sandbox 后端无法达到 full enforcement 时，部署方才会将其降为 `'partial'`——目前唯一的例子是 win32 的 ACL restricted-token 后端([`dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/README.zh.md)，“已验证边界”一节)。接受它并不会拓宽该后端实际强制执行的范围：该包所记录的 Everyone 可写外部对象以及 NTFS 硬链接别名问题，仍然照原样存在。同一个被降低的最低值同样管辖 `installPackages`：配置 `minimumEnforcement: 'partial'` 的 win32 桌面部署，对 `micromamba install` 的写目标 confinement 与对一次 probe 或一次 kernel 采用完全相同的接受条件。confinement 调用实际报告的级别会记录在生成的 environment binding 上，即 `sandboxEnforcement`，因此 provenance 展示的永远是实际被接受的级别，而不仅是所要求的级别。`confineWithEnforcement`(`execution.ts`)是 probe 与 kernel-spawn confinement 共用的唯一比较点；`installPackages` 自己的 `confineInstallArgv`(`install.ts`)无法直接调用它——安装必须授予目标 prefix 写权限，这与 `confineWithEnforcement` 自身的 `assertPrefixReadOnly` 所要求的正相反——因此它复用同一个 `meetsMinimumEnforcement` 比较逻辑，并报告完全相同形状的 `CONFINEMENT_UNAVAILABLE` 消息。sandbox provider 本身在这些站点里从不会被要求放宽任何东西——它一直如实报告自己实际达到的 enforcement 级别。Python probe 使用 `-I -B -X utf8`(isolated mode：probe 从不安装任何东西)。Python kernel 去掉 `-I`，保留 `-B -u -X utf8`，并运行随包发布的 `kernel_python.py` driver；它的固定 environment allowlist 追加 `PYTHONUSERBASE=<kernel scratch dir>/pyuser`，在 spawn 时创建。去掉 isolated mode 正是让 inline `pip install` 能在同一个 kernel 内被 import 的原因：在 sandbox confinement 下 Conda prefix 是只读的，所以 pip 的安装会回退为 user-site install，而 `-I` 原本会把 user site-packages 排除在 `sys.path` 之外；`PYTHONUSERBASE` 则给这个回退提供了一个 kernel 自己拥有的、可写的目标，而不是环境默认位置。R 版本发现仅使用 `Rscript --version`；UTF-8 probe 使用 `Rscript --vanilla --encoding=UTF-8`；R kernel 在同样的 flag 下运行随包发布的 `kernel_r.R` driver，其固定 environment allowlist 追加了 `R_LIBS_USER=<kernel scratch dir>/rlibs`，并在 spawn 时创建——`install.packages()` 只有在目录已存在时才会把它加进 `.libPaths()`；而且只有 R_LIBS_USER，不同于普通的额外 library path，才是非交互式 `install.packages()` 在不带额外参数时的目标。Python 的 package-inventory probe 追加 `-m pip list --format=json`，报告 interpreter 自身所见；R 的 package-inventory probe 求值 `installed.packages()` 并以 TSV 打印 `Package`/`Version`，只使用 base R，因为无法保证 `jsonlite` 已安装。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。在 win32 上，固定 environment allowlist 还会额外携带 `SystemRoot`、`windir`、`SystemDrive`、`ComSpec`、`PATHEXT`、`TEMP`、`TMP`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA`、`NUMBER_OF_PROCESSORS` 与 `PROCESSOR_ARCHITECTURE`，这些都从 Host 自身的 ambient environment 中原样带过来：一个不带任何这些变量启动的 win32 process 无法初始化 Winsock(`WinError 10106`)，而 loopback TCP response channel 与 interpreter 自身的标准库都依赖 Winsock。win32 上的 `PATH` 按 `conda activate` 使用的顺序拼接 `<prefix>`、`<prefix>\Library\mingw-w64\bin`、`<prefix>\Library\usr\bin`、`<prefix>\Library\bin`、`<prefix>\Scripts` 与 `<prefix>\bin`，而不是 POSIX 的 `<prefix>/bin:/usr/bin:/bin`。
+每次 probe、kernel spawn 与包安装都使用 direct argv、空 subprocess environment base、固定 environment allowlist、owned cwd，以及要求报告级别不低于所配置 `minimumEnforcement` 的 `workspace-write` confinement——与一次性进程所需的 confinement 完全相同，只是它现在贯穿 kernel 的整个生命周期，而不是每次 run 都重新来一遍。`minimumEnforcement` 默认为 `'full'`；仅当受支持的 sandbox 后端无法达到 full enforcement 时，部署方才会将其降为 `'partial'`——目前唯一的例子是 win32 的 ACL restricted-token 后端([`dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/README.zh.md)，“已验证边界”一节)。接受它并不会拓宽该后端实际强制执行的范围：该包所记录的 Everyone 可写外部对象以及 NTFS 硬链接别名问题，仍然照原样存在。同一个被降低的最低值同样管辖 `installPackages`：配置 `minimumEnforcement: 'partial'` 的 win32 桌面部署，对 `micromamba install` 的写目标 confinement 与对一次 probe 或一次 kernel 采用完全相同的接受条件。confinement 调用实际报告的级别会记录在生成的 environment binding 上，即 `sandboxEnforcement`，因此 provenance 展示的永远是实际被接受的级别，而不仅是所要求的级别。`confineWithEnforcement`(`execution.ts`)是 probe 与 kernel-spawn confinement 共用的唯一比较点；`installPackages` 自己的 `confineInstallArgv`(`install.ts`)无法直接调用它——安装必须授予目标 prefix 写权限，这与 `confineWithEnforcement` 自身的 `assertPrefixReadOnly` 所要求的正相反——因此它复用同一个 `meetsMinimumEnforcement` 比较逻辑，并报告完全相同形状的 `CONFINEMENT_UNAVAILABLE` 消息。sandbox provider 本身在这些站点里从不会被要求放宽任何东西——它一直如实报告自己实际达到的 enforcement 级别。Python probe 使用 `-I -B -X utf8`(isolated mode：probe 从不安装任何东西)。Python kernel 去掉 `-I`，保留 `-B -u -X utf8`，并运行随包发布的 `kernel_python.py` driver；它的固定 environment allowlist 追加 `PYTHONUSERBASE=<kernel scratch dir>/pyuser`，在 spawn 时创建。去掉 isolated mode 正是让 inline `pip install` 能在同一个 kernel 内被 import 的原因：在 sandbox confinement 下 Conda prefix 是只读的，所以 pip 的安装会回退为 user-site install，而 `-I` 原本会把 user site-packages 排除在 `sys.path` 之外；`PYTHONUSERBASE` 则给这个回退提供了一个 kernel 自己拥有的、可写的目标，而不是环境默认位置。R 版本发现仅使用 `Rscript --version`；UTF-8 probe 使用 `Rscript --vanilla --encoding=UTF-8`；R kernel 在同样的 flag 下运行随包发布的 `kernel_r.R` driver，其固定 environment allowlist 追加了 `R_LIBS_USER=<kernel scratch dir>/rlibs`，并在 spawn 时创建——`install.packages()` 只有在目录已存在时才会把它加进 `.libPaths()`；而且只有 R_LIBS_USER，不同于普通的额外 library path，才是非交互式 `install.packages()` 在不带额外参数时的目标。Python 的 package-inventory probe 追加 `-m pip list --format=json`，报告 interpreter 自身所见；R 的 package-inventory probe 求值 `installed.packages()` 并以 TSV 打印 `Package`/`Version`，只使用 base R，因为无法保证 `jsonlite` 已安装。Runtime 拒绝与任何 writable root 重叠的 Conda prefix，且绝不把项目目录授予为 workspace。在 win32 上，probe、kernel 和包安装进程将 `TEMP`/`TMP` 指向各自的 scratch 临时目录。固定 environment allowlist 还会额外携带 `SystemRoot`、`windir`、`SystemDrive`、`ComSpec`、`PATHEXT`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA`、`NUMBER_OF_PROCESSORS` 与 `PROCESSOR_ARCHITECTURE`，这些都从 Host 自身的 ambient environment 中原样带过来：一个不带任何这些变量启动的 win32 process 无法初始化 Winsock(`WinError 10106`)，而 loopback TCP response channel 与 interpreter 自身的标准库都依赖 Winsock。win32 上的 `PATH` 按 `conda activate` 使用的顺序拼接 `<prefix>`、`<prefix>\Library\mingw-w64\bin`、`<prefix>\Library\usr\bin`、`<prefix>\Library\bin`、`<prefix>\Scripts` 与 `<prefix>\bin`，而不是 POSIX 的 `<prefix>/bin:/usr/bin:/bin`。
 
 `pyuser` 与 `rlibs` 都限定在各自确切的 kernel 实例上，而不是 session 或 environment：一次全新的 kernel——无论是 idle 重启、crash、interrupt escalation，还是 environment-rebound——都会在自己的 kernel-epoch scratch directory 下拿到一个全新的、空的 user-install base，因此一次 inline install 永远不会活过它所在的 kernel，也永远不会渗漏进之后绑定的 environment revision。
 
 kernel execution 在 darwin、linux 与 win32 上都能运行。response-channel transport 因平台而异(见上文)，而 win32 的 cooperative-interrupt 缺口(`interrupt()` 不起作用)意味着一次被取消或超时的 win32 run 总会丢失其 kernel 的内存状态，而 POSIX run 的 kernel 通常能存活下来——见"已知限制"。
 
-私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory，其中包括一个 `kernels/` 子树，容纳每个存活 kernel 自己的 scratch(其中就有它的 response FIFO,仅限 darwin 与 linux；win32 没有落盘的 response-channel 产物——loopback TCP listener 与其一次性 token 只存在于 Host process 内存中)。在 win32 上，Node 的 `lstat` 在 directory 或 file 上返回的 mode bits 是合成的，从不反映此前的 `chmod`，所以隐私校验在那里只检查 directory/file/symlink kind，不检查 mode bits；实际的隐私保证来自 Harness home 继承的 user-profile ACL，加上 ACL sandbox 自身的 per-session SID(`dsh-sandbox-windows-acl`)，而非 POSIX 权限位。只有独占 marker 创建成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree——包括它拥有过的每一个 kernel——已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
+私有 root 派生在 `DSH_HOME/science/v1/` 下，包含独占的 mode-0600 owner marker 与 mode-0700 directory，其中包括一个 `kernels/` 子树，容纳每个存活 kernel 自己的 scratch(其中就有它的 response FIFO,仅限 darwin 与 linux；win32 没有落盘的 response-channel 产物——loopback TCP listener 与其一次性 token 只存在于 Host process 内存中)。在 win32 上，Node 的 `lstat` 在 directory 或 file 上返回的 mode bits 是合成的，从不反映此前的 `chmod`，所以隐私校验在那里只检查 directory/file/symlink kind，不检查 mode bits；实际的隐私保证来自 Harness home 继承的 user-profile ACL，加上 ACL sandbox 自身的 per-session SID(`dsh-sandbox-windows-acl`)，而非 POSIX 权限位。只有在私有临时文件内容完整且已同步后，才通过独占硬链接发布 marker；并发读取方不会看到尚未写完的 marker。只有独占 marker 发布成功的 operation 才取得 rollback ownership；materialization 失败时，会在校验 marker bytes 后删除该 operation 的精确 marker 与 Session root，而并发或既有 ownership 会被保留。live operation 保留精确的 Session object；相同 ID 的 successor 在较早 detached lifecycle 证明所有 owned tree——包括它拥有过的每一个 kernel——已静止前保持 quarantine。已接受的 run directory 会保留用于 state 和诊断；未发布的 probe directory 只有在静止后才移除。
 
+<a id="package-section-5"></a>
 ## 验证
 
 协议夹具在所有平台运行 TCP，并在 POSIX 上额外运行真实 FIFO。跨平台所有权测试控制子进程退出证据和文件系统故障，不要求宿主支持原生 FIFO；独立的 POSIX 集成用例保留真实 FIFO 和权限检查。跨平台模式策略测试提供记录的元数据，不把 Windows 合成的模式位当作 POSIX 权限。
@@ -147,6 +179,12 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 
 该命令分别将 Python、R 与跨语言共存独立报告为 `PASS`、`FAIL` 或 `NOT-RUN`；缺少 opt-in 输入时为 `NOT-RUN`。每个被选择的语言会校验 canonical prefix/executable/history identity、非 ASCII direct source/output、空环境行为、owned directory、full confinement、取消、超时、prefix-write denial、managed-tree 结算、未改变的 prefix manifest、同一 kernel 上两次 run 之间的状态持久化、kernel 在一次被中断的 run 后存活、kernel 在一次超时升级的 run 后被替换、environment rebind 启动一个全新 epoch、idle 过期(针对合法范围内最短的 `kernelIdleTimeoutMs`)启动一个全新 epoch，以及——仅 R——一个 bare 的顶层值自动打印到 stdout。另有一项与语言无关的检查，会绑定一个同时命名两个 interpreter 的 environment，确认 Python 与 R 的 kernel 以各自独立的 epoch 与各自独立的内存态共存。
 
+<a id="package-section-6"></a>
+## 运行时断言
+
+本包没有 `./invariant` 入口。它在追加事实前约束私有进程的生命周期顺序；Science Session 不变量负责独立可观测的事件与投影关系。
+
+<a id="package-section-7"></a>
 ## 模型体验
 
 无。本 Runtime 为 `@deepseek-ai/dsh-tool-science` 提供非模型可见的操作，不注册任何提示词上下文。
@@ -157,12 +195,14 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 
 ## 已知限制与暂缓事项
 
+<a id="package-section-8"></a>
+
 - **不管理 environment** — Runtime 消费显式指定的既有 prefix；不发现、创建、安装、更新、修复或删除 Conda environment。
 - **只使用已有的本地 prefix** — observation 是 fingerprint，不是可复现环境锁；Runtime 从不管理 Conda package 或 environment。
 - **仅 file-write confinement** — full sandbox enforcement 限制所述的 file write，但不宣称隔离 file read、network、syscall 或科学有效性。
 - **仅 host-local execution** — remote subprocess provider 会 fail closed，因为此实现拥有私有 Host scratch。报告级别低于所配置 `minimumEnforcement`(默认 `'full'`)的 sandbox 同样会 fail closed；部署方只有通过显式配置 `minimumEnforcement: 'partial'` 才会接受一个 `'partial'` 后端，且实际被接受的级别总会记录在 environment binding 上——见上方“限制与环境”一节。
 - **win32 上的中断会丢失 kernel 状态** — `interrupt()` 在 win32 上是一个有文档记录的空操作(`dsh-subprocess-local` 的 `spawn.ts`)；这个 Runtime 没有类似 `CTRL_BREAK` 的升级手段。因此一次被取消或超时的 win32 run 总会落入 `run-escalation`，结束 kernel 并丢失该 session 已经积累的每一个变量——这与一个 POSIX kernel 只有在未能在宽限窗口内回应 `SIGINT` 时才会到达的结局相同。修复这一点需要一个独立的 win32 cooperative-interrupt 机制，延后作为 v1 之外的范围。
-- **win32 kernel execution 的真机证据只是这一次人工验证，不是一道可重复的门禁** — 一次真实 Windows Server 2022 运行端到端确认了 loopback TCP transport、win32 environment allowlist 与 `PATH` 顺序：`kernel-transport-real.spec.ts` 让随包发布的 `kernel_python.py` 与 `kernel_r.R` 都对着真实 Conda interpreter、通过一次真实 TCP 连接跑完整的 RUN/DONE/EXIT 周期。R 的 `bindEnvironment` probe 路径在同一台机器上也得到了确认——把 `CHILD_LOCALES.win32` 从 `C.UTF-8` 改成 `en_US.UTF-8`、把 probe 表达式从字面非 ASCII argv 改成 `\u` 转义的纯 ASCII argv 之后（见[win32 locale 与 probe-argv 的 Agent Note](../../../.agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.zh.md)）：`bindEnvironment` 报告 R `capability: "available"`，一次非 ASCII 的 `startRun` 往返（`cat(enc2utf8("dsh-科学-✓"))`）返回了完全符合预期的 UTF-8 字节，Python 和 R 的同内核状态持久化（一次运行里设的值，在同一 `kernelEpoch` 的后续运行里正确读回）也都成立。本仓库的 CI 中没有任何一步会在真实 win32 上 spawn 一个 kernel。
+- **win32 kernel execution 的真机证据只是这一次人工验证，不是一道可重复的门禁** — 一次真实 Windows Server 2022 运行端到端确认了 loopback TCP transport、win32 environment allowlist 与 `PATH` 顺序：`kernel-transport-real.spec.ts` 让随包发布的 `kernel_python.py` 与 `kernel_r.R` 都对着真实 Conda interpreter、通过一次真实 TCP 连接跑完整的 RUN/DONE/EXIT 周期。R 的 `bindEnvironment` probe 路径在同一台机器上也得到了确认——把 `CHILD_LOCALES.win32` 从 `C.UTF-8` 改成 `en_US.UTF-8`、把 probe 表达式从字面非 ASCII argv 改成 `\u` 转义的纯 ASCII argv 之后（见[win32 locale 与 probe-argv 的 Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md)）：`bindEnvironment` 报告 R `capability: "available"`，一次非 ASCII 的 `startRun` 往返（`cat(enc2utf8("dsh-科学-✓"))`）返回了完全符合预期的 UTF-8 字节，Python 和 R 的同内核状态持久化（一次运行里设的值，在同一 `kernelEpoch` 的后续运行里正确读回）也都成立。本仓库的 CI 中没有任何一步会在真实 win32 上 spawn 一个 kernel。
 - **win32 loopback transport 的每 kernel token 在 driver 自身的 process argv 中是可见的** — 机器上同一用户的另一个进程可以读到它(`Win32_Process.CommandLine`、`tasklist /v`)，这与 POSIX FIFO 路径不同：路径命名的是一个文件系统对象，而不是一个秘密。这在 v1 中是可接受的：`127.0.0.1` 上的 listener 只有在一个连接给出正确 token 时才会停止接受，所以这个 token 防的是一次杂散或恶意的*其他*连接抢先连接，而不是防同一用户的进程——反正它本来就能直接打开同一个 loopback 端口；这个 Runtime 真正依赖的安全边界是操作系统自身围绕 Host process 的同用户信任边界，而不是这个 token 的保密性。
 - **R 的输出捕获仅在 sink 级别** — `sink()` 会把 R 层面的 `print`/`cat`/`message` 输出正确归属到对应 run，但 C 层面或子进程的写入会绕过它，落入 kernel 自身长生命周期、有界的 stdout/stderr collector，永远不会归属回任何一次 run。某次 run 的 terminal 上的 `outputDegraded: true` 标记了 driver 检测到自己无法完整恢复或归属该 run 捕获的情形。与 Python 的 `os.dup2` 重定向对齐的 fd 级别捕获是未来工作。
 - **Host crash 之后不会对 kernel 的真实进程状态做对账** — replay 会为任何在 `session/end-seed` 时仍处于 `started` 的 kernel 派生出 `ScienceKernelInterrupted`，因此 durable log 与模型总会被告知：Host 重启之前的 kernel 不再运行；但本 Runtime 不会进一步核实或核对该 language interpreter 的真实操作系统进程在那次重启前后到底发生了什么。对账流程是未来工作。
@@ -176,3 +216,10 @@ pnpm --filter @deepseek-ai/dsh-science-runtime test:real-acceptance
 - **R 组合图与基础绘图仅支持栅格编辑** — PNG 设备上只有一张完整 ggplot 时才可寻址；视口组合、多张图与基础 `plot()` 保留区域编辑。
 - **重复保存只保留终态** — 一次 run 内多次把 matplotlib 或 ggplot2 图保存到同一路径时，抽取登记只保留最后一次导出的快照与设置。
 - **无法复制的自定义图对象保持普通 PNG** — 快照失败不会破坏成功的保存，但图片无法直接编辑。冷恢复仍要求源码输入与绘图依赖可重现；运行时对象不持久化。
+
+Science 内核请求空目标环境，最后合并后端必需环境项，并在升级终止前请求协作中断。目标进程身份由 subprocess 提供方私有持有。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

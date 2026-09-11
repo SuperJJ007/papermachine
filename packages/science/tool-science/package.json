@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-science",
   "description": "Model-facing Science Consumer: mode/environment binding, Science tools, and exact-version artifact-viewer edit admission",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -17,10 +17,6 @@
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./edit-service": {
       "types": "./lib/types/edit-service.d.ts",
@@ -43,12 +39,20 @@
       "default": "./lib/typert.remote-client.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./read-service": {
+      "types": "./lib/types/read-service.d.ts",
+      "default": "./lib/read-service.js"
+    },
+    "./read-types": {
+      "types": "./lib/types/read-types.d.ts",
+      "default": "./lib/types/read-types.js"
+    }
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/edit-service.js",
+    "lib/read-service.js",
     "lib/element-summary.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
@@ -61,14 +65,14 @@
   "dependencies": {
     "@deepseek-ai/dsh-byte-size": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-util-values": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-science-artifact-store": "workspace:^",
     "@deepseek-ai/dsh-science-runtime": "workspace:^",
@@ -76,7 +80,10 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-session-query": "workspace:^",
+    "@deepseek-ai/dsh-session-attachment-index": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -98,6 +105,9 @@
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-session-query": "workspace:^",
+    "@deepseek-ai/dsh-session-attachment-index": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^"
   }
 }

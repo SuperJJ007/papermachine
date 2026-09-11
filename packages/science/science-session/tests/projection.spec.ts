@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   replayScience,
@@ -76,7 +76,7 @@ describe('Science projection replay', () => {
 
   it('projects run inputs referencing a prior committed artifact version to clients', () => {
     const branchId = ScienceArtifactId('projection-branch')
-    const runCall = CallId('projection-input-run')
+    const runCall = ToolCallId('projection-input-run')
     const inputs = [{ artifactId: branchId, version: 1, path: 'reference/branch.png' }]
     const events: SessionEvent[] = [
       ...legalEvents().slice(0, 9),

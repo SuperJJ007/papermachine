@@ -11,11 +11,8 @@ import {
 import type E2BRuntime from '@deepseek-ai/dsh-e2b'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import E2BSubprocessRuntime from '@deepseek-ai/dsh-subprocess-e2b'
-import * as E2BSubprocessInvariant from '../src/invariant.ts'
 import { E2BBase64Decoder, E2B_OUTPUT_COMPLETE_FRAME, E2BOutputReader } from '../src/output.ts'
 import { E2BSubprocessHandle } from '../src/process.ts'
-import { serializeRemoteEnvironment } from '../src/environment.ts'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { describe, expect, it, vi } from 'vitest'
 
 function commandError(exitCode: number): CommandExitError {
@@ -301,6 +298,7 @@ class FakeSandbox {
 
 function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec {
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: ['bash', '-c', 'printf ok'],
     cwd: '/workspace',
     stdio: {
@@ -309,7 +307,6 @@ function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec
       stderr: { maxBytes: 4 },
     },
     graceMs: 5,
-    environmentBase: 'scrubbed-parent',
     ...overrides,
   }
 }
@@ -367,38 +364,22 @@ describe('E2BOutputReader', () => {
     reader.push(Buffer.from('ab'))
     reader.push(Buffer.from('cdef'))
     expect(reader.size).toBe(6)
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, utf8Validity: 'valid', spillPath: '/remote/spill' })
-    expect(reader.readFrom(2)).toEqual({ text: 'cdef', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
-    expect(reader.readFrom(5)).toEqual({ text: 'f', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
-    expect(reader.readFrom(99)).toEqual({ text: '', nextOffset: 6, lossy: false, utf8Validity: 'valid' })
+    expect(reader.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: true, spillPath: '/remote/spill' })
+    expect(reader.readFrom(2)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(5)).toEqual({ utf8Validity: 'valid' as const, text: 'f', nextOffset: 6, lossy: false })
+    expect(reader.readFrom(99)).toEqual({ utf8Validity: 'valid' as const, text: '', nextOffset: 6, lossy: false })
     reader.invalidateSpill()
-    expect(reader.readFrom(0)).toEqual({ text: 'cdef', nextOffset: 6, lossy: true, utf8Validity: 'valid' })
+    expect(reader.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cdef', nextOffset: 6, lossy: true })
   })
 
   it('drops whole head chunks and withholds absent or over-cap spills', () => {
     const withoutSpill = new E2BOutputReader(2, undefined, '/unused')
     withoutSpill.push(Buffer.from('ab'))
     withoutSpill.push(Buffer.from('cd'))
-    expect(withoutSpill.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
+    expect(withoutSpill.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
     const overCap = new E2BOutputReader(2, 3, '/too-small')
     overCap.push(Buffer.from('abcd'))
-    expect(overCap.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
-  })
-
-  it('reports retained byte validity before replacement decoding', () => {
-    const reader = new E2BOutputReader(8, undefined, '/unused')
-    reader.push(Buffer.from('运行', 'utf8'))
-    expect(reader.readFrom(0)).toMatchObject({ text: '运行', utf8Validity: 'valid' })
-    reader.push(Buffer.from([0xff]))
-    expect(reader.readFrom(0)).toMatchObject({ utf8Validity: 'invalid' })
-  })
-
-  it('serializes an empty-base target environment without remote ambient entries', () => {
-    expect(serializeRemoteEnvironment(
-      'E2B_EMPTY_BASE_SENTINEL=ambient\0KEEP=ambient\0',
-      { E2B_EMPTY_BASE_EXPLICIT: 'present' },
-      'empty',
-    )).toBe('E2B_EMPTY_BASE_EXPLICIT=present\0')
+    expect(overCap.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
   })
 })
 
@@ -420,12 +401,10 @@ describe('E2BSubprocessHandle', () => {
         KEEP: undefined,
       },
     }), '/workspace/.dsh-e2b/processes/one')
-    expect(handle.pid).toBe(-1)
     handle.stdin!.write('hello')
     handle.stdin!.end()
     fake.releaseStart()
     await flush()
-    expect(handle.pid).toBe(4343)
     expect(fake.handle.sent.map(value => String(value))).toEqual(['hello'])
     expect(fake.handle.closes).toBe(1)
     const controlEnvs = fake.startOptions?.envs
@@ -475,6 +454,23 @@ describe('E2BSubprocessHandle', () => {
     expect(piped).toBe('pipe-data')
     expect(handle.collected.stderr!.readFrom(0)).toMatchObject({ text: 'err', lossy: false })
     expect(fake.removed).toContain('/workspace/.dsh-e2b/processes/one/stderr.log')
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
+  it('isolates an empty target from remote ambient proxies while preserving control bootstrap', async () => {
+    const fake = new FakeSandbox()
+    fake.ambient = 'PATH=/bin\0HTTP_PROXY=http://ambient.invalid\0NPM_TOKEN=secret\0'
+    const handle = testHandle(runtime(fake), spec({
+      environmentBase: 'empty',
+      env: { HTTP_PROXY: 'http://explicit.invalid', ONLY: 'yes', PATH: undefined },
+    }), '/runtime/empty-environment')
+    fake.releaseStart()
+    await flush()
+    expect(fake.writtenFileData.get('/runtime/empty-environment/environment')).toBe('HTTP_PROXY=http://explicit.invalid\0ONLY=yes\0')
+    expect(fake.startOptions?.envs).toMatchObject({ TERM: 'dumb', NPM_TOKEN: '' })
+    expect(fake.startOptions?.envs?.HOME).toMatch(/^\/\.dsh-e2b-control-/)
+    fake.finish()
+    await expect(handle.done).resolves.toMatchObject({ exitCode: 0 })
     await expect(handle.waitForExit()).resolves.toBe(true)
   })
 
@@ -551,11 +547,10 @@ describe('E2BSubprocessHandle', () => {
 
     await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
     expect(fake.handle.disconnects).toBe(1)
-    expect(handle.collected.stdout?.readFrom(0)).toEqual({
+    expect(handle.collected.stdout?.readFrom(0)).toEqual({ utf8Validity: 'valid' as const,
       text: 'tput',
       nextOffset: 13,
       lossy: true,
-      utf8Validity: 'valid',
     })
     expect(fake.removed).toContain('/runtime/drain-bound/stdout.log')
 
@@ -763,14 +758,13 @@ describe('E2BSubprocessHandle', () => {
     await expect(handle.done).resolves.toEqual({ exitCode: 7, signal: null })
     expect(fake.handle.sent).toEqual(['batch'])
     expect(fake.handle.closes).toBe(1)
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const,
       text: 'cdef',
       nextOffset: 6,
       lossy: true,
-      utf8Validity: 'valid',
       spillPath: '/runtime/two/stdout.log',
     })
-    expect(handle.collected.stderr!.readFrom(0)).toEqual({ text: '345', nextOffset: 5, lossy: true, utf8Validity: 'valid' })
+    expect(handle.collected.stderr!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: '345', nextOffset: 5, lossy: true })
     expect(fake.removed).not.toContain('/runtime/two/stdout.log')
   })
 
@@ -784,7 +778,7 @@ describe('E2BSubprocessHandle', () => {
     await fake.stderr('')
     fake.finish()
     await handle.done
-    expect(handle.collected.stdout!.readFrom(0)).toEqual({ text: 'cd', nextOffset: 4, lossy: true, utf8Validity: 'valid' })
+    expect(handle.collected.stdout!.readFrom(0)).toEqual({ utf8Validity: 'valid' as const, text: 'cd', nextOffset: 4, lossy: true })
     expect(fake.removed).toContain('/runtime/oversize/stdout.log')
     const command = fake.commandsSeen.find(value => value.includes('dsh_e2b_tee='))!
     expect(command).toContain('"$dsh_e2b_head" -c 3')
@@ -823,19 +817,6 @@ describe('E2BSubprocessHandle', () => {
     await flush()
     expect(fake.alive).toBe(true)
     expect(fake.commandsSeen.filter(command => command.startsWith('kill -'))).toHaveLength(signals)
-  })
-
-  it('interrupt() is a documented no-op: it sends no signal and leaves the process group untouched', async () => {
-    const fake = new FakeSandbox()
-    const handle = testHandle(runtime(fake), spec(), '/runtime/interrupt-noop')
-    await flush()
-    expect(() => { handle.interrupt() }).not.toThrow()
-    await flush()
-    expect(fake.commandsSeen.some(command => command.startsWith('kill -'))).toBe(false)
-    expect(fake.alive).toBe(true)
-    handle.terminate()
-    await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
-    await expect(handle.waitForExit()).resolves.toBe(true)
   })
 
   it('makes termination a permanent no-op after natural quiescence is observed', async () => {
@@ -1199,7 +1180,6 @@ describe('E2BSubprocessHandle', () => {
     fake.backgroundError = new Error('start failed')
     const handle = testHandle(runtime(fake), spec(), '/runtime/fail')
     await expect(handle.done).rejects.toThrow('start failed')
-    expect(handle.pid).toBe(-1)
     expect(fake.removed).toContain('/runtime/fail/environment')
     expect(fake.removed).toContain('/runtime/fail')
     await expect(handle.waitForExit()).resolves.toBe(true)
@@ -1440,6 +1420,17 @@ describe('E2BSubprocessHandle', () => {
     await expect(absent.waitForExit()).resolves.toBe(true)
   })
 
+  it('keeps polling while a running command has not published its process group yet', async () => {
+    const fake = new FakeSandbox()
+    fake.processGroupReads.push('', '4242\n')
+    const handle = testHandle(runtime(fake), spec(), '/runtime/delayed-group-publication', 1)
+
+    await vi.waitFor(() => { expect(fake.processGroupReads).toEqual([]) })
+    fake.finish()
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
   it('preserves publication failure and reports cleanup that cannot be verified', async () => {
     const fake = new FakeSandbox()
     fake.processGroupId = 'not-a-pid\n'
@@ -1480,15 +1471,6 @@ describe('E2BSubprocessHandle', () => {
     await expect(observed.done).rejects.toThrow('process-group publication failed')
     naturallyGone.alive = false
     await expect(observed.waitForExit()).resolves.toBe(true)
-  })
-
-  it('waits for delayed process-group publication', async () => {
-    const fake = new FakeSandbox()
-    fake.processGroupReads.push('', '4242\n')
-    const handle = testHandle(runtime(fake), spec(), '/runtime/delayed-group')
-    await vi.waitFor(() => { expect(handle.pid).toBe(4242) })
-    fake.finish()
-    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
   })
 
   it('handles output backpressure and contains a stderr sink failure', async () => {
@@ -1660,12 +1642,6 @@ describe('E2BSubprocessRuntime', () => {
     return { ctx, fiber }
   }
 
-  it('reports remote execution world', async () => {
-    const { ctx, fiber } = await service()
-    expect(ctx.subprocess.executionWorld).toBe('remote')
-    await fiber.dispose()
-  })
-
   it('registers handles and disposal terminates and joins live remote groups regardless of sandbox policy', async () => {
     const fake = new FakeSandbox()
     fake.trapsTerm = true
@@ -1816,16 +1792,134 @@ describe('E2BSubprocessRuntime', () => {
     await expect(handle.done).rejects.toThrow('start failed during disposal')
   })
 
-  it('validates synchronous spawn preconditions', async () => {
-    const { ctx } = await service()
+  it('validates synchronous spawn preconditions before handle or remote work', async () => {
+    const fake = new FakeSandbox()
+    const getSandbox = vi.fn(async () => fake.sandbox)
+    const { ctx } = await service(fake, runtime(fake, getSandbox))
+    const live = (ctx.subprocess as unknown as { live: Set<E2BSubprocessHandle> }).live
     expect(() => ctx.subprocess.spawn(spec({ argv: [] }))).toThrow(/non-empty program/)
-    expect(() => ctx.subprocess.spawn(spec({ signal: AbortSignal.abort('stop') }))).toThrow(/aborted before spawn/)
-  })
+    expect(() => ctx.subprocess.spawn(spec({ signal: AbortSignal.abort('stop') })))
+      .toThrow(new Error('aborted before spawn: stop'))
+    expect(() => ctx.subprocess.spawn(spec({ signal: AbortSignal.abort(null) })))
+      .toThrow(new Error('aborted before spawn: aborted'))
+    const throwingReason = { toString: () => { throw new Error('caller reason escaped') } }
+    expect(() => ctx.subprocess.spawn(spec({ signal: AbortSignal.abort(throwingReason) })))
+      .toThrow(new Error('aborted before spawn: aborted'))
 
-  it('registers the package-owned empty invariant installer', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = await ctx.plugin(E2BSubprocessInvariant).await()
-    await fiber.dispose()
+    for (const invalid of [
+      spec({ argv: ['bash\0'] }),
+      spec({ argv: ['bash', 'bad\0arg'] }),
+      spec({ cwd: 'bad\0cwd' }),
+      spec({ env: { REMOVED: undefined, 'BAD\0KEY': 'value' } }),
+      spec({ env: { BAD: 'bad\0value' } }),
+    ]) {
+      let thrown: unknown
+      try {
+        ctx.subprocess.spawn(invalid)
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({ name: 'TypeError', code: 'ERR_INVALID_ARG_VALUE' })
+    }
+    expect(getSandbox).not.toHaveBeenCalled()
+    expect(live).toEqual(new Set())
+    expect(fake.directories).toEqual([])
   })
+})
+
+describe('remote retained output byte validity', () => {
+  it('validates recovered bytes before replacement decoding', () => {
+    const reader = new E2BOutputReader(64, undefined, '/unused')
+    reader.push(Buffer.from([0xe4]))
+    expect(reader.readFrom(0).utf8Validity).toBe('invalid')
+    reader.push(Buffer.from([0xbd, 0xa0]))
+    expect(reader.readFrom(0)).toMatchObject({ text: '你', utf8Validity: 'valid' })
+    expect(reader.readFrom(1).utf8Validity).toBe('invalid')
+    reader.push(Buffer.from('�'))
+    expect(reader.readFrom(3)).toMatchObject({ text: '�', utf8Validity: 'valid' })
+    reader.push(Buffer.from([0xff]))
+    expect(reader.readFrom(6).utf8Validity).toBe('invalid')
+  })
+})
+
+
+it('delivers cooperative interruption only while a remote target group is running', async () => {
+  const fake = new FakeSandbox()
+  fake.deferStart()
+  const handle = testHandle(runtime(fake), spec(), '/runtime/cooperative-interrupt')
+  handle.interrupt()
+  expect(fake.commandsSeen).not.toContain('kill -INT -- -4242')
+  fake.releaseStart()
+  await flush()
+  handle.interrupt()
+  await vi.waitFor(() => { expect(fake.commandsSeen).toContain('kill -INT -- -4242') })
+  expect(fake.alive).toBe(true)
+  handle.terminate()
+  await handle.done
+  const signals = fake.commandsSeen.filter(command => command.startsWith('kill -INT ')).length
+  handle.interrupt()
+  await flush()
+  expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toHaveLength(signals)
+  await expect(handle.waitForExit()).resolves.toBe(true)
+})
+
+
+it.each(['completed', 'terminating'] as const)('drops a pending interrupt after the command is %s', async (state) => {
+  const fake = new FakeSandbox()
+  const getSandbox = vi.fn(async () => fake.sandbox)
+  const pending = Promise.withResolvers<Sandbox>()
+  const handle = testHandle(runtime(fake, getSandbox), spec({ stdio: { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' } }), '/runtime/pending-interrupt')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      handle.stdin!.write('ready', (error) => {
+        if (error === null || error === undefined) resolve()
+        else reject(error)
+      })
+    })
+    getSandbox.mockImplementationOnce(() => pending.promise)
+    handle.interrupt()
+    expect(getSandbox.mock.results.at(-1)?.value).toBe(pending.promise)
+    if (state === 'completed') {
+      fake.finish()
+      await handle.done
+    } else {
+      handle.terminate()
+    }
+    pending.resolve(fake.sandbox)
+    await pending.promise
+    await handle.done
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toEqual([])
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  } finally {
+    pending.resolve(fake.sandbox)
+    handle.terminate()
+    await handle.done
+  }
+})
+
+it('keeps command completion usable when cooperative sandbox acquisition fails', async () => {
+  const fake = new FakeSandbox()
+  const getSandbox = vi.fn(async () => fake.sandbox)
+  const pending = Promise.withResolvers<Sandbox>()
+  const handle = testHandle(runtime(fake, getSandbox), spec({ stdio: { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' } }), '/runtime/failed-interrupt')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      handle.stdin!.write('ready', (error) => {
+        if (error === null || error === undefined) resolve()
+        else reject(error)
+      })
+    })
+    getSandbox.mockImplementationOnce(() => pending.promise)
+    handle.interrupt()
+    expect(getSandbox.mock.results.at(-1)?.value).toBe(pending.promise)
+    pending.reject(new Error('sandbox connection lost during interrupt'))
+    fake.finish()
+    await expect(handle.done).resolves.toMatchObject({ exitCode: 0 })
+    expect(fake.commandsSeen.filter(command => command.startsWith('kill -INT '))).toEqual([])
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  } finally {
+    pending.resolve(fake.sandbox)
+    handle.terminate()
+    await handle.done
+  }
 })

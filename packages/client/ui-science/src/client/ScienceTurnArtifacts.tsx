@@ -4,20 +4,18 @@ import { useEffect, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactId } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceArtifactPresentationItem } from '@deepseek-ai/dsh-tool-science/types'
-import { ArtifactFileTile } from './ArtifactFileTile.tsx'
+import { FileDeliveryCard, FileDeliveryGroup, FileTypeIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ScienceImageLoader } from './science-attachment-loader.ts'
 import type { ScienceSelectionStore } from './selection-store.ts'
-import type { ScienceTurnArtifactsData } from './science-turn-artifacts.ts'
-import css from './ScienceTurnArtifacts.module.css'
+import { selectScienceTurnArtifacts, type ScienceTurnArtifactsData } from './science-turn-artifacts.ts'
 
 /** Navigation and loading capabilities supplied by the Turn-tail registration. */
 export interface ScienceTurnArtifactsInjected {
   readonly loadImage: ScienceImageLoader
-  readonly openArtifact: () => void
+  readonly openArtifact: (selection: { artifactId: string; version: number }) => void
 }
 
-export type ScienceTurnArtifactsProps = PropsRuntime<'conversation.chat.turnTail'>
-  & { matched: ScienceTurnArtifactsData }
+export type ScienceTurnArtifactsProps = { matched: ScienceTurnArtifactsData; collapsedCount: number }
   & PropsLocale<'science'> & PropsStore<ScienceSelectionStore>
   & InjectFace<ScienceTurnArtifactsInjected>
 
@@ -36,49 +34,39 @@ function ArtifactThumbnail({ item, loadImage }: {
     return () => { live = false }
   }, [item, loadImage])
   return src === null
-    ? <ArtifactFileTile mediaType={item.content.mediaType} />
+    ? <FileTypeIcon path={item.logicalName} size={28} />
     : <img src={src} alt="" />
 }
 
-/** Cards shown before an unexpanded overflow collapses the rest behind the "+N more" button. */
-const OVERFLOW_VISIBLE_COUNT = 5
-/** Total artifact count at or above which the tray collapses to `OVERFLOW_VISIBLE_COUNT` cards. */
-const OVERFLOW_THRESHOLD = 7
-
-/** Render exactly one card per logical artifact, using the last version emitted in this Turn. */
-export function ScienceTurnArtifacts({ matched, actions, loadImage, openArtifact, t }: ScienceTurnArtifactsProps) {
-  const [expanded, setExpanded] = useState(false)
+/** Render each logical artifact at the highest version emitted in this Turn. */
+export function ScienceTurnArtifacts({ matched, collapsedCount, actions, loadImage, openArtifact, t }: ScienceTurnArtifactsProps) {
   const total = matched.artifacts.length
-  const overflowing = total >= OVERFLOW_THRESHOLD
-  const visible = overflowing && !expanded ? matched.artifacts.slice(0, OVERFLOW_VISIBLE_COUNT) : matched.artifacts
-  return (
-    <section className={css.root} data-science-turn-artifacts>
-      <p className={css.title}>{t('turnArtifacts.title', { count: total })}</p>
-      <div className={css.list} role="list">
-        {visible.map((item) => {
-          // C1: this accumulated item is already this Turn's latest-emitted
-          // version for its artifactId (science-turn-artifacts.ts folds to
-          // the highest version per artifactId), so its own curated title —
-          // not the raw logicalName — is the artifact-level display name.
-          const name = item.title !== '' ? item.title : item.logicalName
-          return (
-            <button type="button" role="listitem" aria-label={`${name} v${String(item.version)}`} className={css.card} key={item.artifactId}
-              onClick={() => {
-                actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
-                openArtifact()
-              }}>
-              <span className={css.thumb}><ArtifactThumbnail item={item} loadImage={loadImage} /></span>
-              <span className={css.meta}><span className={css.name}>{name}</span>
-                <span className={css.version}>{t('artifact.version', { version: item.version })}</span></span>
-            </button>
-          )
-        })}
-      </div>
-      {overflowing && !expanded && (
-        <button type="button" className={css.more} onClick={() => { setExpanded(true) }}>
-          {t('turnArtifacts.showMore', { count: total - OVERFLOW_VISIBLE_COUNT })}
-        </button>
-      )}
-    </section>
-  )
+  return <div data-science-turn-artifacts><FileDeliveryGroup collapsedCount={collapsedCount}
+    heading={t('turnArtifacts.title', { count: total })}
+    expandLabel={t('turnArtifacts.showMore', { count: total - collapsedCount })}
+    collapseLabel={t('turnArtifacts.collapse')} expandAriaLabel={t('turnArtifacts.expandAria', { count: total })}
+    collapseAriaLabel={t('turnArtifacts.collapseAria', { count: total })}
+    items={matched.artifacts.map((item) => {
+      const name = item.title !== '' ? item.title : item.logicalName
+      const label = t('display.artifactVersion', { name, version: item.version })
+      const open = () => {
+        actions.openTab({ artifactId: item.artifactId as ScienceArtifactId, version: item.version })
+        openArtifact({ artifactId: item.artifactId, version: item.version })
+      }
+      return { id: item.artifactId, content: <FileDeliveryCard title={name} subtitle={t('artifact.version', { version: item.version })}
+        thumbnail={<ArtifactThumbnail item={item} loadImage={loadImage} />} titleTooltip={name}
+        previewLabel={label} actionAriaLabel={t('turnArtifacts.openAria', { name, version: item.version })}
+        actionLabel={t('turnArtifacts.open')} onPreview={open} /> }
+    })} /></div>
+}
+
+/**
+ * Select this domain's output without excluding other list contributions.
+ * @param props - Chat owner data and Science capabilities.
+ * @returns The Science group, or null when this Turn has no artifacts.
+ */
+export function ScienceTurnArtifactsEntry(props: PropsRuntime<'conversation.chat.turnTail'>
+  & PropsLocale<'science'> & PropsStore<ScienceSelectionStore> & InjectFace<ScienceTurnArtifactsInjected>) {
+  const matched = selectScienceTurnArtifacts(props)
+  return matched === null ? null : <ScienceTurnArtifacts {...props} matched={matched} />
 }

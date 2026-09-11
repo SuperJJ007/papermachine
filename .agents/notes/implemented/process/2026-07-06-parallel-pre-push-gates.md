@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-07-06-parallel-pre-push-gates.zh.md)
 
-The local-hook portion of this record is superseded by [Fast local Git hooks](2026-07-22-fast-local-git-hooks.md). The bounded gate scheduler and package-level `publint` parallelism remain in force for CI, `doc-sync`, and explicit local commands.
+The local-hook portion of this record is superseded by [Fast local Git hooks](../../archived/process/2026-07-22-fast-local-git-hooks.md). The bounded gate scheduler and package-level `publint` parallelism remain in force for CI, `doc-sync`, and explicit local commands. The scheduler's fail-fast option is recorded in [Gate-runner fail-fast](../../archived/process/2026-08-27-gate-runner-fail-fast.md).
 
 ## Problem
 
@@ -21,6 +21,8 @@ The Node 24 consumer job is one ten-gate mode rather than a shell-owned process 
 [scripts/publint-all.ts](../../../../scripts/publint-all.ts) discovers packages from `packages/<group>/<pkg>` and runs `publint` with a worker pool sized from `availableParallelism()`. `DSH_PUBLINT_CONCURRENCY` can cap or raise the worker count for local machines and CI runners with different resource profiles. Results are buffered per package and printed in deterministic package order, so parallel execution does not scramble each package's log block.
 
 The per-gate package scripts remain the vocabulary for ad hoc local runs. `hygiene` invokes a scheduler mode containing the same thirteen checks with the local four-worker cap, while `doc-sync` owns its member list in the scheduler ([doc-sync through the gate scheduler](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)).
+
+Process-table traversal visits each PID at most once and excludes the root. Windows parent PID reuse can produce cycles in an observed table; neither resource sampling nor termination enumeration may loop through them. Traversal copies its queue and appends children individually, so wide tables do not exceed the JavaScript argument limit. These checks bound enumeration but do not establish process identity across PID reuse.
 
 ## Verification
 

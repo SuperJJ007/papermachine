@@ -40,7 +40,7 @@ export function sdkEnvironmentOverlay(
 /**
  * Translate one official SDK spawn request to the shared process owner.
  * @param options - command, arguments, workspace, environment, and forwarded signal from the SDK.
- * @param graceMs - process-tree termination grace.
+ * @param graceMs - managed-range termination grace.
  * @returns the fully explicit shared subprocess request.
  */
 export function claudeSpawnSpec(
@@ -51,12 +51,12 @@ export function claudeSpawnSpec(
     throw new Error('subagent-claude-code: SDK spawn request omitted its workspace')
   }
   return {
+    environmentBase: 'scrubbed-parent' as const,
     argv: [options.command, ...options.args],
     cwd: options.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
     graceMs,
     signal: options.signal,
-    environmentBase: 'scrubbed-parent',
     env: sdkEnvironmentOverlay(options.env),
   }
 }
@@ -74,7 +74,7 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
 
   /**
    * Project a managed process with piped stdin and stdout.
-   * @param child - shared handle that remains the process-tree authority.
+   * @param child - shared handle that remains the managed-range authority.
    */
   constructor(private readonly child: SubprocessHandle) {
     this.stdin = child.stdin as NonNullable<SubprocessHandle['stdin']>
@@ -94,7 +94,7 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
     )
   }
 
-  /** Whether the SDK has requested managed tree termination. */
+  /** Whether the SDK has requested managed-range termination. */
   get killed(): boolean {
     return this.killRequested
   }
@@ -115,7 +115,7 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
   }
 
   /**
-   * Route the SDK's termination request to the tree-scoped process owner.
+   * Route the SDK's termination request to the managed-range process owner.
    * @param _signal - SDK-selected signal; the shared seam owns its escalation ladder.
    * @returns false only after exit or a previous termination request.
    */

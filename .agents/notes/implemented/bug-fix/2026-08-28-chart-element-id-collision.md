@@ -29,3 +29,7 @@ A matplotlib or ggplot2 chart whose extracted elements would have collided now k
 ## Verification
 
 `packages/science/science-runtime/tests/real-acceptance.ts`'s matplotlib `'tight'` case now draws a grouped bar chart whose bar-value annotations collide before dedup (`control[0]=0.483` and `treatment[0]=0.477` both format to `"0.48"`) and asserts the resulting artifact carries a `runtime: 'matplotlib'` chart with every element id unique and both `annotation[text:0.48]` and `annotation[text:0.48]#2` present — proving the real kernel's extraction, `decodeScienceChartState`, and the whole `extractChartsAfterFinish` host path accept it end to end. `packages/science/science-session/tests/chart-codec.spec.ts`'s existing `'rejects duplicate element ids, unordered hit bounds, and hits on an unavailable map'` test already locks the codec's own rejection of a chart with two same-id elements; it needed no change.
+
+## Related
+
+Related owners: [science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.md); [science-reference-authorship-and-geometry](2026-08-31-science-reference-authorship-and-geometry.md).

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-04-doc-tiers-and-budgets.md
-2026-07-04-doc-tiers-and-budgets.md: 6e9dc1f561a0060356d59aff37b517064cd0df52
-2026-07-04-doc-tiers-and-budgets.zh.md: 95b75d1bba1a9e752cb080b764b7daab6b75e89c
+2026-07-04-doc-tiers-and-budgets.md: 209504218d18e97ae6da65bed9a22da40d2a7681
+2026-07-04-doc-tiers-and-budgets.zh.md: 9c866424d84b4fefa5ffe95efa21a3cf7d3c321a

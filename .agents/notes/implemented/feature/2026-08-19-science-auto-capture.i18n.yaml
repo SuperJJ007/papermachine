@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-science-auto-capture.md
-2026-08-19-science-auto-capture.md: 79dfb9313758551c5d64d65891adfcc112defe2d
-2026-08-19-science-auto-capture.zh.md: 682a2b447cfb8e9b3a589d2b62833510a7840e5d
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-08-19-science-auto-capture.md: 65d9aca2fa08d74e0a05d3daec16bb5f77432f0c
+2026-08-19-science-auto-capture.zh.md: 06eab2aef5e4fb714cf3bc7e71ee433df0d0a341

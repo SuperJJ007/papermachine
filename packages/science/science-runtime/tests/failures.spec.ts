@@ -68,7 +68,7 @@ describe('ScienceRuntime post-start failure classification', () => {
         signal: new AbortController().signal,
       })
       await expect(handle.done).rejects.toMatchObject({ code: 'TERMINAL_COMMIT_FAILED' })
-      expect(harness.session.events.some(event => event.type === 'science/run-finished')).toBe(false)
+      expect(harness.session.snapshotEvents().some(event => event.type === 'science/run-finished')).toBe(false)
     } finally {
       stop()
     }
@@ -104,9 +104,9 @@ describe('ScienceRuntime post-start failure classification', () => {
     // retire-vs-rearm step, so this tainted kernel — its post-interrupt
     // state now unknown — stayed live and reusable rather than retired.
     await vi.waitFor(() => {
-      expect(harness.session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(harness.session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     })
-    const kernelFacts = harness.session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = harness.session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'run-escalation' } })
   })
 
@@ -151,9 +151,9 @@ describe('ScienceRuntime post-start failure classification', () => {
       vi.useRealTimers()
     }
     await vi.waitFor(() => {
-      expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
+      expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(2)
     })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'idle' } })
   })
 
@@ -164,7 +164,7 @@ describe('ScienceRuntime post-start failure classification', () => {
     ['oversized UTF-8', 'x'.repeat(262_145)],
   ])('rejects %s source before scratch creation, kernel acquisition, or start', async (_label, code) => {
     const harness = await ready(`science-invalid-source-${_label}`)
-    const beforeStarted = harness.session.events.filter(event => event.type === 'science/run-started').length
+    const beforeStarted = harness.session.snapshotEvents().filter(event => event.type === 'science/run-started').length
     const runs = join(harness.root, 'dsh-home', 'science', 'v1', 'sessions', sessionScratchKey(harness.session), 'runs')
     await expect(harness.runtime.startRun({
       session: harness.session,
@@ -173,8 +173,8 @@ describe('ScienceRuntime post-start failure classification', () => {
       ...authorizePythonRun(harness.session, `science-invalid-source-${_label}-call`),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-    expect(harness.session.events.filter(event => event.type === 'science/run-started')).toHaveLength(beforeStarted)
-    expect(harness.session.events.some(event => event.type === 'science/kernel-state')).toBe(false)
+    expect(harness.session.snapshotEvents().filter(event => event.type === 'science/run-started')).toHaveLength(beforeStarted)
+    expect(harness.session.snapshotEvents().some(event => event.type === 'science/kernel-state')).toBe(false)
     expect(readdirSync(runs)).toEqual([])
   })
 
@@ -201,7 +201,7 @@ describe('ScienceRuntime post-start failure classification', () => {
     // The kernel-started fact already committed before run-started's own
     // veto (commit ordering) and is not rolled back: the kernel it names
     // stays live for a retry to reuse.
-    expect(harness.session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    expect(harness.session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
   })
 
   it('classifies a vetoed kernel-state started append as INFRASTRUCTURE_FAILURE, not KERNEL_START_FAILED', async () => {
@@ -227,7 +227,7 @@ describe('ScienceRuntime post-start failure classification', () => {
     } finally {
       stop()
     }
-    expect(harness.session.events.some(event => event.type === 'science/run-started')).toBe(false)
-    expect(harness.session.events.some(event => event.type === 'science/kernel-state')).toBe(false)
+    expect(harness.session.snapshotEvents().some(event => event.type === 'science/run-started')).toBe(false)
+    expect(harness.session.snapshotEvents().some(event => event.type === 'science/kernel-state')).toBe(false)
   })
 })

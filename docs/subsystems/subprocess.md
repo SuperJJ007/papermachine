@@ -106,55 +106,46 @@ interface SubprocessSpawnSpec {
   stdio: SubprocessStdio
   /**
    * Positive finite grace period in milliseconds, no greater than
-   * `MAX_TIMER_DELAY_MS`, for the {@link SubprocessHandle.terminate} escalation
-   * and for draining still-open collected pipes after the process exits (an
-   * inherited descriptor held by a surviving descendant cannot hold the
-   * outcome open indefinitely).
+   * `MAX_TIMER_DELAY_MS`, available to the provider's termination procedure
+   * and used for draining still-open collected pipes after the process exits
+   * (an inherited descriptor held by a survivor cannot hold the outcome open
+   * indefinitely). Providers document whether range termination is staged or
+   * immediate.
    */
   graceMs: number
   /**
-   * Abort signal — starts the terminate escalation on the process tree when
+   * Abort signal — starts the terminate escalation on the managed range when
    * it fires. The caller owns deadlines and cause classification; this seam
    * only reacts to the abort.
    */
   signal?: AbortSignal | undefined
-  /**
-   * Base environment handed to the requested program before {@link env} is
-   * applied. `'scrubbed-parent'` is the historical harness child base
-   * (`scrubbedParentEnv`). `'empty'` starts from no inherited names so the
-   * child receives only the explicit `env` map. Provider control processes
-   * may retain their documented transport environment, but it must not become
-   * the target program's environment.
-   */
+  /** Target environment base; empty admits only explicit entries, including proxies. */
   environmentBase: 'scrubbed-parent' | 'empty'
   /**
-   * Explicit environment entries merged onto {@link environmentBase}, with no
-   * namespace validation. A string is a deliberate caller opt-in, so a
-   * forwarded credential-shaped entry or current `DSH_*` fact survives a
-   * scrubbed-parent base; `undefined` is a tombstone that removes an ordinary
-   * ambient entry from a scrubbed-parent child.
+   * Explicit environment entries merged onto the selected base, with no
+   * namespace validation. A
+   * string is a deliberate caller opt-in, so a forwarded credential-shaped
+   * entry or current `DSH_*` fact survives the scrub; `undefined` is a
+   * tombstone that removes an ordinary ambient entry from the child.
    */
   env?: NodeJS.ProcessEnv | undefined
 }
 ```
 
-## Handles: streams, readers, and tree-scoped termination
+## Handles: streams, readers, and managed-range termination
 
-A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped on every platform: `terminate()` — the only termination verb — escalates SIGTERM→grace→SIGKILL, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template). `interrupt()` is a separate, narrower verb: a cooperative SIGINT request to the direct child process only, with no escalation or quiescence promise and a documented no-op on `win32`.
+A spawn returns a live handle synchronously while target and managed-range identities remain provider-private. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. `terminate()` starts the provider's documented procedure, and `waitForExit()` observes the same provider-managed range; staged providers may use `graceMs`, while immediate providers do not delay. Consumers can build their own teardown ladders over those two operations (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template).
 
 ```ts type-equiv
 /**
- * A live child process rooted in its own process tree. Collected output
+ * A live subprocess and its provider-managed process range. Collected output
  * remains readable after exit; piped streams belong to the caller.
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * Termination and {@link SubprocessHandle.waitForExit} use the same managed
+ * range. Each provider documents the range it can observe and its signalling
+ * and observation limits.
  */
 interface SubprocessHandle {
-  /** Process id (tree root); -1 when the spawn itself failed. */
-  readonly pid: number
   /** The child's stdin, present iff spawned with `stdin: 'pipe'`. */
   readonly stdin: Writable | undefined
   /** The child's raw stdout, present iff spawned with `stdout: 'pipe'`. */
@@ -163,32 +154,27 @@ interface SubprocessHandle {
   readonly stderr: Readable | undefined
   /** Offset-based readers for collect-mode streams (also readable after exit). */
   readonly collected: SubprocessCollectedOutputs
-  /** Resolves at process close with exit facts; rejects only for spawn-level failures. */
+  /** Resolves with spawned-command exit facts; rejects for spawn or provider failures. */
   readonly done: Promise<SubprocessOutcome>
   /**
-   * Begin the SIGTERM → `graceMs` → SIGKILL escalation on the process tree
-   * (Windows force-terminates immediately) — the seam's only termination
-   * verb. Idempotent, a no-op once the tree is gone (the pid may be reused),
-   * and also triggered by the spec's abort signal.
+   * Begin the provider's documented termination procedure on the managed range
+   * — the seam's only termination verb. Idempotent, a no-op once that range is
+   * gone, and also triggered by the spec's abort signal.
    */
   terminate(): void
   /**
-   * Request a cooperative interrupt: deliver SIGINT to the direct child
-   * process only, never the tree it may have spawned. This is a request, not
-   * a termination verb — whether and how the child reacts (aborting current
-   * work, replying over its own protocol, exiting, or ignoring the signal
-   * entirely) is between the caller and that child's own cooperation
-   * contract. Idempotent and a no-op once the direct child has exited (the
-   * pid may be reused). Windows has no POSIX signal delivery: providers
-   * implement this as a no-op on `win32`, matching {@link terminate}'s
-   * per-platform documented behavior instead of throwing.
+   * Request cooperative SIGINT without starting termination or closing streams.
+   * POSIX providers signal their managed process group or scope; Windows is a
+   * no-op because its ordinary process API cannot deliver POSIX SIGINT.
+   * A request before target readiness or after direct completion is a no-op.
    */
   interrupt(): void
   /**
-   * Wait until the process tree has exited — the tree, not just the direct
-   * child, so a still-running helper is observable before teardown returns.
+   * Wait until the same managed range is empty — not just until the spawned
+   * command reports its outcome, so surviving work remains observable.
    * @param signal - optional bound for the wait.
-   * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @returns `true` when the managed range is empty, `false` when the signal aborted first.
+   * @throws when the selected provider can no longer observe its managed range.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }
@@ -223,12 +209,7 @@ interface SubprocessOutputRead {
   nextOffset: number
   /** True when the requested offset slid out of the in-memory tail window. */
   lossy: boolean
-  /**
-   * UTF-8 well-formedness of the exact byte slice represented by this read.
-   * A provider that retains those bytes reports `'valid'` or `'invalid'`
-   * from the slice before replacement decoding. `'unknown'` is only for a
-   * provider that already holds decoded text and has no recoverable bytes.
-   */
+  /** UTF-8 validity of the returned raw byte slice before replacement decoding; unknown means original bytes are unavailable. */
   utf8Validity: 'valid' | 'invalid' | 'unknown'
   /** Path to the full-stream spill file, when one was created and remains intact. */
   spillPath?: string
@@ -274,7 +255,7 @@ The terminal spec fully specifies argv, cwd, environment overrides, dimensions, 
 
 ## Service behavior
 
-The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition specifies execution-world coordinates, executable lookup, ordinary `spawn`, and `spawnTerminal`. [`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) provides them with detached process trees, per-disposition wiring, credential scrubbing, `node-pty`, platform process inspection, and terminate-and-join disposal. See [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md) for the Service Definition contract and [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md) for local mechanics.
+The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition specifies execution-world coordinates, executable lookup, ordinary `spawn`, and `spawnTerminal`. [`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) provides them with platform-selected managed ranges, per-disposition wiring, credential scrubbing, `node-pty`, platform process inspection, and terminate-and-join disposal. See [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md) for the Service Definition contract and [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md) for local mechanics.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -310,9 +291,9 @@ Abstract subprocess service. Subclass, implement spawn, and load the subclass as
 Implementations must honor these semantics:
 
 - Executable paths belong to one execution world shared with the mounted filesystem provider.
-- spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.
+- spawn returns a live handle synchronously. Target identity remains provider-private; `done` resolves with the spawned command's exit facts and may reject for spawn or provider failures.
 - Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another's output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.
-- SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence. SubprocessHandle.interrupt is the seam's one cooperative-request verb: SIGINT to the direct child only, a no-op on `win32`.
+- SubprocessHandle.terminate (and the spec's abort signal) starts the provider's documented procedure against its managed range. SubprocessHandle.waitForExit observes that same range so a consumer-owned teardown ladder can hold each tier on real quiescence; each provider documents its signalling and observability limits.
 - Disposal of the service terminates all still-running managed processes and awaits their exit.
 - spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.
 
@@ -335,13 +316,14 @@ abstract resolveExecutable( command: string, env?: Readonly<Record<string, strin
  * applies no defaults.
  * @param spec - argv, directory, stdio dispositions, grace, cancellation, and environment.
  * @returns the live process handle (streams/readers, signalling, outcome promise).
+ * @throws synchronously when pre-aborted or when argv, cwd, environment, or grace is invalid before handle creation.
  */
 abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 
 /**
  * Allocate a real terminal and start one owned process session. This is the
  * only non-pipe process primitive: implementations own terminal byte I/O,
- * foreground groups, signals, and complete session-tree cleanup.
+ * foreground groups, signals, and whole-session quiescence.
  * @param spec - fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.
  * @returns the live terminal handle after allocation succeeds.
  */

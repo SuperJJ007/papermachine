@@ -1,3 +1,4 @@
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 /**
  * The Science settings card controller: presence read from the scope's own
  * `secrets` snapshot field, path-addressed writes fenced through the bound
@@ -9,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   SCIENCE_RUNTIME_NS, ScienceSettingsCardController, type ScienceRuntimeSettingsSection,
 } from '../src/client/settings-card-controller.ts'
@@ -27,7 +28,7 @@ function host() {
 
 /** A served, accepted section — the baseline every test layers over. */
 function ready(over: Partial<SettingsScopeSnapshot<ScienceRuntimeSettingsSection>> = {}) {
-  return {
+  return { effective: undefined,
     status: 'ready' as const, writable: true, value: {}, base: undefined, user: undefined, secrets: [], revision: 1, mode: 'host' as const, ...over,
   }
 }
@@ -72,6 +73,15 @@ describe('ScienceSettingsCardController', () => {
   })
 
   describe('hostState', () => {
+    it('keeps a replacement of an existing secret pending across controller recreation', () => {
+      const stub = host()
+      stub.publish(ready({ value: { science: {} }, effective: { science: {} }, pendingRestart: true }))
+      const controller = new ScienceSettingsCardController(stub.scope)
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('pendingRestart')
+      stub.publish({ pendingRestart: false })
+      expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().hostState).toBe('effective')
+    })
+
     it("reports 'effective' when the running Host's own read already matches what is stored", () => {
       const stub = host()
       const controller = new ScienceSettingsCardController(stub.scope)
@@ -187,7 +197,8 @@ describe('ScienceSettingsCardController', () => {
 
   it('save writes only the dirty field at [profileId, field], never at the section root or a bare profile path', async () => {
     const stub = host()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       const current = stub.scope.getSnapshot()
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
       stub.publish({
@@ -204,9 +215,10 @@ describe('ScienceSettingsCardController', () => {
     controller.inject().edit('pythonPrefix', '/opt/conda/envs/science')
     await controller.save()
 
-    expect(stub.setPath).toHaveBeenCalledTimes(1)
-    expect(stub.setPath.mock.calls).toEqual([[['science', 'pythonPrefix'], '/opt/conda/envs/science']])
-    for (const [path] of stub.setPath.mock.calls as [readonly string[], unknown][]) {
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
+    expect(stub.mutate.mock.calls).toEqual([[[{ op: 'set', path: ['science', 'pythonPrefix'], value: '/opt/conda/envs/science' }]]])
+    for (const [ops] of stub.mutate.mock.calls as [readonly SettingsPathOpView[]][]) {
+      const path = ops[0]!.path
       expect(path).not.toEqual([])
       expect(path).not.toEqual(['profiles'])
       expect(path[0]).not.toBe('profiles')
@@ -215,7 +227,8 @@ describe('ScienceSettingsCardController', () => {
 
   it('save writes each dirty field once when both are staged', async () => {
     const stub = host()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
       const current = stub.scope.getSnapshot()
       stub.publish({ secrets: [...current.secrets, { path: ['science', field], set: true }] })
@@ -227,9 +240,9 @@ describe('ScienceSettingsCardController', () => {
     face.edit('rPrefix', '/opt/conda/envs/science-r')
     await controller.save()
 
-    expect(stub.setPath.mock.calls).toEqual([
-      [['science', 'pythonPrefix'], '/opt/conda/envs/science'],
-      [['science', 'rPrefix'], '/opt/conda/envs/science-r'],
+    expect(stub.mutate.mock.calls).toEqual([
+      [[{ op: 'set', path: ['science', 'pythonPrefix'], value: '/opt/conda/envs/science' }]],
+      [[{ op: 'set', path: ['science', 'rPrefix'], value: '/opt/conda/envs/science-r' }]],
     ])
   })
 
@@ -239,40 +252,41 @@ describe('ScienceSettingsCardController', () => {
     stub.publish(ready())
 
     await controller.save()
-    expect(stub.setPath).not.toHaveBeenCalled()
+    expect(stub.mutate).not.toHaveBeenCalled()
 
     controller.inject().edit('pythonPrefix', 'relative')
     await controller.save()
-    expect(stub.setPath).not.toHaveBeenCalled()
+    expect(stub.mutate).not.toHaveBeenCalled()
   })
 
   it('a second save while one is already in flight does not reach the wire again', () => {
     const stub = host()
-    stub.setPath.mockReturnValue(new Promise(() => {}))
+    stub.mutate.mockReturnValue(new Promise(() => {}))
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready())
     controller.inject().edit('pythonPrefix', '/opt/conda/envs/science')
     void controller.save()
     expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().saving).toBe(true)
     void controller.save()
-    expect(stub.setPath).toHaveBeenCalledTimes(1)
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
   })
 
   it('the inject() face save action is a fire-and-forget wrapper over the async save', () => {
     const stub = host()
-    stub.setPath.mockReturnValue(new Promise(() => {}))
+    stub.mutate.mockReturnValue(new Promise(() => {}))
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready())
     const face = controller.inject()
     face.edit('pythonPrefix', '/opt/conda/envs/science')
     face.save()
-    expect(stub.setPath).toHaveBeenCalledTimes(1)
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
     expect(face.hooks.scienceSettingsCard.getSnapshot().saving).toBe(true)
   })
 
   it('landed save (republished secret presence confirms it) clears drafts and reports pending-restart', async () => {
     const stub = host()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
       const current = stub.scope.getSnapshot()
       stub.publish({ value: { ...current.value, science: {} }, secrets: [{ path: ['science', field], set: true }] })
@@ -310,7 +324,8 @@ describe('ScienceSettingsCardController', () => {
 
   it('a partial multi-field save (pythonPrefix lands, rPrefix rejected) clears only the landed draft and marks both failed and pending-restart', async () => {
     const stub = host()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
       if (field !== 'pythonPrefix') return // models a Host rejection: no republish
       const current = stub.scope.getSnapshot()
@@ -333,7 +348,8 @@ describe('ScienceSettingsCardController', () => {
 
   it('a partial multi-field save (rPrefix lands, pythonPrefix rejected) clears only the landed draft and marks both failed and pending-restart', async () => {
     const stub = host()
-    stub.setPath.mockImplementation((path: readonly string[]) => {
+    stub.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
+      const path = ops[0]!.path
       const field = path[1] as 'pythonPrefix' | 'rPrefix'
       if (field !== 'rPrefix') return // models a Host rejection: no republish
       const current = stub.scope.getSnapshot()
@@ -371,12 +387,12 @@ describe('ScienceSettingsCardController', () => {
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready({ user: undefined }))
     await controller.resetProfile()
-    expect(stub.unsetPath).not.toHaveBeenCalled()
+    expect(stub.mutate).not.toHaveBeenCalled()
   })
 
   it('reset unsets only the profile path, revealing the composition base (reset-to-composition)', async () => {
     const stub = host()
-    stub.unsetPath.mockImplementation(() => { stub.publish({ user: undefined }) })
+    stub.mutate.mockImplementation(() => { stub.publish({ user: undefined }) })
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready({
       value: { science: {} },
@@ -387,8 +403,8 @@ describe('ScienceSettingsCardController', () => {
     }))
     await controller.resetProfile()
 
-    expect(stub.unsetPath).toHaveBeenCalledTimes(1)
-    expect(stub.unsetPath.mock.calls).toEqual([[['science']]])
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
+    expect(stub.mutate.mock.calls).toEqual([[[{ op: 'unset', path: ['science'] }]]])
     const state = controller.inject().hooks.scienceSettingsCard.getSnapshot()
     expect(state.overridden).toBe(false)
     expect(state.configured).toBe(true) // the composition base still names the profile
@@ -410,22 +426,22 @@ describe('ScienceSettingsCardController', () => {
 
   it('the inject() face reset action is a fire-and-forget wrapper over the async resetProfile', () => {
     const stub = host()
-    stub.unsetPath.mockReturnValue(new Promise(() => {}))
+    stub.mutate.mockReturnValue(new Promise(() => {}))
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready({ user: { science: {} } }))
     controller.inject().reset()
-    expect(stub.unsetPath).toHaveBeenCalledTimes(1)
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
     expect(controller.inject().hooks.scienceSettingsCard.getSnapshot().saving).toBe(true)
   })
 
   it('a second reset while one is already in flight does not reach the wire again', () => {
     const stub = host()
-    stub.unsetPath.mockReturnValue(new Promise(() => {}))
+    stub.mutate.mockReturnValue(new Promise(() => {}))
     const controller = new ScienceSettingsCardController(stub.scope)
     stub.publish(ready({ user: { science: {} } }))
     void controller.resetProfile()
     void controller.resetProfile()
-    expect(stub.unsetPath).toHaveBeenCalledTimes(1)
+    expect(stub.mutate).toHaveBeenCalledTimes(1)
   })
 
   it('republishes on every scope change, including one this controller did not initiate', () => {

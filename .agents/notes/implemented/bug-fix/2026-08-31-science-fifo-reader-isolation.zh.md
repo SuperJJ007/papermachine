@@ -25,3 +25,7 @@ Node 文件流读取空闲 FIFO 时，会一直占用一个 libuv 文件系统 w
 ## 后果
 
 每个存活内核增加一个小型转发进程，并在 POSIX `mkfifo` 之外依赖 `cat`。Host 文件 I/O 不再取决于空闲解释器的数量。通信测试覆盖四个空闲内核、启动失败、协议 EOF、中断和销毁；实机验收在两个会话中同时保留 Python 与 R，执行无关文件读取、完成运行、取消，并证明测试所拥有的进程已清理。可运行的 Science 快照在产物读取和会话持久化期间保留四个内核。
+
+## 相关决策
+
+相关 owner：[win32-kernel-response-transport](../feature/2026-09-05-win32-kernel-response-transport.zh.md); [managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.zh.md).

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-10-papermachine-fork-hosted-ci.md
+2026-09-10-papermachine-fork-hosted-ci.md: db46cfc06f97161f96b7b8f2f85ba2a8d5daadd4
+2026-09-10-papermachine-fork-hosted-ci.zh.md: 71a269a3dbe76649f6ff61481c623400d06165a0

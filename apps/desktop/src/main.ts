@@ -1,965 +1,648 @@
-/** Electron development shell for the Science desktop product. */
+/** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { spawn } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises'
+import { basename, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
-import type { HostCommand, HostExit } from './host-process.ts'
-import { HostLifecycle } from './host-lifecycle.ts'
-import { isDesktopPlatform, micromambaExecutableName, parseEnvironmentDeclaration, type DesktopPlatform, type EnvironmentDeclaration } from './environment-declaration.ts'
-import { DesktopEnvironmentProvisioner, desktopEnvironmentsRoot, orderSourcesFrom, type ProvisioningProgress } from './provisioning.ts'
-import { renderDesktopRuntimeOverlay } from './runtime-overlay.ts'
-import { ProvisioningCoordinator } from './provisioning-coordination.ts'
-import { qualifyingInterpreters } from './interpreter-presence.ts'
-import { resolveBindRequest, resolveEnvironmentBindingStatus, writeEnvironmentBinding, type EnvironmentBinding } from './environment-binding.ts'
-import { launchHostOnRememberedPort } from './host-launch.ts'
-import { HarnessHomeSpaceError, resolveHarnessHome } from './harness-home.ts'
-import { classifyBootInstallLocationFailure, clearInstallLocationPointer, confirmsInstallLocation, hasNonAsciiCharacters, installLocationConfirmationDialog, installLocationPointerPath, readInstallLocationPointer, resolveChosenInstallLocationPath, writeInstallLocationPointer } from './install-location.ts'
-import { buildCustomDeclaration, CUSTOM_ENVIRONMENT_ID, readCustomDeclaration, writeCustomDeclaration } from './custom-environment.ts'
-import { resolveDefaultSourceId, type LocaleSignals } from './source-selection.ts'
-import { getOrCreateAnonymousId } from './anonymous-id.ts'
-import { parseTelemetryConfig } from './telemetry-config.ts'
-import { resolveTelemetryEndpoints, TelemetryReporter, type TelemetryArch, type TelemetryPlatform } from './telemetry.ts'
-import { parseDesktopHostConfig, type DesktopHostConfig } from './host-config.ts'
-import { resolveWindowThemePreference, windowBackgroundColor, type WindowThemePreference } from './window-theme.ts'
-import { applicationMenuTemplate } from './application-menu.ts'
-import { resolveDisciplineStatus } from './discipline-status.ts'
-import { CHOOSE_INSTALL_LOCATION_URL, errorPage, harnessHomeSpaceErrorPage, installLocationUnavailableErrorPage, launchErrorPage, QUIT_URL, RESTART_URL, USE_DEFAULT_INSTALL_LOCATION_URL } from './error-page.ts'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  clipboard,
+  ipcMain,
+  Menu,
+  protocol,
+  nativeTheme,
+  type IpcMainInvokeEvent,
+} from 'electron'
+import { resolvePaperMachineHome } from '@deepseek-ai/dsh-home-paths'
+import { homedir } from 'node:os'
+import { ProductEnvironment } from './product-environment.ts'
+import { DesktopOperation } from './desktop-operation.ts'
+import { PAPER_MACHINE_VERSION } from './product.ts'
+import { writeFileAtomic } from './atomic-write.ts'
+import { parseDesktopHostConfig } from './host-config.ts'
+import { resolveWindowThemePreference, windowBackgroundColor } from './window-theme.ts'
+import { resolveDefaultSourceId } from './source-selection.ts'
+import { resolveDesktopPaths } from './paths.ts'
+import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
+import { DesktopHostProcess } from './host-process.ts'
+import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
+import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
+import { claimDesktopSingleInstance } from './single-instance.ts'
+import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 
-const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-// Milliseconds the Host supervisor allows for cooperative Cordis disposal
-// (SIGTERM) before escalating to SIGKILL.
-const HOST_STOP_GRACE_MS = 5000
-// `desktop:choose-install-location` / `desktop:reset-install-location`'s
-// rejection reason while `provisioning` is set: changing the pointer
-// relaunches the application (`relaunchApplication`), which aborts any
-// in-flight run and discards its downloaded bytes with no confirmation, so
-// both handlers refuse outright rather than letting that happen silently.
-const INSTALL_LOCATION_BUSY_REASON = '安装正在进行中，无法更改安装位置。 · Installation is in progress; the install location cannot be changed right now.'
-let window: BrowserWindow | undefined
-let activeOrigin: string | undefined
-// The in-flight `desktop:provision` IPC handler's own AbortController, if
-// any: `desktop:cancel-provisioning` and `coordinator`'s abort effect signal
-// through this, while the run's lifetime for `activate`/quit/change-discipline
-// coordination is tracked separately by `coordinator.trackRun`.
-let provisioning: AbortController | undefined
-// Set immediately before an `openOnboarding` call that must surface a loud
-// status (an invalid/corrupt binding at launch); consumed once by the
-// `desktop:onboarding-status` handler so the freshly loaded onboarding
-// document can display it. `undefined` for an ordinary first-run or
-// user-requested ("Change Environment…") open.
-let onboardingStatus: string | undefined
-// True exactly while the onboarding window is the active `window`. Restart
-// Host is disabled while this holds — see ApplicationMenuOptions.onboarding
-// — and every transition refreshes the application menu so the disabled
-// state is never stale.
-let onboardingOpen = false
+const SCHEME = 'dsh-app'
+let windowBackground: string | undefined
+let focusPrimaryWindow = (): void => {}
 
-// Constructed once, early in `boot()`, once the Harness home and its
-// anonymous id exist; `undefined` only during that brief startup window
-// (nothing before it reports an event). `startProvisioning` reads this
-// rather than constructing its own reporter, so `environment.installed`/
-// `environment.install-failed` share the exact context `app.launch` reported.
-let telemetry: TelemetryReporter | undefined
-
-// Resolved once, early in `boot()`, alongside `telemetry`; `undefined` only
-// during that same brief startup window. Every rendered error page names
-// this exact path (see `hostCommand`'s `stderrLog.path`) so a device tester
-// can find the Host's persisted, redacted stderr without knowing the
-// Harness home layout.
-let hostLogPath: string | undefined
-
-const hostLifecycle = new HostLifecycle({
-  graceMs: HOST_STOP_GRACE_MS,
-  // detached so Electron's own process-group termination (e.g. a forced
-  // quit that signals the whole group) cannot take the watchdog down with
-  // it before it has collected the Host.
-  spawnWatchdog: hostPid => spawn(
-    process.execPath,
-    [join(import.meta.dirname, 'watchdog.js'), String(process.pid), String(hostPid)],
-    { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'ignore', detached: true },
-  ),
-})
-
-// Owns the decisions that race one in-flight provisioning run: aborting and
-// waiting for it before "Change Environment…" opens onboarding, `activate`
-// waiting for it, and `before-quit` waiting for it alongside the Host stop,
-// then flushing any telemetry the run's own teardown enqueued.
-const coordinator = new ProvisioningCoordinator({
-  abort: () => { provisioning?.abort() },
-  stopHost: () => hostLifecycle.stop(),
-  openOnboarding: () => openOnboarding(),
-  flushTelemetry: () => telemetry?.flush() ?? Promise.resolve(),
-})
-
-function resourceRoot(): string {
-  return app.isPackaged ? process.resourcesPath : join(REPOSITORY_ROOT, 'apps/desktop/resources')
+function errorOf(reason: unknown, fallback: string): Error {
+  return reason instanceof Error ? reason : new Error(fallback)
 }
 
-/**
- * Resolves and creates this launch's Harness home; see
- * {@link resolveHarnessHome}. The install-location pointer file
- * (`install-location.ts`), when present, supplies `customHomeDir`. A
- * pointer that cannot be read or resolved throws here and propagates to
- * whichever caller awaited it — `openInitialSurface()`'s `.catch` fallback
- * renders the general launch-error page, and an IPC handler's caller sees
- * the rejection. `boot()`'s own first Harness-home resolution does not call
- * this function: it reads the pointer and calls {@link resolveHarnessHome}
- * directly so a failure there can route to the install-location recovery
- * page instead.
- */
-async function harnessHome(): Promise<string> {
-  const pointer = await readInstallLocationPointer(app.getPath('home'))
-  return resolveHarnessHome(app.getPath('home'), pointer)
+protocol.registerSchemesAsPrivileged([{
+  scheme: SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: false,
+    stream: true,
+    codeCache: true,
+  },
+}])
+
+const MIME: Readonly<Record<string, string>> = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
 }
 
-function desktopPlatform(): DesktopPlatform {
-  const target = `${process.platform}-${process.arch}`
-  if (!isDesktopPlatform(target)) throw new Error(`desktop: unsupported platform ${target}`)
-  return target
+interface RuntimeResources {
+  readonly node: string
+  readonly pnpm: string
+  readonly seed: string
 }
 
-/**
- * The telemetry envelope's platform and arch for each shipped target. A
- * `Record` over the closed {@link DesktopPlatform} union so adding a target
- * fails the build here rather than reporting the wrong platform.
- */
-const TELEMETRY_TARGETS: Record<DesktopPlatform, { readonly platform: TelemetryPlatform; readonly arch: TelemetryArch }> = {
-  'darwin-arm64': { platform: 'darwin', arch: 'arm64' },
-  'darwin-x64': { platform: 'darwin', arch: 'x64' },
-  'win32-x64': { platform: 'win32', arch: 'x64' },
+function runtimeResources(): RuntimeResources {
+  const development = !app.isPackaged
+  const node = (development ? process.env.DSH_DESKTOP_NODE_BINARY : undefined)
+    ?? join(process.resourcesPath, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+  const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
+    ?? join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs')
+  const seed = (development ? process.env.DSH_DESKTOP_SEED_DIR : undefined) ?? join(process.resourcesPath, 'seed')
+  return { node, pnpm, seed }
 }
 
-/**
- * Build this process's telemetry reporter: read and parse the build-time
- * `resources/telemetry.json` (a missing or unparseable file throws, per
- * that parser's contract — a loud launch error, never a silent disable),
- * resolve which of its endpoints `DSH_TELEMETRY_DISABLED` allows, and read
- * or create the shared anonymous id file. Called once, early in `boot()`.
- * @param dshHome - the Harness home the anonymous id file lives under.
- */
-async function createTelemetryReporter(dshHome: string): Promise<TelemetryReporter> {
-  const config = parseTelemetryConfig(JSON.parse(await readFile(join(resourceRoot(), 'telemetry.json'), 'utf8')))
-  const anonymousId = await getOrCreateAnonymousId(dshHome)
-  return new TelemetryReporter({
-    endpoints: resolveTelemetryEndpoints(process.env.DSH_TELEMETRY_DISABLED, config.endpoints),
-    context: {
-      anonymousId,
-      appVersion: app.getVersion(),
-      ...TELEMETRY_TARGETS[desktopPlatform()],
-    },
-  })
+function developmentProject(): string | undefined {
+  const configured = process.env.DSH_DESKTOP_DEV_PROJECT_DIR
+  if (configured === undefined || configured === '') return undefined
+  if (app.isPackaged) throw new Error('dsh desktop: development project override is unavailable in packaged applications')
+  return resolve(configured)
 }
 
-/** Read and validate the build-time Host diagnostic configuration. */
-async function desktopHostConfig(): Promise<DesktopHostConfig> {
-  return parseDesktopHostConfig(JSON.parse(await readFile(join(resourceRoot(), 'host.json'), 'utf8')))
-}
-
-/** The one environment this build ships; disciplines are added as further declarations. */
-const SHIPPED_ENVIRONMENT_ID = 'general'
-
-/** Read the shipped declaration; the standard package set onboarding offers and the custom editor starts from. */
-async function shippedDeclaration(): Promise<EnvironmentDeclaration> {
-  return parseEnvironmentDeclaration(
-    JSON.parse(await readFile(join(resourceRoot(), 'environments', `${SHIPPED_ENVIRONMENT_ID}.json`), 'utf8')),
-  )
-}
-
-/**
- * Every declaration this launch can resolve an applied environment against:
- * the shipped one, plus the user's own package set once they have authored
- * one. The custom declaration must be included for `resolveDisciplineStatus`
- * to report `current` for a working custom install rather than
- * `unknown-discipline`.
- */
-async function declarations(dshHome: string): Promise<readonly EnvironmentDeclaration[]> {
-  const custom = await readCustomDeclaration(desktopEnvironmentsRoot(dshHome))
-  return [await shippedDeclaration(), ...(custom === undefined ? [] : [custom])]
-}
-
-/** The bundled micromamba executable for this machine, shared by provisioning and the Host's package installer. */
-function micromambaPath(): string {
-  const platform = desktopPlatform()
-  return join(resourceRoot(), 'bin', platform, micromambaExecutableName(platform))
-}
-
-/** The app-bundled default Science skills, staged alongside the app payload. */
-function skillsRoot(): string {
-  return join(resourceRoot(), 'skills')
-}
-
-function provisioner(dshHome: string): DesktopEnvironmentProvisioner {
-  return new DesktopEnvironmentProvisioner({
-    root: desktopEnvironmentsRoot(dshHome),
-    micromambaPath: micromambaPath(),
-    platform: desktopPlatform(),
-  })
-}
-
-/**
- * The system locale signals {@link resolveDefaultSourceId} decides the
- * confirmation panel's default package source from — deterministic system
- * settings only, never a network reachability probe.
- */
-function localeSignals(): LocaleSignals {
-  return {
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    languages: app.getPreferredSystemLanguages(),
+function developmentHostInspectPort(enabled: boolean): number | undefined {
+  const configured = process.env.DSH_DESKTOP_HOST_INSPECT_PORT
+  if (!enabled || configured === undefined || configured === '') return undefined
+  const port = Number(configured)
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('dsh desktop: DSH_DESKTOP_HOST_INSPECT_PORT must be an integer from 1 through 65535')
   }
+  return port
 }
 
-/**
- * Bind the prefix a provisioning run just published, so the workspace it
- * opens finds a bound environment. One provisioned prefix carries both
- * interpreters, and routing through `resolveBindRequest` re-checks each of
- * them at the same seam the detect-and-bind path uses instead of trusting
- * the run's own health checks a second time.
- * @param dshHome - the Harness home the binding is scoped to.
- * @param prefix - the published environment prefix.
- * @param sourceId - the package source the run succeeded through; the Host's
- *   package installs start from it.
- */
-async function bindProvisionedPrefix(dshHome: string, prefix: string, sourceId: string): Promise<void> {
-  const binding = await resolveBindRequest({ pythonPrefix: prefix, rPrefix: prefix, sourceId }, qualifyingInterpreters)
-  await writeEnvironmentBinding(dshHome, binding)
-}
-
-/**
- * Start one provisioning run, stopping the current Host only after this
- * explicit install request, and open the workspace on the environment it
- * publishes. The in-flight check and its `provisioning` assignment run
- * before this function's first await, so two invocations racing from the
- * renderer cannot both claim the slot.
- * @param dshHome - the Harness home the run binds into.
- * @param declaration - the environment to provision.
- * @param sourceId - the package source to try first; `undefined` starts
- *   from `declaration.sources`' own order.
- * @throws when another provisioning run is already in flight.
- */
-async function startProvisioning(dshHome: string, declaration: EnvironmentDeclaration, sourceId: string | undefined): Promise<void> {
-  if (provisioning !== undefined) throw new Error('desktop provisioning: another operation is running')
-  const control = new AbortController()
-  provisioning = control
-  refreshApplicationMenu()
-  const startedAt = Date.now()
-  // Tracks the most recent progress update's phase/sourceId across the whole
-  // run, so a caught failure below can report which source was last being
-  // attempted and how far the run got — see ProvisioningProgress.sourceId's
-  // JSDoc (provisioning.ts) for why this is always populated once the first
-  // 'solving' update fires.
-  let lastPhase: ProvisioningProgress['phase'] = 'checking'
-  let lastSourceId = sourceId
-  const run = (async () => {
-    try {
-      activeOrigin = undefined
-      await coordinator.prepareProvisioning()
-      const published = await provisioner(dshHome).provision(declaration, control.signal, (update) => {
-        lastPhase = update.phase
-        if (update.sourceId !== undefined) lastSourceId = update.sourceId
-        reportProvisioningProgress(update)
-      }, sourceId)
-      await bindProvisionedPrefix(dshHome, published.prefix, published.sourceId)
-      void telemetry?.report({
-        event: 'environment.installed',
-        sourceId: published.sourceId,
-        durationMs: Date.now() - startedAt,
-        environmentId: declaration.id === CUSTOM_ENVIRONMENT_ID ? 'custom' : 'general',
-      })
-      await openWorkspace()
-    } catch (error) {
-      void telemetry?.report({
-        event: 'environment.install-failed',
-        sourceId: lastSourceId ?? declaration.sources[0]?.id ?? 'unknown',
-        phase: lastPhase,
-        cancelled: control.signal.aborted,
-      })
-      throw error
-    }
-  })().finally(() => {
-    provisioning = undefined
-    refreshApplicationMenu()
-  })
-  await coordinator.trackRun(run)
-}
-
-/**
- * Write the Host overlay for `binding`. The install channels are the shipped
- * declaration's sources reordered to start from the bound source, flattened
- * to their channel URLs, so a package install first tries the mirror the
- * environment itself came from; a bound source id the shipped declaration no
- * longer lists (a later build renamed its sources) keeps the declaration's
- * own order, the same rule `orderSourcesFrom` applies to provisioning's
- * preferred source. A custom package set shares the shipped sources
- * unchanged (`buildCustomDeclaration`), so the shipped declaration is the
- * one source list for both.
- * @param dshHome - the Harness home the overlay is written into.
- * @param binding - the bound environment.
- * @returns the overlay path passed to the Host as `--patch`.
- */
-async function writeRuntimeOverlay(dshHome: string, binding: EnvironmentBinding): Promise<string> {
-  const overlay = join(dshHome, 'desktop-science.cordis.patch.yml')
-  const sources = orderSourcesFrom((await shippedDeclaration()).sources, binding.sourceId)
-  await writeFile(overlay, renderDesktopRuntimeOverlay({
-    ...(binding.pythonPrefix === undefined ? {} : { pythonPrefix: binding.pythonPrefix }),
-    ...(binding.rPrefix === undefined ? {} : { rPrefix: binding.rPrefix }),
-    micromambaPath: micromambaPath(),
-    installChannels: sources.flatMap(source => source.channels),
-    skillsRoot: skillsRoot(),
-    platform: desktopPlatform(),
-  }), { mode: 0o600 })
-  return overlay
-}
-
-function hostCommand(dshHome: string, overlay: string, port: number, config: DesktopHostConfig): HostCommand {
-  const packagedHost = join(process.resourcesPath, 'host')
-  return {
-    executable: process.execPath,
-    args: [
-      ...(app.isPackaged
-        ? [join(packagedHost, 'lib/bin.js')]
-        : ['--import', 'tsx/esm', join(REPOSITORY_ROOT, 'apps/cli/src/bin.ts')]),
-      '--profile', 'web',
-      '--patch', overlay,
-      '--port', String(port),
-      '--trusted-host', '127.0.0.1',
-      '--no-open',
-    ],
-    cwd: app.isPackaged ? packagedHost : REPOSITORY_ROOT,
-    // Unlike the provisioning children (see buildProvisioningEnv in
-    // provisioning.ts), the Host is not untrusted output: the local
-    // credentials provider reads DEEPSEEK_API_KEY (and related variables)
-    // from its own inherited process environment as its highest-priority
-    // source, and the Host's own kernel and tool subprocesses need locale,
-    // HOME, and other ambient variables an allowlist would have to
-    // rediscover one at a time. Scrubbing this environment would silently
-    // break credential passthrough and unrelated subprocess needs for a
-    // trusted process this application itself owns, so it is left ambient.
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      DSH_HOME: dshHome,
-    },
-    stderrLog: {
-      path: join(dshHome, 'logs', 'host.log'),
-      maxBytes: config.logMaxBytes,
-      maxRotatedFiles: config.logMaxRotatedFiles,
-    },
-  }
-}
-
-/**
- * Shared guard for the workspace window's `will-navigate` and `will-redirect`
- * events: both fire for a navigation the workspace document did not stay
- * within its own origin for, and both accept the restart and
- * install-location-recovery links {@link errorPage}, {@link installLocationUnavailableErrorPage},
- * and {@link harnessHomeSpaceErrorPage} render.
- * @param event - the navigation event to cancel when the target is disallowed.
- * @param target - the destination URL.
- */
-function guardWorkspaceNavigation(event: Electron.Event, target: string): void {
-  if (target === RESTART_URL) {
-    event.preventDefault()
-    void restartHost()
-    return
-  }
-  if (target === USE_DEFAULT_INSTALL_LOCATION_URL) {
-    event.preventDefault()
-    void clearInstallLocationPointer(app.getPath('home')).then(relaunchApplication)
-    return
-  }
-  if (target === CHOOSE_INSTALL_LOCATION_URL) {
-    event.preventDefault()
-    void runChooseInstallLocationFromRecovery()
-    return
-  }
-  if (target === QUIT_URL) {
-    event.preventDefault()
-    app.quit()
-    return
-  }
-  if (activeOrigin === undefined || new URL(target).origin !== activeOrigin) event.preventDefault()
-}
-
-/**
- * Create the workspace window, painted for `preference` up front.
- * `nativeTheme`'s `updated` event is only meaningful for `'system'` — for a
- * fixed `'light'`/`'dark'` preference the background never changes with the
- * OS, and subscribing anyway would repaint the window out from under an
- * explicit choice the instant the user's OS theme flips.
- * @param preference - the durable `ui-theme.preference` this launch resolved (see {@link resolveWindowThemePreference}).
- */
-function createWindow(preference: WindowThemePreference): BrowserWindow {
-  const created = new BrowserWindow({
-    title: 'Science',
-    width: 1440,
-    height: 960,
-    minWidth: 960,
-    minHeight: 640,
-    show: false,
-    backgroundColor: windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  })
-  if (preference === 'system') {
-    const updateBackground = (): void => {
-      created.setBackgroundColor(windowBackgroundColor(preference, nativeTheme.shouldUseDarkColors))
-    }
-    nativeTheme.on('updated', updateBackground)
-    created.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
-  }
-  created.once('ready-to-show', () => { created.show() })
-  created.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  created.webContents.on('will-navigate', guardWorkspaceNavigation)
-  created.webContents.on('will-redirect', guardWorkspaceNavigation)
-  return created
-}
-
-function createOnboardingWindow(): BrowserWindow {
-  const created = new BrowserWindow({
-    title: 'Set up PaperMachine',
-    width: 820,
-    height: 720,
-    minWidth: 680,
+function createWindow(preload: string): BrowserWindow {
+  const window = new BrowserWindow({
+    ...(windowBackground === undefined ? {} : { backgroundColor: windowBackground }),
+    width: 1280,
+    height: 840,
+    minWidth: 880,
     minHeight: 600,
     show: false,
-    backgroundColor: '#f4f7fa',
     webPreferences: {
-      contextIsolation: true,
+      preload,
       nodeIntegration: false,
+      contextIsolation: true,
       sandbox: true,
-      preload: join(import.meta.dirname, 'preload.cjs'),
+      webSecurity: true,
     },
   })
-  created.once('ready-to-show', () => { created.show() })
-  created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  created.webContents.on('will-navigate', (event) => { event.preventDefault() })
-  return created
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
+    const target = new URL(url)
+    const current = new URL(window.webContents.getURL())
+    if (target.protocol !== current.protocol || target.hostname !== current.hostname) event.preventDefault()
+  })
+  return window
 }
 
-async function onboardingDocument(): Promise<string> {
-  const [document, script] = await Promise.all([
-    readFile(join(resourceRoot(), 'onboarding.html'), 'utf8'),
-    readFile(join(import.meta.dirname, 'onboarding.js'), 'utf8'),
-  ])
-  return document.replace('{{ONBOARDING_SCRIPT}}', script.replaceAll('</script', '<\\/script'))
+function assertDesktopSender(event: IpcMainInvokeEvent, hostnames: readonly string[]): void {
+  const senderFrame = event.senderFrame
+  if (senderFrame === null || senderFrame !== event.sender.mainFrame) throw new Error('dsh desktop: rejected IPC without a sender frame')
+  const url = new URL(senderFrame.url)
+  if (url.protocol !== `${SCHEME}:` || !hostnames.includes(url.hostname)) {
+    throw new Error('dsh desktop: rejected IPC from an unowned renderer')
+  }
 }
 
-function onUnexpectedHostExit(exit: HostExit): void {
-  activeOrigin = undefined
-  if (!coordinator.quitting && window !== undefined && !window.isDestroyed()) void window.loadURL(errorPage(hostLogPath, exit))
+async function serveShellAsset(request: Request): Promise<Response> {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
+  const root = resolve(app.getAppPath(), 'renderer')
+  const url = new URL(request.url)
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(url.pathname)
+  } catch {
+    return new Response(null, { status: 400 })
+  }
+  const target = resolve(normalize(join(root, pathname)))
+  if (target !== root && !target.startsWith(root + sep)) return new Response(null, { status: 403 })
+  try {
+    const body = request.method === 'HEAD' ? null : await readFile(target)
+    return new Response(body, { headers: { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' } })
+  } catch {
+    return new Response(null, { status: 404 })
+  }
 }
 
-async function launchHost(): Promise<void> {
-  const dshHome = await harnessHome()
-  const config = await desktopHostConfig()
-  const status = await resolveEnvironmentBindingStatus(dshHome)
-  if (status.kind !== 'bound') throw new Error('desktop host: no bound Science environment')
-  const overlay = await writeRuntimeOverlay(dshHome, status.binding)
-  const url = await launchHostOnRememberedPort(
-    dshHome,
-    port => hostLifecycle.launch(hostCommand(dshHome, overlay, port, config), onUnexpectedHostExit),
-  )
-  activeOrigin = url.origin
-  await window?.loadURL(url.href)
-}
+async function main(home: string): Promise<void> {
+  const resources = runtimeResources()
+  const paths = resolveDesktopPaths(home)
+  const development = developmentProject()
+  const activeProject = development ?? paths.profile
+  const hostInspectPort = developmentHostInspectPort(development !== undefined)
+  const manager = new DesktopProjectManager(paths, resources)
+  const operations = new DesktopOperation()
+  const productResources = app.isPackaged ? join(process.resourcesPath, 'product') : join(app.getAppPath(), 'resources')
+  const environment = new ProductEnvironment(home, productResources)
+  windowBackground = windowBackgroundColor(await resolveWindowThemePreference(home), nativeTheme.shouldUseDarkColors)
+  app.setAboutPanelOptions({ applicationName: 'PaperMachine', applicationVersion: PAPER_MACHINE_VERSION, version: `dsh ${app.getVersion()}` })
+  let setupWindow: BrowserWindow | undefined
+  let quitComplete = false
+  let quitting = false
+  if (development === undefined) manager.recover()
+  let host: DesktopHostProcess | undefined
+  let mainWindow: BrowserWindow | undefined
+  let pluginWindow: BrowserWindow | undefined
+  let shellInstallerOwnsQuit = false
+  let updateState: DesktopUpdateState = { phase: 'idle' }
+  const locale = resolveDesktopLocale(app.getLocale())
+  const messages = locale.messages
+  const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
+  const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 
-/**
- * Open the workspace window and launch the Host. If `launchHost` throws, the
- * newly created window has never loaded anything and never fires
- * `ready-to-show`, so it loads the same error page the startup path uses and
- * is shown explicitly rather than staying hidden and indistinguishable from
- * a running app to `activate`'s window-count check. Guarded by
- * {@link ProvisioningCoordinator.openWorkspaceUnlessQuitting}: a
- * provisioning run's completion can race app quit (`before-quit` stops the
- * Host concurrently with awaiting the run), and a run that reaches here
- * after that stop has already run must not launch a fresh Host post-shutdown.
- */
-async function openWorkspace(): Promise<void> {
-  await coordinator.openWorkspaceUnlessQuitting(async () => {
-    const previous = window
-    const preference = await resolveWindowThemePreference(await harnessHome())
-    const created = createWindow(preference)
-    window = created
-    created.once('closed', () => { if (window === created) window = undefined })
-    previous?.destroy()
-    try {
-      await launchHost()
-    } catch (error) {
-      if (created.isDestroyed()) return
-      await created.loadURL(launchErrorPage(hostLogPath, error))
-      created.show()
+  const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
+    updateState = state
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(DESKTOP_IPC.updatesState, state)
     }
-  })
-}
-
-/**
- * Open the onboarding window (conda-family environment detection and
- * binding), replacing whatever window is active. Closing this window
- * (Cmd-Q, the red button, or a completed run destroying it programmatically)
- * aborts any in-flight provisioning — the retained, entry-less micromamba
- * path's `desktop:provision` handler stays registered — so Cmd-Q mid-run
- * never orphans a download process group; aborting an already-settled or
- * absent run is a no-op.
- */
-async function openOnboarding(): Promise<void> {
-  const previous = window
-  const created = createOnboardingWindow()
-  window = created
-  onboardingOpen = true
-  refreshApplicationMenu()
-  created.once('closed', () => {
-    if (window === created) window = undefined
-    onboardingOpen = false
-    refreshApplicationMenu()
-    provisioning?.abort()
-  })
-  previous?.destroy()
-  await created.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(await onboardingDocument())}`)
-}
-
-/**
- * Open the workspace when a valid environment binding exists, otherwise
- * onboarding. A binding that fails to parse or names a prefix that has
- * since disappeared routes to onboarding with a loud status message via
- * {@link onboardingStatus} rather than being treated as an ordinary
- * first run. Both branches are guarded by
- * {@link ProvisioningCoordinator.openWorkspaceUnlessQuitting} /
- * {@link ProvisioningCoordinator.openOnboardingUnlessQuitting}: startup calls
- * this directly, and `activate` calls it only after `coordinator.activate`
- * has waited out any in-flight provisioning run — a wait long enough for
- * quit to have begun in the meantime.
- */
-async function openInitialSurface(): Promise<void> {
-  const dshHome = await harnessHome()
-  const status = await resolveEnvironmentBindingStatus(dshHome)
-  if (status.kind === 'bound') {
-    await openWorkspace()
-    return
+    return state
   }
-  await coordinator.openOnboardingUnlessQuitting(async () => {
-    onboardingStatus = status.kind === 'invalid' ? status.reason : undefined
-    await openOnboarding()
-  })
-}
 
-async function restartHost(): Promise<void> {
-  activeOrigin = undefined
-  try {
-    // launchHost -> HostLifecycle.launch stops the currently active Host and
-    // watchdog before starting the replacement.
-    await launchHost()
-  } catch (error) {
-    await window?.loadURL(launchErrorPage(hostLogPath, error))
-  }
-}
-
-/**
- * Restart the application to apply a just-written or just-cleared
- * install-location pointer. `app.relaunch()` only schedules the relaunch;
- * `app.quit()` is what actually starts shutdown. On the ordinary IPC path
- * (onboarding's "Change…"/"Reset" controls), this fires the `before-quit`
- * handler registered in `boot()` and so still runs `coordinator.beforeQuit()`
- * (aborting provisioning, stopping the Host, and flushing telemetry) before
- * the process exits and Electron restarts it. Called instead from a
- * recovery window's own navigation guard (`guardWorkspaceNavigation`'s
- * `USE_DEFAULT_INSTALL_LOCATION_URL`/`CHOOSE_INSTALL_LOCATION_URL`
- * branches), `boot()` returned before registering that `before-quit`
- * handler at all, so `app.quit()` here has nothing registered to run —
- * harmless, since there is nothing running yet (no Host, no provisioning)
- * to tear down.
- */
-function relaunchApplication(): void {
-  app.relaunch()
-  app.quit()
-}
-
-/** One provisioning-independent outcome of {@link runChooseInstallLocationFlow}. */
-type ChooseInstallLocationOutcome =
-  | { readonly status: 'cancelled' }
-  | { readonly status: 'rejected'; readonly reason: string }
-  | { readonly status: 'restarting' }
-
-/**
- * Run the install-location picker end to end: open the directory picker,
- * warn on a non-ASCII choice, confirm the resolved target, validate it
- * (rejecting a space-containing choice with a reason naming the chosen
- * folder rather than {@link HarnessHomeSpaceError}'s own home-directory
- * wording), and on success persist the pointer and relaunch. Shared between
- * onboarding's `desktop:choose-install-location` IPC handler and
- * {@link guardWorkspaceNavigation}'s `CHOOSE_INSTALL_LOCATION_URL` branch
- * (the harness-home-space recovery window's "Choose another location"
- * action) — the two differ only in which window owns the dialogs and what
- * they do with a `'rejected'` outcome the caller does not relaunch for.
- * @param activeWindow - the window `dialog.showOpenDialog`/`showMessageBox` attach to.
- * @param defaultPath - the picker's initial directory.
- * @returns the outcome; `'restarting'` has already called {@link relaunchApplication}.
- */
-async function runChooseInstallLocationFlow(activeWindow: BrowserWindow, defaultPath: string): Promise<ChooseInstallLocationOutcome> {
-  const osHome = app.getPath('home')
-  const result = await dialog.showOpenDialog(activeWindow, {
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath,
-  })
-  const chosen = result.canceled ? undefined : result.filePaths[0]
-  if (chosen === undefined) return { status: 'cancelled' }
-  const target = resolveChosenInstallLocationPath(chosen, process.platform)
-  if (hasNonAsciiCharacters(target)) {
-    const warning = await dialog.showMessageBox(activeWindow, {
-      type: 'warning',
-      buttons: ['继续 · Continue', '选择其他位置 · Choose another location'],
-      defaultId: 1,
-      cancelId: 1,
-      message: '所选路径包含非 ASCII 字符 · The chosen path contains non-ASCII characters',
-      detail: '部分 conda 和 R 包可能无法在这样的路径下正常工作。 · Some conda and R packages may not work correctly under such a path.',
+  const hostConfig = parseDesktopHostConfig(JSON.parse(await readFile(join(productResources, 'host.json'), 'utf8')))
+  const startHost = async (projectDir = activeProject, allowUnbound = false): Promise<DesktopHostProcess> => {
+    await environment.writeOverlay(projectDir, allowUnbound)
+    const next = new DesktopHostProcess(resources.node, projectDir, home, hostInspectPort, {
+      log: { path: join(home, 'logs/host.log'), maxBytes: hostConfig.logMaxBytes, maxRotatedFiles: hostConfig.logMaxRotatedFiles },
+      watchdogEntry: fileURLToPath(new URL('./watchdog.js', import.meta.url)),
+      onExit: (error) => {
+        if (host !== next) return
+        host = undefined
+        void next.stop().then(openSetup).then(() => { setupWindow?.webContents.send('papermachine:setup-progress', error.message) }).catch(reportStartupFailure)
+      },
     })
-    if (warning.response !== 0) return { status: 'cancelled' }
-  }
-  const confirmation = installLocationConfirmationDialog(target)
-  const confirmed = await dialog.showMessageBox(activeWindow, {
-    type: 'question',
-    buttons: [...confirmation.buttons],
-    defaultId: confirmation.defaultId,
-    cancelId: confirmation.cancelId,
-    message: confirmation.message,
-    detail: confirmation.detail,
-  })
-  if (!confirmsInstallLocation(confirmed.response)) return { status: 'cancelled' }
-  // Validating (and creating) the target directory only after every
-  // cancellable step above keeps a decline at any of them from leaving a
-  // newly created, empty directory behind — resolveHarnessHome's mkdir is
-  // the only filesystem side effect this function has before the pointer
-  // write below.
-  try {
-    await resolveHarnessHome(osHome, target)
-  } catch (error) {
-    // HarnessHomeSpaceError's own message names "your user home directory",
-    // accurate for the default-location failure it was written for but
-    // wrong here: the offending path is the folder just chosen, not the OS
-    // home directory, so this rewrites the reason around the right noun
-    // rather than relaying the shared message unchanged.
-    const reason = error instanceof HarnessHomeSpaceError
-      ? `所选文件夹的路径包含空格（"${error.path}"）。R 无法在含空格的 scratch 目录中运行，请选择另一个文件夹。 · The chosen folder's path contains a space ("${error.path}"). R cannot run with a space in its scratch directory — choose a different folder.`
-      : (error instanceof Error ? error.message : String(error))
-    return { status: 'rejected', reason }
-  }
-  await writeInstallLocationPointer(osHome, target)
-  relaunchApplication()
-  return { status: 'restarting' }
-}
-
-/**
- * Send one progress update to the active window's renderer. The window may
- * already be destroyed by the time a queued micromamba stdout line reaches
- * this callback (the setup window can close mid-run), and `send` throws on a
- * destroyed `webContents`; an uncaught throw here would escape micromamba's
- * stdout `data` listener as an unhandled main-process exception, so both the
- * destroyed check and the send itself are guarded.
- * @param update - the progress update to relay.
- */
-function reportProvisioningProgress(update: ProvisioningProgress): void {
-  if (window === undefined || window.isDestroyed()) return
-  try {
-    window.webContents.send('desktop:provisioning-progress', update)
-  } catch (error) {
-    console.error('desktop provisioning: failed to report progress', error)
-  }
-}
-
-/**
- * Run a fire-and-forget async action from a synchronous event handler (a
- * menu `click`, for instance, has no way to return a promise Electron would
- * await), logging a failure instead of letting it escape as an unhandled
- * rejection.
- * @param action - the async action to run.
- * @param context - short label identifying the action in the logged error.
- */
-function runDetached(action: () => Promise<void>, context: string): void {
-  action().catch((error: unknown) => { console.error(`desktop: ${context} failed`, error) })
-}
-
-function buildApplicationMenu(): Menu {
-  return Menu.buildFromTemplate(applicationMenuTemplate({
-    appName: app.name,
-    provisioning: provisioning !== undefined,
-    onboarding: onboardingOpen,
-    restartHost: () => { runDetached(restartHost, 'restart host') },
-    // ProvisioningCoordinator aborts and awaits an in-flight run before it
-    // opens onboarding, and coalesces repeated requests while that happens.
-    changeEnvironment: () => { runDetached(() => coordinator.changeDiscipline(), 'change environment') },
-  }))
-}
-
-function refreshApplicationMenu(): void {
-  if (!app.isReady()) return
-  Menu.setApplicationMenu(buildApplicationMenu())
-}
-
-app.setName('PaperMachine')
-
-/**
- * Single-instance lock: defense in depth against a second full app instance
- * running alongside the first. `ELECTRON_RUN_AS_NODE=1` on the win32 ACL
- * sandbox's runner invocation (see `dsh-sandbox-local`'s `windowsAclRunnerInvocation`)
- * keeps that re-exec of `process.execPath` from ever reaching this file's app
- * code — Node runs the runner script directly — so this guards only a
- * genuine second user launch or a future `process.execPath` re-exec that
- * forgets the env variable.
- */
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    if (window === undefined) return
-    if (window.isMinimized()) window.restore()
-    window.focus()
-  })
-  app.whenReady().then(boot).catch((error: unknown) => {
-    console.error('desktop: boot failed', error)
-    app.exit(1)
-  })
-}
-
-/**
- * Opens the dedicated recovery window {@link installLocationUnavailableErrorPage}
- * renders, in place of the app's normal windows and IPC handlers, when
- * {@link boot}'s own first Harness-home resolution cannot proceed because of
- * an install-location pointer this launch cannot use.
- * @param osHome - the OS user home directory the pointer file lives under.
- * @param target - the install location to name in the recovery page: the
- *   pointer's resolved but unreachable path, or a placeholder when the
- *   pointer file itself could not be read.
- * @param reason - the failure to name in the recovery page.
- */
-async function showInstallLocationRecoveryWindow(osHome: string, target: string, reason: string): Promise<void> {
-  const created = createWindow('system')
-  window = created
-  created.once('closed', () => { if (window === created) window = undefined; app.quit() })
-  await created.loadURL(installLocationUnavailableErrorPage(installLocationPointerPath(osHome), target, reason))
-  created.show()
-}
-
-// Set only while a `showHarnessHomeSpaceRecoveryWindow` window is open,
-// naming the space-containing path that window's page is showing;
-// `guardWorkspaceNavigation`'s `CHOOSE_INSTALL_LOCATION_URL` branch reads it
-// to reload the same page with an added rejection reason when the user's
-// re-selection is itself unusable, rather than losing the original error.
-let harnessHomeSpaceRecoveryError: HarnessHomeSpaceError | undefined
-
-/**
- * Opens the dedicated recovery window {@link harnessHomeSpaceErrorPage}
- * renders, in place of the app's normal windows and IPC handlers, when
- * {@link boot}'s own first Harness-home resolution fails because the
- * resolved path — the default `<osHomeDir>/.papermachine`, or a previously
- * chosen install location — contains an ASCII space. Unlike
- * {@link showInstallLocationRecoveryWindow}, this window's only way forward
- * is choosing a different location (`CHOOSE_INSTALL_LOCATION_URL`, handled
- * in {@link guardWorkspaceNavigation}): there is no pointer to clear and
- * fall back from when the failing path is already the default.
- * @param error - the resolved space-containing path this launch could not use.
- */
-async function showHarnessHomeSpaceRecoveryWindow(error: HarnessHomeSpaceError): Promise<void> {
-  harnessHomeSpaceRecoveryError = error
-  const created = createWindow('system')
-  window = created
-  created.once('closed', () => {
-    if (window === created) window = undefined
-    harnessHomeSpaceRecoveryError = undefined
-    app.quit()
-  })
-  await created.loadURL(harnessHomeSpaceErrorPage(error))
-  created.show()
-}
-
-/**
- * `guardWorkspaceNavigation`'s `CHOOSE_INSTALL_LOCATION_URL` handler: run
- * {@link runChooseInstallLocationFlow} against the open harness-home-space
- * recovery window, using the OS home directory's own parent as the picker's
- * starting point ({@link harnessHome} would only fail again — the same
- * space error this recovery window exists for). A `'restarting'` outcome
- * has already relaunched; a `'cancelled'` one leaves the current page
- * showing as-is; only `'rejected'` needs this function to act, reloading
- * the same page with the new reason so the original error is not lost.
- * A no-op if the recovery window is not the active one (defensive: this
- * branch cannot otherwise fire, since navigation only comes from the page
- * this function itself governs).
- */
-async function runChooseInstallLocationFromRecovery(): Promise<void> {
-  if (window === undefined || harnessHomeSpaceRecoveryError === undefined) return
-  const outcome = await runChooseInstallLocationFlow(window, dirname(app.getPath('home')))
-  if (outcome.status === 'rejected') {
-    await window.loadURL(harnessHomeSpaceErrorPage(harnessHomeSpaceRecoveryError, outcome.reason))
-  }
-}
-
-/**
- * Everything that depends on Electron's app-ready signal: telemetry setup
- * and the `app.launch` report, the application menu, IPC handlers, the
- * initial window, and the lifecycle listeners that react to later
- * activation and quit. Run from `app.whenReady().then` rather than a
- * top-level `await app.whenReady()`: on Electron 43.4.1 / macOS 26.5.2
- * arm64, a top-level await whose continuation is driven by an Electron
- * native signal never resumes (see the "Electron main-process boot order"
- * section of the "Science desktop product composition and provisioning"
- * Agent Note, 2026-08-23). A `telemetry.json` that fails to parse throws
- * here and propagates to this function's own caller, which logs and exits —
- * a loud build/launch error rather than a silently disabled feature.
- *
- * The very first Harness-home resolution is singled out from every other
- * `harnessHome()` call in this file: reading the install-location pointer
- * and resolving it happen directly here, not through `harnessHome()`, so a
- * failure in either step can route to {@link showInstallLocationRecoveryWindow}
- * or {@link showHarnessHomeSpaceRecoveryWindow} instead of the general
- * launch-error page. {@link classifyBootInstallLocationFailure} decides
- * which failures qualify for which window — including a pointer file that
- * cannot be read or parsed at all, which has no valid target path to name
- * but is still recoverable the same way as an unreachable one — and this
- * function returns before registering any IPC handler, menu, or quit
- * listener when it does; there is nothing running yet to tear down. Only a
- * failure with no pointer in effect that is not a space error (the default
- * location's own unrecoverable failure) rethrows unchanged, preserving this
- * function's pre-existing loud-failure behavior.
- */
-async function boot(): Promise<void> {
-  const osHome = app.getPath('home')
-  let pointer: string | undefined
-  let pointerUnreadable = false
-  let dshHome: string
-  try {
     try {
-      pointer = await readInstallLocationPointer(osHome)
+      await next.start()
+      return next
     } catch (error) {
-      pointerUnreadable = true
+      await next.stop()
       throw error
     }
-    dshHome = await resolveHarnessHome(osHome, pointer)
-  } catch (error) {
-    const classification = classifyBootInstallLocationFailure(pointer, pointerUnreadable, error)
-    if (classification === undefined) throw error
-    if (classification.kind === 'space') {
-      await showHarnessHomeSpaceRecoveryWindow(classification.error)
-    } else {
-      await showInstallLocationRecoveryWindow(osHome, classification.target, error instanceof Error ? error.message : String(error))
-    }
-    return
   }
-  hostLogPath = join(dshHome, 'logs', 'host.log')
-  telemetry = await createTelemetryReporter(dshHome)
-  void telemetry.report({ event: 'app.launch' })
-  refreshApplicationMenu()
-  ipcMain.handle('desktop:environments', async () => {
-    const signals = localeSignals()
-    return (await declarations(await harnessHome())).map(item => ({
-      id: item.id,
-      name: item.name,
-      revision: item.revision,
-      packages: item.packages,
-      estimatedDownloadBytes: item.estimatedDownloadBytes,
-      requiredFreeBytes: item.requiredFreeBytes,
-      sources: item.sources.map(source => ({ id: source.id, name: source.name })),
-      defaultSourceId: resolveDefaultSourceId(item.sources, signals),
-    }))
-  })
-  ipcMain.handle('desktop:current-environment', async () => {
-    const dshHome = await harnessHome()
-    const applied = await provisioner(dshHome).applied()
-    if (applied === undefined) return undefined
-    const status = resolveDisciplineStatus(applied, await declarations(dshHome))
-    return {
-      id: applied.id,
-      revision: applied.revision,
-      prefix: applied.prefix,
-      status: status.kind === 'current' ? 'applied' : 'stale',
+  const hooks: DesktopProjectHooks = {
+    healthCheck: async (projectDir) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      let healthFailure: unknown
+      let probe: DesktopHostProcess | undefined
+      try {
+        probe = await startHost(projectDir, true)
+        await probe.stop()
+      } catch (error) {
+        healthFailure = error
+        await probe?.stop().catch(() => undefined)
+      }
+      let restartFailure: unknown
+      if (active !== undefined) {
+        try {
+          host = await startHost()
+        } catch (error) {
+          restartFailure = error
+        }
+      }
+      if (healthFailure !== undefined && restartFailure !== undefined) {
+        throw new AggregateError([
+          errorOf(healthFailure, 'desktop project: staged health check failed'),
+          errorOf(restartFailure, 'desktop project: active backend restart failed'),
+        ], 'desktop project: staged health check and active backend restart failed')
+      }
+      if (healthFailure !== undefined) throw errorOf(healthFailure, 'desktop project: staged health check failed')
+      if (restartFailure !== undefined) throw errorOf(restartFailure, 'desktop project: active backend restart failed')
+    },
+    beforeActivate: async () => {
+      const active = host
+      host = undefined
+      await active?.stop()
+    },
+    afterActivate: async () => {
+      host = await startHost()
+    },
+  }
+
+  let runtimeReady = false
+  const ensureRuntime = async (): Promise<void> => {
+    if (runtimeReady) return
+    setupWindow?.webContents.send('papermachine:setup-progress', messages.setupRuntime)
+    if (development === undefined) {
+      await manager.applyRelease(resources.seed, app.getVersion(), {
+        ...hooks,
+        beforeActivate: async () => {},
+        afterActivate: async () => {},
+      })
     }
-  })
-  ipcMain.handle('desktop:keep-current-environment', async () => { await openWorkspace() })
-  ipcMain.handle('desktop:onboarding-status', () => {
-    const value = onboardingStatus
-    onboardingStatus = undefined
-    return value
-  })
-  ipcMain.handle('desktop:cancel-provisioning', () => { provisioning?.abort() })
-  ipcMain.handle('desktop:install-location', async () => {
-    const osHome = app.getPath('home')
-    const [path, pointer] = await Promise.all([harnessHome(), readInstallLocationPointer(osHome)])
-    return { path, customized: pointer !== undefined }
-  })
-  ipcMain.handle('desktop:choose-install-location', async () => {
-    if (window === undefined) throw new Error('desktop install location: no active window')
-    if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const
-    return runChooseInstallLocationFlow(window, dirname(await harnessHome()))
-  })
-  ipcMain.handle('desktop:reset-install-location', async () => {
-    if (provisioning !== undefined) return { status: 'rejected', reason: INSTALL_LOCATION_BUSY_REASON } as const
-    await clearInstallLocationPointer(app.getPath('home'))
-    relaunchApplication()
-    return { status: 'restarting' } as const
-  })
-  ipcMain.handle('desktop:diagnostics', async () => {
-    const osHome = app.getPath('home')
-    const [harnessHomePath, pointer] = await Promise.all([harnessHome(), readInstallLocationPointer(osHome)])
-    return {
-      appVersion: app.getVersion(),
-      platform: `${process.platform}-${process.arch}`,
-      harnessHome: harnessHomePath,
-      installLocationCustomized: pointer !== undefined,
-    }
-  })
-  ipcMain.handle('desktop:provision', async (_event, id: unknown, sourceId: unknown) => {
-    if (typeof id !== 'string') throw new Error('desktop provisioning: environment id must be a string')
-    if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')
-    const dshHome = await harnessHome()
-    const declaration = (await declarations(dshHome)).find(item => item.id === id)
-    if (declaration === undefined) throw new Error(`desktop provisioning: unknown environment ${id}`)
-    await startProvisioning(dshHome, declaration, sourceId)
-  })
-  ipcMain.handle('desktop:provision-custom', async (_event, packages: unknown, sourceId: unknown) => {
-    if (!Array.isArray(packages) || packages.some(item => typeof item !== 'string')) {
-      throw new Error('desktop provisioning: custom packages must be a string array')
-    }
-    if (sourceId !== undefined && typeof sourceId !== 'string') throw new Error('desktop provisioning: sourceId must be a string')
-    const dshHome = await harnessHome()
-    // buildCustomDeclaration validates every token before it can reach the
-    // solver's argv; persisting only after that keeps an unusable set out of
-    // the file the next launch resolves the applied environment against.
-    const declaration = buildCustomDeclaration(packages as string[], [desktopPlatform()], (await shippedDeclaration()).sources)
-    await writeCustomDeclaration(desktopEnvironmentsRoot(dshHome), declaration)
-    await startProvisioning(dshHome, declaration, sourceId)
-  })
-  await openInitialSurface().catch(async (error: unknown) => {
-    // `'system'`: this is the startup-failure fallback, and the failure may
-    // be `harnessHome()` itself throwing (a space-containing home), so
-    // there is no `dshHome` to read a preference from here.
-    window ??= createWindow('system')
-    await window.loadURL(launchErrorPage(hostLogPath, error))
+    runtimeReady = true
+  }
+
+  const updates = new DesktopUpdateCoordinator(
+    publishUpdate,
+    async () => {
+      shellInstallerOwnsQuit = true
+      const active = host
+      host = undefined
+      await active?.stop()
+    },
+  )
+  const installUpdate = async (): Promise<DesktopUpdateState> => operations.run(async () => {
+    const state = await updates.install()
+    if (state.phase === 'error') shellInstallerOwnsQuit = false
+    return state
   })
 
-  app.on('activate', () => { void handleActivate() })
-  app.on('before-quit', (event) => {
-    if (coordinator.quitting) return
-    event.preventDefault()
-    void coordinator.beforeQuit().finally(() => { app.quit() })
+  protocol.handle(SCHEME, (request) => {
+    const url = new URL(request.url)
+    if (url.hostname === 'shell') return serveShellAsset(request)
+    if (url.hostname !== 'app') return Promise.resolve(new Response(null, { status: 404 }))
+    const active = host
+    if (active === undefined) return Promise.resolve(new Response('backend unavailable', { status: 503 }))
+    return active.fetch(request)
+  })
+
+  const mutate = async (event: IpcMainInvokeEvent, mutation: Parameters<DesktopProjectManager['mutate']>[0]): Promise<void> => {
+    assertDesktopSender(event, ['shell'])
+    if (development !== undefined) {
+      throw new Error('dsh desktop: plugin package changes require a packaged application')
+    }
+    await operations.run(async () => { await manager.mutate(mutation, hooks) })
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
+  }
+  ipcMain.handle(DESKTOP_IPC.localeGet, (event) => {
+    assertDesktopSender(event, ['shell'])
+    return locale
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
+    assertDesktopSender(event, ['shell'])
+    if (development !== undefined) return []
+    return manager.listPlugins()
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsAdd, (event, spec: unknown) => {
+    if (typeof spec !== 'string') throw new Error('dsh desktop: plugin spec must be a string')
+    return mutate(event, { type: 'plugin-add', spec })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsRemove, (event, name: unknown) => {
+    if (typeof name !== 'string') throw new Error('dsh desktop: plugin name must be a string')
+    return mutate(event, { type: 'plugin-remove', name })
+  })
+  ipcMain.handle(DESKTOP_IPC.pluginsUpdate, (event, name: unknown, version: unknown) => {
+    if (typeof name !== 'string' || typeof version !== 'string') {
+      throw new Error('dsh desktop: plugin name and version must be strings')
+    }
+    return mutate(event, { type: 'plugin-update', name, version })
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesCheck, async (event) => {
+    assertDesktopSender(event, ['shell'])
+    return updates.check()
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesInstall, async (event) => {
+    assertDesktopSender(event, ['shell'])
+    if (operations.busy) throw new Error('desktop: another operation is running')
+    await installUpdate()
+  })
+
+  const checkAndPrompt = async (manual: boolean): Promise<void> => {
+    const state = await updates.check()
+    if (state.phase === 'error') {
+      if (manual) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: messages.updateCheckFailedTitle,
+          message: state.message ?? messages.unknownError,
+        })
+      }
+      return
+    }
+    if (state.phase !== 'available') {
+      if (manual) {
+        await dialog.showMessageBox({
+          type: 'info',
+          title: messages.updateCheckTitle,
+          message: state.message ?? messages.updateCurrent,
+        })
+      }
+      return
+    }
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: messages.updateTitle,
+      message: messages.updateAvailable,
+      detail: formatDesktopMessage(messages.updateDetail, { version: state.version ?? '' }),
+      buttons: [messages.installAndRestart, messages.later],
+      defaultId: 0,
+      cancelId: 1,
+    })
+    if (result.response !== 0) return
+    if (operations.busy) return
+    const installed = await installUpdate()
+    if (installed.phase === 'error') {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: messages.updateFailedTitle,
+        message: installed.message ?? messages.unknownError,
+      })
+    }
+  }
+
+  const openPluginWindow = (): void => {
+    if (pluginWindow !== undefined && !pluginWindow.isDestroyed()) {
+      pluginWindow.focus()
+      return
+    }
+    pluginWindow = createWindow(managementPreload)
+    pluginWindow.setSize(900, 620)
+    pluginWindow.setTitle(messages.pluginWindowTitle)
+    pluginWindow.once('ready-to-show', () => { pluginWindow?.show() })
+    pluginWindow.once('closed', () => { pluginWindow = undefined })
+    void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{
+    label: process.platform === 'darwin' ? app.name : messages.application,
+    submenu: [
+      {
+        label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
+        accelerator: 'CmdOrCtrl+,',
+        enabled: development === undefined,
+        click: openPluginWindow,
+      },
+      { label: messages.changeEnvironment, click: () => { if (!operations.busy) void openSetup() } },
+      { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
+      { type: 'separator' },
+      { role: 'about' },
+      { role: 'quit' },
+    ],
+  }, { role: 'editMenu' }]))
+
+  const createMainWindow = (): BrowserWindow => {
+    const window = createWindow(appPreload)
+    mainWindow = window
+    window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show() })
+    const updateCheck = setTimeout(() => {
+      if (!quitting && !operations.busy) void checkAndPrompt(false).catch(reportStartupFailure)
+    }, 10_000)
+    updateCheck.unref()
+    window.on('closed', () => {
+      clearTimeout(updateCheck)
+      if (mainWindow === window) mainWindow = undefined
+    })
+    return window
+  }
+  focusPrimaryWindow = () => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed()) {
+      const replacement = createMainWindow()
+      void replacement.loadURL(`${SCHEME}://app/index.html`)
+      return
+    }
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+
+  const openWorkspace = async (signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted()
+    await ensureRuntime()
+    signal.throwIfAborted()
+    host = await startHost()
+    signal.throwIfAborted()
+    if (mainWindow === undefined || mainWindow.isDestroyed()) mainWindow = createMainWindow()
+    await mainWindow.loadURL(`${SCHEME}://app/index.html`)
+    setupWindow?.close()
+    if (development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
+    publishUpdate(updateState)
+  }
+
+  const openSetup = async (): Promise<void> => {
+    if (setupWindow !== undefined && !setupWindow.isDestroyed()) { setupWindow.show(); setupWindow.focus(); return }
+    const window = createWindow(fileURLToPath(new URL('./preload-onboarding.cjs', import.meta.url)))
+    setupWindow = window
+    window.once('closed', () => { setupWindow = undefined })
+    await window.loadURL(`${SCHEME}://shell/onboarding.html`)
+    window.show()
+  }
+  const assertSetupSender = (event: IpcMainInvokeEvent): void => {
+    assertDesktopSender(event, ['shell'])
+    if (event.sender !== setupWindow?.webContents || new URL(event.senderFrame?.url ?? 'about:blank').pathname !== '/onboarding.html') {
+      throw new Error('desktop: rejected setup IPC from another renderer')
+    }
+  }
+  ipcMain.handle('papermachine:setup-state', async (event) => {
+    assertSetupSender(event)
+    const declaration = await environment.declaration()
+    return {
+      locale, home, version: PAPER_MACHINE_VERSION, declaration, status: await environment.status(),
+      defaultSource: resolveDefaultSourceId(declaration.sources, {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, languages: app.getPreferredSystemLanguages(),
+      }),
+    }
+  })
+  ipcMain.handle('papermachine:setup-install', async (event, source: unknown, packages: unknown) => {
+    assertSetupSender(event)
+    if (typeof source !== 'string' || (packages !== undefined && (!Array.isArray(packages) || !packages.every(value => typeof value === 'string')))) {
+      throw new Error('desktop: invalid environment install request')
+    }
+    await operations.run(async (signal) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      signal.throwIfAborted()
+      await ensureRuntime()
+      signal.throwIfAborted()
+      await environment.install(source, packages, signal, (progress) => {
+        if (!setupWindow?.isDestroyed()) setupWindow?.webContents.send('papermachine:setup-progress', progress.message)
+      })
+      await openWorkspace(signal)
+    })
+  })
+  ipcMain.handle('papermachine:setup-cancel', (event) => { assertSetupSender(event); operations.cancel() })
+  ipcMain.handle('papermachine:setup-continue', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      await openWorkspace(signal)
+    })
+  })
+  ipcMain.handle('papermachine:setup-home', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => { await changeInstallLocation(signal) })
+  })
+  ipcMain.handle('papermachine:setup-reset-home', async (event) => {
+    assertSetupSender(event)
+    await operations.run(async (signal) => { await resetInstallLocation(signal) })
+  })
+  focusPrimaryWindow = () => {
+    const window = setupWindow ?? mainWindow
+    if (window === undefined || window.isDestroyed()) {
+      if (host !== undefined) {
+        const replacement = createMainWindow()
+        void replacement.loadURL(`${SCHEME}://app/index.html`)
+      } else { void openSetup() }
+      return
+    }
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) focusPrimaryWindow()
   })
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
+  app.on('before-quit', (event) => {
+    if (shellInstallerOwnsQuit || quitComplete) return
+    event.preventDefault()
+    if (quitting) return
+    quitting = true
+    void operations.shutdown().then(async () => {
+      const active = host
+      host = undefined
+      await active?.stop()
+      quitComplete = true
+      app.quit()
+    }).catch(reportStartupFailure)
+  })
+
+  // The shell page becomes visible before any seed extraction or package process.
+  await openSetup()
+  if ((await environment.status()).kind === 'bound') {
+    await operations.run(openWorkspace).catch((error: unknown) => {
+      setupWindow?.webContents.send('papermachine:setup-progress', String(error))
+    })
+  }
+
 }
 
-/**
- * Reopen the initial surface, but only once any in-flight provisioning run
- * has unwound (see {@link ProvisioningCoordinator.activate}) — blocking
- * reopen until then is simpler than teaching the reopened window to surface
- * someone else's in-flight run.
- */
-async function handleActivate(): Promise<void> {
-  await coordinator.activate(async () => {
-    if (BrowserWindow.getAllWindows().length === 0) await openInitialSurface()
+async function prepareApplication(): Promise<string | undefined> {
+  const home = await resolvePaperMachineHome()
+  if (home.includes(' ')) throw new Error('PaperMachine: R requires an install path without spaces')
+  process.env.PAPERMACHINE_HOME = home
+  process.env.DSH_HOME = home
+  const userData = join(home, 'desktop', 'electron-user-data')
+  await mkdir(userData, { recursive: true, mode: 0o700 })
+  app.setName('PaperMachine')
+  app.setPath('userData', userData)
+  app.setPath('sessionData', userData)
+  if (!claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })) return
+  return home
+}
+
+async function relaunchAtHome(selected: string): Promise<void> {
+  await writeFileAtomic(join(homedir(), '.papermachine-home'), `${selected}\n`, { mode: 0o600 })
+  delete process.env.PAPERMACHINE_HOME
+  delete process.env.DSH_HOME
+  app.relaunch()
+  app.quit()
+}
+
+async function changeInstallLocation(signal: AbortSignal): Promise<void> {
+  const messages = resolveDesktopLocale(app.getLocale()).messages
+  const choice = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+  const directory = choice.filePaths[0]
+  if (choice.canceled || directory === undefined) return
+  const path = basename(directory).toLowerCase() === 'papermachine' ? directory : join(directory, 'PaperMachine')
+  const selected = await resolvePaperMachineHome(path)
+  if (selected.includes(' ')) throw new Error(messages.homeSpaceError)
+  const confirmed = await dialog.showMessageBox({
+    type: 'question', message: messages.chooseHome,
+    detail: formatDesktopMessage(messages.homeChangeDetail, { path: selected }),
+    buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1,
+  })
+  if (confirmed.response !== 0) return
+  if (/[^\x00-\x7f]/u.test(selected)) {
+    const warning = await dialog.showMessageBox({ type: 'warning', message: messages.homeNonAscii,
+      buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1 })
+    if (warning.response !== 0) return
+  }
+  signal.throwIfAborted()
+  await relaunchAtHome(selected)
+}
+
+async function resetInstallLocation(signal: AbortSignal): Promise<void> {
+  const messages = resolveDesktopLocale(app.getLocale()).messages
+  const choice = await dialog.showMessageBox({ type: 'question', message: messages.resetHome,
+    detail: messages.resetHomeDetail, buttons: [messages.confirm, messages.cancel], defaultId: 1, cancelId: 1 })
+  if (choice.response !== 0) return
+  signal.throwIfAborted()
+  try { await unlink(join(homedir(), '.papermachine-home')) } catch (error) {
+    // Only an absent pointer already selects the default home.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  delete process.env.PAPERMACHINE_HOME
+  delete process.env.DSH_HOME
+  app.relaunch()
+  app.quit()
+}
+
+async function showStartupRecovery(message: string): Promise<void> {
+  const locale = resolveDesktopLocale(app.getLocale())
+  if (!(protocol.isProtocolHandled(SCHEME))) {
+    protocol.handle(SCHEME, request => new URL(request.url).hostname === 'shell' ? serveShellAsset(request) : Promise.resolve(new Response(null, { status: 503 })))
+  }
+  const window = createWindow(fileURLToPath(new URL('./preload-recovery.cjs', import.meta.url)))
+  const assertRecovery = (event: IpcMainInvokeEvent): void => {
+    assertDesktopSender(event, ['shell'])
+    if (event.sender !== window.webContents || new URL(event.senderFrame?.url ?? 'about:blank').pathname !== '/recovery.html') throw new Error('desktop: rejected recovery IPC')
+  }
+  const operations = new DesktopOperation()
+  const handlers = {
+    state: (event: IpcMainInvokeEvent) => { assertRecovery(event); return { locale, message } },
+    choose: async (event: IpcMainInvokeEvent) => { assertRecovery(event); await operations.run(changeInstallLocation) },
+    reset: async (event: IpcMainInvokeEvent) => { assertRecovery(event); await operations.run(resetInstallLocation) },
+    restart: (event: IpcMainInvokeEvent) => { assertRecovery(event); app.relaunch(); app.quit() },
+    copy: async (event: IpcMainInvokeEvent) => {
+      assertRecovery(event)
+      await clipboard.writeText([`PaperMachine ${PAPER_MACHINE_VERSION}`, `dsh ${app.getVersion()}`, `${process.platform}-${process.arch}`,
+        process.env.PAPERMACHINE_HOME ?? locale.messages.homeUnresolved, message].join('\n'))
+    },
+    quit: (event: IpcMainInvokeEvent) => { assertRecovery(event); app.quit() },
+  }
+  for (const [name, handler] of Object.entries(handlers)) {
+    ipcMain.removeHandler(`papermachine:recovery-${name}`)
+    ipcMain.handle(`papermachine:recovery-${name}`, handler)
+  }
+  await window.loadURL(`${SCHEME}://shell/recovery.html`)
+  window.show()
+}
+
+async function reportStartupFailure(error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(error)
+  const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
+  if (diagnosticFile !== undefined) {
+    await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
+  }
+  // Do not await Electron readiness from top-level ESM evaluation.
+  void app.whenReady().then(() => showStartupRecovery(message)).catch((failure: unknown) => {
+    dialog.showErrorBox(resolveDesktopLocale(app.getLocale()).messages.startupFailed, String(failure))
+    app.exit(1)
   })
 }
+
+// Electron defers ready until ESM evaluation finishes; browser paths must be set first.
+const home = await prepareApplication().catch(reportStartupFailure)
+if (home !== undefined) void app.whenReady().then(() => main(home)).catch(reportStartupFailure)

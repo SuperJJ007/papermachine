@@ -39,8 +39,8 @@ const POSIX_LOCALE = 'C.UTF-8'
  * itself is not an option on win32: the platform's `setlocale` rejects it,
  * so R falls back to the same broken `C` behavior anyway. Confirmed on a
  * real Windows box; see the
- * [win32 locale and probe-argv Agent
- * Note](../../../../.agents/notes/implemented/bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.md).
+ * [win32 locale and probe-argv
+ * limitations](../README.md#known-limitations-and-deferred-work).
  */
 const CHILD_LOCALES: Record<NodeJS.Platform, string> = {
   aix: POSIX_LOCALE, android: POSIX_LOCALE, darwin: 'en_US.UTF-8', freebsd: POSIX_LOCALE, haiku: POSIX_LOCALE,
@@ -65,6 +65,29 @@ function windowsInterpreterPathEnv(canonicalPrefix: string): string {
   return WINDOWS_PATH_SUBDIRECTORIES
     .map(subdirectory => (subdirectory === '' ? canonicalPrefix : pathWin32.join(canonicalPrefix, subdirectory)))
     .join(';')
+}
+
+/** Windows system variables required by interpreter startup and runtime libraries. */
+const WIN32_AMBIENT_ENVIRONMENT_KEYS = [
+  'SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'PATHEXT',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA',
+  'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
+] as const
+
+/**
+ * Fixed Windows system entries needed by empty-base interpreter processes.
+ * Copies only the declared ambient keys and confines temporary files to scratch.
+ * @param temporaryDirectory - the child operation's owned scratch temp directory.
+ * @returns Windows ambient entries and TEMP/TMP, or no entries on other platforms.
+ */
+export function windowsEnvironment(temporaryDirectory: string): NodeJS.ProcessEnv {
+  if (process.platform !== 'win32') return {}
+  const entries: [string, string][] = []
+  for (const key of WIN32_AMBIENT_ENVIRONMENT_KEYS) {
+    const value = process.env[key]
+    if (value !== undefined) entries.push([key, value])
+  }
+  return { ...Object.fromEntries(entries), TEMP: temporaryDirectory, TMP: temporaryDirectory }
 }
 
 /** Complete pre-publication plan with no Host scratch path exposed publicly. */

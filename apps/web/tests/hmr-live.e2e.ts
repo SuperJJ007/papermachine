@@ -1,7 +1,7 @@
-/** Published dsh web + pnpm dev:web → browser HMR; restores source, compiler outputs, and bundles. */
+/** Published dsh web + pnpm dev:web → browser HMR, with no page reload. */
 
-import { existsSync, globSync } from 'node:fs'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync, globSync, statSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -13,13 +13,27 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { readClientBuildRecord } from '../../../scripts/client-build-environment.ts'
 import { REPO_ROOT } from './support.ts'
 
+const CLIENT_ARTIFACT_PATTERNS = [
+  'apps/web/dist/**/*',
+  'packages/*/*/lib/client.js',
+  'packages/*/*/lib/client.js.map',
+]
+
+/** Return every artifact that `pnpm run dev:web` can rewrite. */
+function clientArtifactPaths(): string[] {
+  return globSync(CLIENT_ARTIFACT_PATTERNS, { cwd: REPO_ROOT })
+    .map(path => join(REPO_ROOT, path))
+    .filter(path => statSync(path).isFile())
+    .sort()
+}
+
 function spawnSpec(argv: readonly string[], cwd: string, env?: Record<string, string>): SubprocessSpawnSpec {
   return {
+    environmentBase: 'scrubbed-parent',
     argv,
     cwd,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: 5_000,
-    environmentBase: 'scrubbed-parent',
     ...env === undefined ? {} : { env },
   }
 }
@@ -65,7 +79,7 @@ function waitForOutput(child: SubprocessHandle, pattern: RegExp, label: string):
 async function stopTree(child: SubprocessHandle): Promise<void> {
   child.terminate()
   const stopped = await child.waitForExit(AbortSignal.timeout(15_000))
-  if (!stopped) throw new Error(`process tree ${String(child.pid)} did not stop after termination escalation`)
+  if (!stopped) throw new Error('managed process range did not stop after termination escalation')
   await child.done
 }
 
@@ -75,15 +89,9 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   const binPath = join(REPO_ROOT, 'apps/cli/lib/bin.js')
   if (!existsSync(binPath)) throw new Error('HMR browser test needs the built dsh bin; run pnpm run build first')
   const clientBuildEnvironment = readClientBuildRecord(REPO_ROOT).environment
-  const shellDist = join(REPO_ROOT, 'apps/web/dist')
-  const originalShellDist = join(world, 'original-web-dist')
-  await cp(shellDist, originalShellDist, { recursive: true })
-  const clientArtifactPaths = globSync([
-    'packages/*/*/lib/client.js{,.map}',
-    'packages/client/*/lib/types/**/*.{js,d.ts}{,.map}',
-  ], { cwd: REPO_ROOT })
-    .map(path => join(REPO_ROOT, path))
-  const originalClientArtifacts = await Promise.all(clientArtifactPaths.map(async path => [path, await readFile(path)] as const))
+  const originalClientArtifacts = await Promise.all(clientArtifactPaths()
+    .map(async path => [path, await readFile(path)] as const))
+  const originalClientArtifactPaths = new Set(originalClientArtifacts.map(([path]) => path))
   const originalSource = await readFile(sourcePath)
   const oldText = 'Into the Unknown'
   const sourceNeedle = "'hero.headline': 'Into the Unknown'"
@@ -121,7 +129,9 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     await page.goto(baseUrl, { waitUntil: 'load' })
     await page.getByText(oldText, { exact: true }).waitFor({ timeout: 15_000 })
     const pageIdentity = await page.evaluate(() => {
-      const identity = crypto.randomUUID()
+      // In-page code: an import would not survive serialization, and the page
+      // entropy source available in every context is getRandomValues.
+      const identity = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, '0')).join('')
       Object.defineProperty(window, '__dshHmrPageIdentity', { value: identity })
       return identity
     })
@@ -137,18 +147,21 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     await writeFile(sourcePath, originalSource).catch((error: unknown) => failures.push(error))
     if (watcher !== undefined) await stopTree(watcher).catch((error: unknown) => failures.push(error))
     if (host !== undefined) await stopTree(host).catch((error: unknown) => failures.push(error))
-    await Promise.all(originalClientArtifacts.map(async ([path, content]) => {
-      await writeFile(path, content).catch((error: unknown) => failures.push(error))
-    }))
-    await rm(shellDist, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
-    await cp(originalShellDist, shellDist, { recursive: true }).catch((error: unknown) => failures.push(error))
     await browser?.close().catch((error: unknown) => failures.push(error))
     await subprocessFiber?.dispose().catch((error: unknown) => failures.push(error))
+    await Promise.all(clientArtifactPaths()
+      .filter(path => !originalClientArtifactPaths.has(path))
+      .map(async (path) => { await rm(path, { force: true }) }))
+      .catch((error: unknown) => failures.push(error))
+    await Promise.all(originalClientArtifacts.map(async ([path, content]) => {
+      await writeFile(path, content)
+    })).catch((error: unknown) => failures.push(error))
+    try {
+      readClientBuildRecord(REPO_ROOT)
+    } catch (error) {
+      failures.push(error)
+    }
     await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
   }
   if (failures.length > 0) throw new AggregateError(failures, 'HMR browser test or cleanup failed')
-  const restoredCompilerOutput = await readFile(join(REPO_ROOT, 'packages/client/ui-conversation/lib/types/client/locales.js'), 'utf8')
-  expect(restoredCompilerOutput).toContain(oldText)
-  expect(restoredCompilerOutput).not.toContain(newText)
-  readClientBuildRecord(REPO_ROOT, clientBuildEnvironment)
 }, 120_000)

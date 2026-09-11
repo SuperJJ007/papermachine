@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invariant'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -72,11 +72,11 @@ export class DirectSandbox extends SandboxProvider {
   confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
     this.policies.push(policy)
     return {
+      env: this.env,
       argv: [...this.argvPrefix, ...argv],
       enforcement: this.enforcement,
       denialSignatures: this.denialSignatures,
       runnerFailureRules: this.runnerFailureRules,
-      env: this.env,
     }
   }
 }
@@ -100,8 +100,7 @@ export class ControlledRun {
     private readonly mode: 'immediate' | 'deferred',
     output: ControlledOutput = {},
   ) {
-    this.handle = {
-      pid: 41,
+    this.handle = { interrupt: () => {},
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
@@ -114,7 +113,6 @@ export class ControlledRun {
         this.terminations += 1
         this.completion.resolve({ exitCode: 0, signal: null })
       },
-      interrupt: () => {},
       waitForExit: async () => {
         this.waits += 1
         if (this.waits === 1) this.onFirstWait?.()
@@ -188,7 +186,7 @@ export interface ControlledOutput {
 
 /** Host-local fake subprocess provider for non-time-based lifecycle assertions. */
 export class ControlledSubprocess extends SubprocessRuntime {
-  override executionWorld: 'host-local' | 'remote' = 'host-local'
+  executionWorld: 'host-local' | 'remote' = 'host-local'
   /** Every fully resolved request issued by the Runtime. */
   readonly specs: SubprocessSpawnSpec[] = []
   /** Controlled requested-source runs in start order. */
@@ -250,22 +248,20 @@ function reader(text: string, bytes = Buffer.byteLength(text), lossy = false, ut
 } {
   return {
     readFrom(_fromByte: number): SubprocessOutputRead {
-      return { text, nextOffset: bytes, lossy, utf8Validity }
+      return { utf8Validity, text, nextOffset: bytes, lossy }
     },
   }
 }
 
 /** Return a probe handle that already reached process and whole-tree settlement. */
 function settledHandle(stdout: string, stderr: string, utf8Validity: FakeUtf8Probe = 'valid'): SubprocessHandle {
-  return {
-    pid: 42,
+  return { interrupt: () => {},
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,
     collected: { stdout: reader(stdout, undefined, false, utf8Validity), stderr: reader(stderr, undefined, false, utf8Validity) },
     done: Promise.resolve({ exitCode: 0, signal: null }),
     terminate: () => {},
-    interrupt: () => {},
     waitForExit: async () => true,
   }
 }
@@ -423,7 +419,8 @@ const adapter = command + '.science-test.mjs'
 const child = process.platform === 'win32' && existsSync(adapter)
   ? spawn(process.execPath, [adapter, ...args], { stdio: 'inherit' })
   : spawn(command, args, { stdio: 'inherit' })
-process.on('SIGINT', () => child.kill('SIGINT'))
+// The managed group receives SIGINT once; forwarding would interrupt the target twice.
+process.on('SIGINT', () => {})
 child.on('error', (error) => {
   process.stderr.write('science-runtime fake runner failed to spawn ' + command + ': ' + String(error) + '\\n')
   process.exitCode = 127
@@ -521,12 +518,12 @@ export function attachScienceSession(ctx: Context, id: string, seed?: readonly i
  * that stay inside an already-open turn append `tool/call` alone).
  */
 function nextFreshTurn(session: Session): number {
-  return session.events.filter(event => event.type === 'step/start').length + 1
+  return session.snapshotEvents().filter(event => event.type === 'step/start').length + 1
 }
 
 /** Append the request/header and a named tool-call fact that authorizes one direct Science mutation, opening a fresh turn every call. */
 function authorizeToolCall(session: Session, name: string, id: string): {
-  readonly toolCallId: ReturnType<typeof CallId>
+  readonly toolCallId: ReturnType<typeof ToolCallId>
   readonly requestHeaderSeq: number
 } {
   const turn = nextFreshTurn(session)
@@ -535,7 +532,7 @@ function authorizeToolCall(session: Session, name: string, id: string): {
     header: { config: { provider: 'test', model: 'test-model' } },
     reason: 'initial',
   })
-  const toolCallId = CallId(id)
+  const toolCallId = ToolCallId(id)
   session.append('tool/call', {
     turn,
     step: 1,
@@ -548,7 +545,7 @@ function authorizeToolCall(session: Session, name: string, id: string): {
 
 /** Append the request/header and language-matched tool-call facts that authorize one run. */
 export function authorizeRun(session: Session, language: 'python' | 'r', id = 'science-runtime-run-call'): {
-  readonly toolCallId: ReturnType<typeof CallId>
+  readonly toolCallId: ReturnType<typeof ToolCallId>
   readonly requestHeaderSeq: number
 } {
   return authorizeToolCall(session, language === 'python' ? 'run_python' : 'run_r', id)
@@ -574,8 +571,8 @@ export function authorizeConcurrentRuns(
   ids: { readonly python?: string; readonly r?: string } = {},
 ): {
   readonly requestHeaderSeq: number
-  readonly python: ReturnType<typeof CallId>
-  readonly r: ReturnType<typeof CallId>
+  readonly python: ReturnType<typeof ToolCallId>
+  readonly r: ReturnType<typeof ToolCallId>
 } {
   const turn = nextFreshTurn(session)
   session.append('step/start', { turn, step: 1 })
@@ -583,9 +580,9 @@ export function authorizeConcurrentRuns(
     header: { config: { provider: 'test', model: 'test-model' } },
     reason: 'initial',
   })
-  const python = CallId(ids.python ?? 'science-runtime-run-call-python')
+  const python = ToolCallId(ids.python ?? 'science-runtime-run-call-python')
   session.append('tool/call', { turn, step: 1, callId: python, name: 'run_python', arguments: '{}' })
-  const r = CallId(ids.r ?? 'science-runtime-run-call-r')
+  const r = ToolCallId(ids.r ?? 'science-runtime-run-call-r')
   session.append('tool/call', { turn, step: 1, callId: r, name: 'run_r', arguments: '{}' })
   return { requestHeaderSeq: header.seq, python, r }
 }

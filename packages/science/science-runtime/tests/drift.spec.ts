@@ -103,12 +103,12 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
     })
     await second.done
 
-    const bound = session.events.filter(event => event.type === 'science/environment-bound')
+    const bound = session.snapshotEvents().filter(event => event.type === 'science/environment-bound')
     expect(bound).toHaveLength(2)
     expect(bound[1]?.data).toMatchObject({ environment: { revision: 2, status: 'applied' } })
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[1]?.data).toMatchObject({ run: { environmentRevision: 2, kernelEpoch: 2 } })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts).toHaveLength(3)
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'environment-rebound', kernelEpoch: 1 } })
     expect(kernelFacts[2]?.data).toMatchObject({ kernel: { state: 'started', kernelEpoch: 2 } })
@@ -130,10 +130,10 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
     })
     await second.done
 
-    const bound = session.events.filter(event => event.type === 'science/environment-bound')
+    const bound = session.snapshotEvents().filter(event => event.type === 'science/environment-bound')
     expect(bound).toHaveLength(2)
     expect(bound[1]?.data).toMatchObject({ environment: { revision: 2, status: 'applied' } })
-    const kernelFacts = session.events.filter(event => event.type === 'science/kernel-state')
+    const kernelFacts = session.snapshotEvents().filter(event => event.type === 'science/kernel-state')
     expect(kernelFacts[1]?.data).toMatchObject({ kernel: { state: 'exited', reason: 'environment-rebound', kernelEpoch: 1 } })
   })
 
@@ -149,11 +149,11 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
       ...authorizePythonRun(session, 'science-drift-unchanged-2'), signal: new AbortController().signal,
     })
     await second.done
-    expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
-    const started = session.events.filter(event => event.type === 'science/run-started')
+    expect(session.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+    const started = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(started[0]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
     expect(started[1]?.data).toMatchObject({ run: { kernelEpoch: 1 } })
-    expect(session.events.filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/kernel-state')).toHaveLength(1)
   })
 
   it('rejects the run with ENVIRONMENT_NOT_READY and appends no revision when the drifted prefix is no longer usable', async () => {
@@ -177,8 +177,8 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
     // B8 regression lock: an unusable re-observation must never append an
     // `invalid` revision — bindEnvironment refuses to rebind a session past
     // its first run, so one `invalid` append here would strand the session.
-    expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
-    expect(session.events.some(event => event.type === 'science/run-started' && event.data.run.environmentRevision === 2)).toBe(false)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+    expect(session.snapshotEvents().some(event => event.type === 'science/run-started' && event.data.run.environmentRevision === 2)).toBe(false)
 
     // The session is not stuck: restoring the prefix lets a later run through
     // on the same original revision, since the digest now matches again.
@@ -189,7 +189,7 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
       ...authorizePythonRun(session, 'science-drift-unusable-3'), signal: new AbortController().signal,
     })
     await expect(recovered.done).resolves.toMatchObject({ terminal: { status: 'success' } })
-    expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
   })
 
   it('treats an unreadable history (replaced with a directory) as drift routed through the same re-observe path, not an unclassified exception', async () => {
@@ -208,6 +208,6 @@ describe('ScienceRuntime.startRun prefix-drift detection', () => {
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       ...authorizePythonRun(session, 'science-drift-history-dir-2'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'ENVIRONMENT_NOT_READY' })
-    expect(session.events.filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/environment-bound')).toHaveLength(1)
   })
 })

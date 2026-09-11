@@ -1,4 +1,5 @@
 /** Test-only binding of a real `ScienceSelectionStore` instance to the `useStore`/`actions` share components expect. */
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { useSyncExternalStore } from 'react'
 import { createScienceSelectionStore } from '../src/client/selection-store.ts'
 import type { ScienceSelectionState } from '../src/client/selection-store.ts'
@@ -12,7 +13,7 @@ import type { ScienceSelectionState } from '../src/client/selection-store.ts'
  * @param scopeKey - Storage identity; omitted for an isolated test instance.
  * @returns the store instance plus the bound `useStore`/`actions` pair.
  */
-export function testScienceSelectionStore(scopeKey: string = crypto.randomUUID()) {
+export function testScienceSelectionStore(scopeKey: string = randomUUID()) {
   const instance = createScienceSelectionStore().create(scopeKey)
   function useStore<S>(select: (state: ScienceSelectionState) => S): S {
     return useSyncExternalStore(fn => instance.subscribe(fn), () => select(instance.getSnapshot()))

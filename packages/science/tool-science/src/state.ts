@@ -3,7 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue } from '@deepseek-ai/dsh-tools'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceEnvironmentBinding,
@@ -246,7 +246,7 @@ export function applyScienceStateTool(ctx: Context, historyItemLimit: number): v
     isConcurrencySafe: () => true,
     execute(_args, exec): Promise<ScienceStateValue> {
       const session = requireScienceSession(exec)
-      const projection = replayScience(session.events)
+      const projection = replayScience(session.snapshotEvents())
       if (projection === null) throw new Error('tool-science: Science mode is not bound for this session')
       return stateValueFromProjection(projection, historyItemLimit, resolveArtifactStoreFacts.bind(undefined, ctx, historyItemLimit))
     },

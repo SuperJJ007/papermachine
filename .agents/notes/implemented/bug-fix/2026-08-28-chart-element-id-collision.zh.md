@@ -29,3 +29,7 @@ codec 的唯一性校验是对的:像素空间命中表靠 id 引用元素,重�
 ## Verification
 
 `packages/science/science-runtime/tests/real-acceptance.ts` 的 matplotlib `'tight'` 用例现在画一张分组柱状图,其柱值标注在去重前会碰撞(`control[0]=0.483` 与 `treatment[0]=0.477` 都格式化为 `"0.48"`),并断言得到的 artifact 携带一个 `runtime: 'matplotlib'` 的图表、所有元素 id 唯一、`annotation[text:0.48]` 与 `annotation[text:0.48]#2` 均存在——证明真实 kernel 的提取、`decodeScienceChartState`,以及整条 `extractChartsAfterFinish` host 路径端到端都能接受它。`packages/science/science-session/tests/chart-codec.spec.ts` 里已有的 `'rejects duplicate element ids, unordered hit bounds, and hits on an unavailable map'` 测试已经锁定了 codec 本身对两个同 id 元素的拒绝行为,无需改动。
+
+## 相关决策
+
+相关 owner：[science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.zh.md); [science-reference-authorship-and-geometry](2026-08-31-science-reference-authorship-and-geometry.zh.md).

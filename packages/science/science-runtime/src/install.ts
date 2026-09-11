@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import type { ConfinedArgv, SandboxEnforcement, SandboxPolicy, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessOutputRead, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, confineRequiringEnforcement } from './execution.ts'
+import { DESCENDANT_GRACE_MS, interpreterPathEnv, localeEnvironment, windowsEnvironment, confineRequiringEnforcement } from './execution.ts'
 import type { OperationControl } from './lifecycle.ts'
 import { ScienceRuntimeError } from './types.ts'
 import type { InstallScienceEnvironmentPackagesStatus, ScienceRunOutput } from './types.ts'
@@ -169,7 +169,8 @@ export async function removeInstallScratch(scratch: InstallScratch): Promise<voi
  * Exact child environment for the installer: HOME/TMPDIR isolated to this
  * install's own scratch, `MAMBA_ROOT_PREFIX` pointed at the target prefix
  * itself so its package cache lands under the one writable root, and the
- * fixed locale allowlist every confined Runtime child uses.
+ * fixed locale and Windows system allowlists every confined Runtime child uses.
+ * Windows TEMP/TMP also point to this install's scratch temp directory.
  * @param canonicalPrefix - canonicalized target Conda prefix.
  * @param scratch - this install's own private scratch paths.
  * @returns the exact environment entries for the installer child.
@@ -181,6 +182,7 @@ export function installEnvironment(canonicalPrefix: string, scratch: InstallScra
     PATH: interpreterPathEnv(canonicalPrefix),
     MAMBA_ROOT_PREFIX: canonicalPrefix,
     ...localeEnvironment(),
+    ...windowsEnvironment(scratch.tmp),
   }
 }
 

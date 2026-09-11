@@ -1,22 +1,17 @@
 /**
  * Sandbox-consuming bash executor. It wraps the exact local bash argv through
  * `ctx.sandbox`, inherits local process mechanics, and reports the selected
- * mode, enforcement, and denial facts. Positive runner-launch evidence means
- * the command never ran: foreground calls throw `SANDBOX_UNAVAILABLE`, while
- * background processes carry `runnerFailed`; other spawn rejections retain
- * local-executor semantics. The tool owns approval and passes a complete per-call policy.
+ * mode, enforcement, and denial facts. Positive runner-executable evidence
+ * identifies a broken confinement runner: foreground calls throw
+ * `SANDBOX_UNAVAILABLE`, while background processes carry `runnerFailed`;
+ * other provider rejections retain stage-neutral local-executor semantics. The
+ * tool owns approval and passes a complete per-call policy.
  * @module @deepseek-ai/dsh-bash-sandbox
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import {
-  SandboxUnavailableError,
-  classifyDenial,
-  classifyRunnerFailure,
-  isRunnerSpawnFailure,
-  matchesSignature,
-} from '@deepseek-ai/dsh-sandbox'
+import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type {
   ConfinedArgv,
   ConfinedSandboxMode,
@@ -29,6 +24,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-bash-local'
+import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from '@deepseek-ai/dsh-sandbox'
 
 /**
  * Plugin config: the local executor's knobs, verbatim. The sandbox policy —
@@ -98,13 +94,9 @@ export class SandboxBashExecutor extends LocalBashExecutor {
       return { ...result, sandbox: { mode, denied: false } }
     }
     const confined = this.confine(spec.command, { ...policy, mode })
-    // confined.env carries entries the selected sandbox backend's runner
-    // invocation itself requires (e.g. the win32 ACL rung's
-    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
-    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let result: ShellRunResult
     try {
-      result = await this.runArgv(confinedSpec, confined.argv)
+      result = await this.runArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
@@ -119,14 +111,8 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     if (runnerFailure !== undefined) {
       throw new SandboxUnavailableError(mode, runnerFailure.detail)
     }
-    return {
-      ...result,
-      sandbox: {
-        mode,
-        denied: classifyDenial(result.exitCode, result.stderr.text, confined.denialSignatures),
-        enforcement: confined.enforcement,
-      },
-    }
+    const denied = classifyDenial(result.exitCode, result.stderr.text, confined.denialSignatures)
+    return { ...result, sandbox: { mode, denied, enforcement: confined.enforcement } }
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
@@ -136,13 +122,9 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     // Once startArgv returns, install facts synchronously; promise settlement
     // cannot run before start() returns.
     const confined = this.confine(spec.command, { ...policy, mode })
-    // confined.env carries entries the selected sandbox backend's runner
-    // invocation itself requires (e.g. the win32 ACL rung's
-    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
-    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let proc: ShellProcess
     try {
-      proc = this.startArgv(confinedSpec, confined.argv)
+      proc = this.startArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
       // `done` rejection; this covers alternatives that throw the same error synchronously.
@@ -167,14 +149,15 @@ export class SandboxBashExecutor extends LocalBashExecutor {
    * Stamp per-process sandbox facts before `done` settles. Full-access processes
    * have no facts; signal deaths are not denials.
    */
-  protected override onProcessDone(proc: ShellProcess, stderr: string, spawnFailed: boolean, spawnError?: unknown): void {
+  protected override onProcessDone(proc: ShellProcess, stderr: string, providerRejected: boolean, providerError?: unknown): void {
     const facts = this.processFacts.get(proc)
     if (facts !== undefined) {
       this.processFacts.delete(proc)
-      // A rejected spawn never started the confined launch. Otherwise runner
-      // failure outranks denial because its diagnostics may contain denial terms.
-      const runnerFailed = spawnFailed
-        ? isRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
+      // A provider rejection exposes no public failure stage. Attribute it to
+      // the confinement runner only when the error independently names argv[0].
+      // Otherwise settled runner failure outranks denial-like diagnostics.
+      const runnerFailed = providerRejected
+        ? isRunnerSpawnFailure(providerError, facts.runnerProgram, facts.workdir)
         : classifyRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
       proc.sandbox = {
         mode: facts.mode,
@@ -183,7 +166,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
         ...(runnerFailed ? { runnerFailed } : {}),
       }
     }
-    super.onProcessDone(proc, stderr, spawnFailed, spawnError)
+    super.onProcessDone(proc, stderr, providerRejected, providerError)
   }
 
   /**

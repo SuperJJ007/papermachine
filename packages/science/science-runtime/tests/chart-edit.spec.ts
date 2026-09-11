@@ -92,7 +92,7 @@ async function harness(id: string, action: Record<string, unknown> = {}, timeout
 }
 
 function chart(session: Session): ScienceArtifactVersion {
-  const artifact = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'plot.png')
+  const artifact = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'plot.png')
   if (artifact === undefined) throw new Error('chart fixture was not captured')
   return artifact
 }
@@ -207,7 +207,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
     await expect(runtime.applyChartEdit({
       session, artifactId: parent.artifactId, version: 2, ops: [titleOp], signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CHART_NOT_ADDRESSABLE' })
-    expect(replayScience(session.events)?.artifacts).toHaveLength(2)
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(2)
   })
 
   it('commits one warm human-edit version with cumulative successful operations', async () => {
@@ -222,7 +222,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
       .resolves.toMatchObject({ contentOrigin: 'human-edit', baseVersionId: parent.versionId, baseExplicit: true })
     const resultChart = await figureStateOf(ctx, result.artifact)
     expect(resultChart.ops).toEqual(ops)
-    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-started')).toHaveLength(1)
   })
 
   it('records the session\'s last started turn as producerTurn, unaffected by a turn that starts afterward', async () => {
@@ -286,7 +286,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
     expect(result.artifact).toMatchObject({ version: 2 })
     await expect(ctx.scienceArtifactStore.getVersion(result.artifact.projectId, result.artifact.versionId))
       .resolves.toMatchObject({ contentOrigin: 'human-edit' })
-    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-started')).toHaveLength(1)
     const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
     expect(readdirSync(sessionScratch.runs).filter(name => name.startsWith('replay-'))).toEqual([])
   })
@@ -309,13 +309,13 @@ describe('ScienceRuntime.applyChartEdit', () => {
         if (cause === 'cancel' && request.sourcePath.includes('replay-')) setTimeout(() => { controller.abort() }, 50)
         return result
       })
-      const events = session.events.length
+      const events = session.snapshotEvents().length
       await expect(runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
         ops: [titleOp], signal: controller.signal })).rejects.toMatchObject({
         code: cause === 'cancel' ? 'OPERATION_CANCELLED' : 'OPERATION_TIMED_OUT',
       })
       spy.mockRestore()
-      expect(session.events).toHaveLength(events)
+      expect(session.snapshotEvents()).toHaveLength(events)
       expect(readdirSync((await planSessionScratch(join(root, 'dsh-home'), session)).runs).some(name => name.startsWith('replay-'))).toBe(false)
       const next = await runtime.startRun({ session, language: 'python', code: kernelAction({ stdout: 'available' }),
         ...authorizePythonRun(session, `after-${cause}`), signal: new AbortController().signal })
@@ -338,7 +338,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
     })
     await expect(runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
       ops: [titleOp], signal: controller.signal })).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
-    expect(replayScience(session.events)?.artifacts).toHaveLength(1)
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(1)
   })
 
   it('rejects stale, unaddressable, empty, and wholly unresolved edits', async () => {
@@ -432,7 +432,7 @@ describe('ScienceRuntime.applyChartEdit', () => {
   it('rejects failed and still-unregistered source replay', async () => {
     const failedReplay = await harness('chart-edit-failed-replay', { evictCharts: true })
     const failedReplayParent = chart(failedReplay.session)
-    const failedRun = replayScience(failedReplay.session.events)?.runs[0]
+    const failedRun = replayScience(failedReplay.session.snapshotEvents())?.runs[0]
     if (failedRun === undefined) throw new Error('source run was not recorded')
     const failedScratch = await planSessionScratch(join(failedReplay.root, 'dsh-home'), failedReplay.session)
     writeFileSync(planRunScratch(failedScratch, failedRun.runId, failedRun.language).source, kernelAction({ status: 'error' }))
@@ -508,11 +508,11 @@ describe('ScienceRuntime.applyChartEdit', () => {
       session: timed.session, artifactId: timedParent.artifactId, version: timedParent.version,
       ops: [titleOp], signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'INFRASTRUCTURE_FAILURE' })
-    expect(replayScience(timed.session.events)?.kernels.some(kernel => kernel.state === 'exited')).toBe(true)
+    expect(replayScience(timed.session.snapshotEvents())?.kernels.some(kernel => kernel.state === 'exited')).toBe(true)
 
     const missing = await harness('chart-edit-missing-source', { evictCharts: true })
     const missingParent = chart(missing.session)
-    const run = replayScience(missing.session.events)?.runs[0]
+    const run = replayScience(missing.session.snapshotEvents())?.runs[0]
     if (run === undefined) throw new Error('source run was not recorded')
     const scratch = await planSessionScratch(join(missing.root, 'dsh-home'), missing.session)
     unlinkSync(planRunScratch(scratch, run.runId, run.language).source)
@@ -541,7 +541,7 @@ describe('ScienceRuntime.previewChartEdit', () => {
     const annotation = { session, logicalName: parent.logicalName, title: parent.title,
       ...authorizeAnnotateArtifact(session), signal: new AbortController().signal }
     const authorization = authorizePythonRun(session, 'after-preview-cleanup')
-    const events = session.events.length
+    const events = session.snapshotEvents().length
     const preview = runtime.previewChartEdit({ session, artifactId: parent.artifactId, version: parent.version,
       ops: [titleOp], signal: controller.signal })
     const rejection = expect(preview).rejects.toMatchObject({ code: 'OPERATION_CANCELLED' })
@@ -553,7 +553,7 @@ describe('ScienceRuntime.previewChartEdit', () => {
       controller.abort()
       await expect(runtime.annotateArtifact(annotation)).rejects.toMatchObject({ code: 'RUNTIME_BUSY' })
       expect(readdirSync(scratch.runs).some(name => name.startsWith('replay-'))).toBe(true)
-      expect(session.events).toHaveLength(events)
+      expect(session.snapshotEvents()).toHaveLength(events)
     } finally {
       quiescent.resolve(true)
       await rejection
@@ -565,15 +565,18 @@ describe('ScienceRuntime.previewChartEdit', () => {
   it('renders through a warm kernel without publishing a version or artifact event', async () => {
     const { runtime, session } = await harness('chart-preview-warm')
     const parent = chart(session)
-    const beforeEvents = session.events.length
+    const beforeEvents = session.snapshotEvents().length
     const result = await runtime.previewChartEdit({
       session, artifactId: parent.artifactId, version: parent.version,
       ops: [titleOp], signal: new AbortController().signal,
     })
     expect([...result.png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
     expect(result.chart.ops).toEqual([titleOp])
-    expect(session.events).toHaveLength(beforeEvents)
-    expect(replayScience(session.events)?.artifacts).toHaveLength(1)
+    await expect(JSON.stringify({ pngBase64: Buffer.from(result.png).toString('base64'),
+      chart: result.chart, failedOps: result.failedOps }, null, 2) + '\n')
+      .toMatchFileSnapshot('./expected/chart-preview.expected.json')
+    expect(session.snapshotEvents()).toHaveLength(beforeEvents)
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(1)
   })
 
   it('replays an unregistered source and removes its private scratch without publishing a run', async () => {
@@ -584,7 +587,7 @@ describe('ScienceRuntime.previewChartEdit', () => {
       ops: [titleOp], signal: new AbortController().signal,
     })
     expect(result.chart.elements).toEqual(editExtraction.elements)
-    expect(session.events.filter(event => event.type === 'science/run-started')).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-started')).toHaveLength(1)
     const sessionScratch = await planSessionScratch(join(root, 'dsh-home'), session)
     expect(readdirSync(sessionScratch.runs).filter(name => name.startsWith('replay-'))).toEqual([])
   })

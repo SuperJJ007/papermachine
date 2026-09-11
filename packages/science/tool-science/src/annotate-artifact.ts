@@ -150,7 +150,7 @@ export function applyAnnotateArtifactTool(ctx: Context, directEditLimit: number)
         signal: exec.signal,
       })
       const store = await resolveArtifactStoreFacts(ctx, directEditLimit, artifact)
-      const projection = replayScience(session.events)
+      const projection = replayScience(session.snapshotEvents())
       /* v8 ignore next -- annotateArtifact just appended into an already-bound Science session. */
       if (projection === null) throw new Error('tool-science: Science mode became unbound during artifact annotation')
       return artifactReceiptFromArtifact(artifact, store, artifactProducerLanguage(store, projection))

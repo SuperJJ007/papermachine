@@ -7,8 +7,8 @@
  * @module @deepseek-ai/dsh-science-session/types
  */
 
-import type { CallId } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from '@deepseek-ai/dsh-session/types'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   ScienceArtifactId,
   ScienceEnvironmentProfileId,
@@ -174,7 +174,7 @@ export interface ScienceRunIdentity {
   /** Language selected for this run. */
   readonly language: ScienceLanguage
   /** Model-issued call that authorized this run. */
-  readonly toolCallId: CallId
+  readonly toolCallId: ToolCallId
   /** Prior `request/header` event carrying the model and prompt facts. */
   readonly requestHeaderSeq: number
   /** Applied environment revision used by this run. */
@@ -503,7 +503,7 @@ export interface ScienceOutcomePublication {
   /** Epoch milliseconds when this revision was published. */
   readonly publishedAt: number
   /** Model-issued call that authorized publishing this revision. */
-  readonly toolCallId: CallId
+  readonly toolCallId: ToolCallId
   /** Prior `request/header` carrying the publishing request facts. */
   readonly requestHeaderSeq: number
   /**
@@ -579,7 +579,7 @@ export interface ScienceClientEnvironmentBinding {
 /**
  * Browser-safe fields shared by every Science run state. `toolCallId` and
  * `requestHeaderSeq` are session-log identities the browser already holds
- * (transcript tool nodes are keyed by the same `CallId`, and
+ * (transcript tool nodes are keyed by the same `ToolCallId`, and
  * `requestHeaderSeq` addresses a `request/header` event the client already
  * receives); they let a run join its authorizing transcript call.
  * `codeSha256` is a digest over source text the same transcript call already
@@ -590,7 +590,7 @@ export interface ScienceClientEnvironmentBinding {
 export interface ScienceClientRunIdentity {
   readonly runId: ScienceRunId
   readonly language: ScienceLanguage
-  readonly toolCallId: CallId
+  readonly toolCallId: ToolCallId
   /** Authoritative turn of the authorizing call when projected from the strict Session fold. */
   readonly turn?: number
   /** Authoritative step of the authorizing call; present exactly when {@link turn} is present. */
@@ -699,7 +699,7 @@ export interface ScienceClientArtifactVersion {
 export interface ScienceClientTraceCall {
   readonly seq: number
   readonly time: number
-  readonly callId: CallId
+  readonly callId: ToolCallId
   readonly turn: number
   readonly step: number
   readonly name: string

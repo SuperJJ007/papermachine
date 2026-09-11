@@ -563,7 +563,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @returns one greater than the highest `kernelEpoch` the Session's log has ever admitted, or 1 before any kernel.
    */
   private nextKernelEpoch(session: Session): number {
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     return (projection?.kernels.at(-1)?.kernelEpoch ?? 0) + 1
   }
 
@@ -882,7 +882,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       // than one), and only a 'failed' outcome tries the next URL — a
       // 'cancelled'/'timed-out' outcome shares this call's OperationControl
       // across every attempt, so retrying would immediately observe the same
-      // abort. See the [package-install Agent Note](../../../../.agents/notes/implemented/feature/2026-09-01-science-package-install.md).
+      // abort. See the [package-install operations](../README.md#operations).
       let outcome: InstallOutcome | undefined
       for (const [index, channelUrl] of installer.channels.entries()) {
         const argv = installArgv(executable, binding.canonicalPrefix, request.packages, channelUrl)
@@ -1862,7 +1862,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     return profile
   }
 
-  /** Refuse all Host-scratch work outside the local subprocess execution world. */
+  /** Reject remote execution before observing or creating private Host scratch. */
   private assertHostLocal(): void {
     if (this.ctx.subprocess.executionWorld !== 'host-local') {
       throw new ScienceRuntimeError('CONFINEMENT_UNAVAILABLE', 'Science private Host scratch requires a host-local subprocess provider')
@@ -1875,7 +1875,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     if (this.ctx.sessions.get(session.id) !== session) {
       throw new ScienceRuntimeError('SESSION_NOT_LIVE', 'Science Runtime requires the exact live Session object')
     }
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     if (projection === null) {
       throw new ScienceRuntimeError('ENVIRONMENT_NOT_READY', 'Science mode must be bound before Runtime operations')
     }
@@ -2064,7 +2064,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
           preparedArtifacts.rasterArtifacts,
           extracted.charts,
         )
-        return { terminal, stdout, stderr, ...capture === undefined ? {} : { capture } }
+        return { terminal, stdout, stderr, ...capture }
       } finally {
         // Retire-vs-rearm derives from the settled run and chart protocol
         // outcomes, so it must run on every exit from this block — including a
@@ -2190,7 +2190,7 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
    * @param editBaselines - Validated exact parents keyed by capture-relative path.
    * @param rasterArtifacts - Validated capture-relative `.png` paths this run declared for capture.
    * @param charts - Validated chart state keyed by capture-relative PNG path.
-   * @returns capture accounting, or `undefined` when the Session detached or capture itself failed.
+   * @returns Capture accounting and a safe failure classification independent of interpreter status.
    */
   private async captureAfterFinish(
     session: StartScienceRunRequest['session'],
@@ -2200,13 +2200,13 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
     editBaselines: PreparedRunArtifacts['editBaselines'],
     rasterArtifacts: PreparedRunArtifacts['rasterArtifacts'],
     charts: ReadonlyMap<string, ScienceChartState>,
-  ): Promise<CaptureRunArtifactsResult | undefined> {
+  ): Promise<Pick<ScienceRunResult, 'capture' | 'captureFailure'>> {
     // The caller already re-verified liveness immediately before the
     // run-finished append this method follows; only a detach racing that
     // exact synchronous continuation reaches this, not deterministically
     // reproducible in a test.
     /* v8 ignore next */
-    if (this.ctx.sessions.get(session.id) !== session) return undefined
+    if (this.ctx.sessions.get(session.id) !== session) return { captureFailure: 'session-detached' }
     let result: CaptureRunArtifactsResult
     try {
       result = await captureRunArtifacts({
@@ -2227,12 +2227,14 @@ export class ScienceRuntime extends Service implements ScienceRuntimeService {
       const message = `science-runtime: auto-capture failed for session "${session.id}" run "${terminal.runId}": ${String(error)}`
       if (isCaptureFilesystemFailure(error)) this.ctx.logger.warn(message)
       else this.ctx.logger.error(message)
-      return undefined
+      return { captureFailure: error instanceof ProjectArtifactStoreError && error.code === 'LOGICAL_NAME_INVALID'
+        ? 'invalid-logical-name'
+        : isCaptureFilesystemFailure(error) ? 'filesystem' : 'capture-failed' }
     }
     if (result.appendFailed) {
       this.ctx.logger.warn(`science-runtime: auto-capture stopped early for session "${session.id}" run "${terminal.runId}": a session.append rejection interrupted the walk`)
     }
-    return result
+    return { capture: result, ...result.appendFailed ? { captureFailure: 'event-append-failed' as const } : {} }
   }
 }
 

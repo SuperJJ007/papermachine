@@ -330,12 +330,12 @@ describe('Science kernel-state replay equivalence', () => {
     live.append('science/environment-bound', { version: 1, environment: environment() })
     live.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
     live.append('science/kernel-state', { version: 1, kernel: kernelExited() })
-    const liveState = foldScience(live.events)
+    const liveState = foldScience(live.snapshotEvents())
 
-    const seed = JSON.parse(JSON.stringify(live.events)) as SessionEvent[]
+    const seed = JSON.parse(JSON.stringify(live.snapshotEvents())) as SessionEvent[]
     const coldCtx = await harness()
     const cold = coldCtx.sessions.create(SessionId('science-kernel-cold'), { seed, meta: { agentPreset: 'science' } })
-    const coldState = foldScience(cold.events)
+    const coldState = foldScience(cold.snapshotEvents())
 
     expect(coldState.kernels).toEqual(liveState.kernels)
     expect(coldState.kernelEpochWatermark).toBe(liveState.kernelEpochWatermark)
@@ -349,15 +349,15 @@ describe('Science kernel-state replay equivalence', () => {
     source.append('science/mode-bound', { version: 1, mode: mode() })
     source.append('science/environment-bound', { version: 1, environment: environment() })
     source.append('science/kernel-state', { version: 1, kernel: kernelStarted() })
-    expect(foldScience(source.events).kernels).toEqual([kernelStarted()])
+    expect(foldScience(source.snapshotEvents()).kernels).toEqual([kernelStarted()])
 
-    const seed = JSON.parse(JSON.stringify(source.events)) as SessionEvent[]
+    const seed = JSON.parse(JSON.stringify(source.snapshotEvents())) as SessionEvent[]
     const resumedCtx = await harness()
     const resumed = resumedCtx.sessions.create(SessionId('science-kernel-open-resumed'), {
       seed,
       meta: { agentPreset: 'science' },
     })
-    const kernel = foldScience(resumed.events).kernels[0]
+    const kernel = foldScience(resumed.snapshotEvents()).kernels[0]
     expect(kernel).toMatchObject({ state: 'interrupted', kernelEpoch: 1, interruptedAtSeq: seed.length })
   })
 })
@@ -456,7 +456,7 @@ describe('Science kernel-state projection persistence', () => {
     }])
     expect(liveValue?.metrics.kernelCount).toBe(1)
 
-    const seed = JSON.parse(JSON.stringify(live.events)) as SessionEvent[]
+    const seed = JSON.parse(JSON.stringify(live.snapshotEvents())) as SessionEvent[]
     const coldCtx = await registryHarness()
     const cold = coldCtx.sessions.create(SessionId('science-kernel-projection-cold'), {
       seed,

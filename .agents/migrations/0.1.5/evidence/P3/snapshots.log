@@ -1,0 +1,160 @@
+$ vitest run --config vitest.snapshot.config.ts
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.8 /Users/superjj/ccproj/pm-replant
+
+ ❯ snapshots/session/headless.snapshot.ts (93 tests | 2 failed | 2 skipped) 86134ms
+     × replays compaction-recovery through dsh --profile headless 7302ms
+     × replays cordis-inspect-jsdoc through dsh --profile headless 6811ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  snapshots/session/headless.snapshot.ts > headless recorded-session snapshots > replays compaction-recovery through dsh --profile headless
+AssertionError: compaction-recovery: session 0: expected [ { type: 'session', …(5) }, …(28) ] to deeply equal [ { type: 'session', …(5) }, …(27) ]
+
+- Expected
++ Received
+
+@@ -428,10 +428,43 @@
+      },
+      "type": "compaction/end",
+    },
+    {
+      "data": {
++       "content": [
++         {
++           "text": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.
++
++ Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.
++
++ Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).",
++           "type": "text",
++         },
++       ],
++       "id": "{{message:7}}",
++       "role": "user",
++       "source": {
++         "form": "snapshot",
++         "kind": "plugin",
++         "plugin": "@deepseek-ai/dsh-system-prompt",
++         "sections": [
++           {
++             "name": "sandbox:policy",
++             "text": "Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.",
++           },
++           {
++             "name": "approval:policy",
++             "text": "Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).",
++           },
++         ],
++       },
++     },
++     "surfaceOp": "append",
++     "type": "user/message",
++   },
++   {
++     "data": {
+        "header": {
+          "config": {
+            "model": "deepseek-v4-flash",
+            "provider": "deepseek-official",
+          },
+@@ -448,11 +481,11 @@
+            {
+              "text": "COMPACTION RECOVERED",
+              "type": "text",
+            },
+          ],
+-         "id": "{{message:7}}",
++         "id": "{{message:8}}",
+          "role": "assistant",
+          "source": {
+            "kind": "model",
+            "model": "deepseek-v4-flash",
+            "provider": "deepseek-official",
+
+ ❯ snapshots/session/headless.snapshot.ts:980:71
+    978|       const expectedSnapshots = normalizeSessionSnapshots(expected, co…
+    979|       for (const [index, actual] of actualSnapshots.entries()) {
+    980|         expect(records(actual), `${scenario.name}: session ${index}`).…
+       |                                                                       ^
+    981|       }
+    982|       await verifyHeaders(scenario, actualLogs, actualContext)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  snapshots/session/headless.snapshot.ts > headless recorded-session snapshots > replays cordis-inspect-jsdoc through dsh --profile headless
+AssertionError: cordis-inspect-jsdoc: session 0: expected [ { type: 'session', …(5) }, …(26) ] to deeply equal [ { type: 'session', …(5) }, …(26) ]
+
+- Expected
++ Received
+
+@@ -786,10 +786,15 @@
+            \"expression\": \"ctx.subprocess\"
+          }
+        },
+        \"methods\": [
+          {
++           \"signature\": \"abstract readonly executionWorld: 'host-local' | 'remote'\",
++           \"description\": \"Execution world for executable and working-directory paths. Host-path consumers require host-local before creating files or events.\",
++           \"parameters\": []
++         },
++         {
+            \"signature\": \"abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>\",
+            \"description\": \"Resolve one configured executable in this provider's execution world. Absolute paths are verified; bare names use the provider's scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.\",
+            \"parameters\": [
+              {
+                \"name\": \"command\",
+@@ -842,11 +847,11 @@
+          \"name\": \"SubprocessCollectedOutputs\",
+          \"declaration\": \"export interface SubprocessCollectedOutputs {\\n    readonly stdout?: SubprocessOutputReader;\\n    readonly stderr?: SubprocessOutputReader;\\n}\"
+        },
+        {
+          \"name\": \"SubprocessHandle\",
+-         \"declaration\": \"export interface SubprocessHandle {\\n    readonly stdin: Writable | undefined;\\n    readonly stdout: Readable | undefined;\\n    readonly stderr: Readable | undefined;\\n    readonly collected: SubprocessCollectedOutputs;\\n    readonly done: Promise<SubprocessOutcome>;\\n    terminate(): void;\\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\\n}\"
++         \"declaration\": \"export interface SubprocessHandle {\\n    readonly stdin: Writable | undefined;\\n    readonly stdout: Readable | undefined;\\n    readonly stderr: Readable | undefined;\\n    readonly collected: SubprocessCollectedOutputs;\\n    readonly done: Promise<SubprocessOutcome>;\\n    terminate(): void;\\n    interrupt(): void;\\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\\n}\"
+        },
+        {
+          \"name\": \"SubprocessOutcome\",
+          \"declaration\": \"export interface SubprocessOutcome {\\n    exitCode: number | null;\\n    signal: NodeJS.Signals | null;\\n}\"
+        },
+@@ -854,19 +859,19 @@
+          \"name\": \"SubprocessOutputMode\",
+          \"declaration\": \"export type SubprocessOutputMode = 'pipe' | 'inherit' | SubprocessCollect;\"
+        },
+        {
+          \"name\": \"SubprocessOutputRead\",
+-         \"declaration\": \"export interface SubprocessOutputRead {\\n    text: string;\\n    nextOffset: number;\\n    lossy: boolean;\\n    spillPath?: string;\\n}\"
++         \"declaration\": \"export interface SubprocessOutputRead {\\n    text: string;\\n    nextOffset: number;\\n    lossy: boolean;\\n    utf8Validity: 'valid' | 'invalid' | 'unknown';\\n    spillPath?: string;\\n}\"
+        },
+        {
+          \"name\": \"SubprocessOutputReader\",
+          \"declaration\": \"export interface SubprocessOutputReader {\\n    readFrom(fromByte: number): SubprocessOutputRead;\\n}\"
+        },
+        {
+          \"name\": \"SubprocessSpawnSpec\",
+-         \"declaration\": \"export interface SubprocessSpawnSpec {\\n    argv: readonly string[];\\n    cwd: string;\\n    stdio: SubprocessStdio;\\n    graceMs: number;\\n    signal?: AbortSignal | undefined;\\n    env?: NodeJS.ProcessEnv | undefined;\\n}\"
++         \"declaration\": \"export interface SubprocessSpawnSpec {\\n    argv: readonly string[];\\n    cwd: string;\\n    stdio: SubprocessStdio;\\n    graceMs: number;\\n    signal?: AbortSignal | undefined;\\n    environmentBase: 'scrubbed-parent' | 'empty';\\n    env?: NodeJS.ProcessEnv | undefined;\\n}\"
+        },
+        {
+          \"name\": \"SubprocessStdinMode\",
+          \"declaration\": \"export type SubprocessStdinMode = 'ignore' | 'pipe' | {\\n    readonly data: string;\\n};\"
+        },
+
+ ❯ snapshots/session/headless.snapshot.ts:980:71
+    978|       const expectedSnapshots = normalizeSessionSnapshots(expected, co…
+    979|       for (const [index, actual] of actualSnapshots.entries()) {
+    980|         expect(records(actual), `${scenario.name}: session ${index}`).…
+       |                                                                       ^
+    981|       }
+    982|       await verifyHeaders(scenario, actualLogs, actualContext)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  2 failed | 125 passed | 2 skipped (129)
+   Start at  01:23:42
+   Duration  87.44s (transform 2.06s, setup 598ms, import 3.26s, tests 171.53s, environment 0ms)
+
+[ELIFECYCLE] Command failed with exit code 1.

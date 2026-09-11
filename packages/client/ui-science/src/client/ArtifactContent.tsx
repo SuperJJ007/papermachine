@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/src/MessageImage.tsx'
 import { JsonTree, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScienceArtifactMediaType, ScienceChartOp, ScienceChartState } from '@deepseek-ai/dsh-science-session/types'
@@ -202,10 +202,10 @@ function TextArtifactBody({
       const parsed = parseJsonForTree(capped.value)
       return parsed === undefined
         ? <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />
-        : <JsonTree data={parsed} label={logicalName} />
+        : <JsonTree data={parsed} label={logicalName} labels={{ copyValue: t('json.copyValue'), copyJson: t('json.copyJson'), copyPath: t('json.copyPath'), copyPrettyJson: t('json.copyPrettyJson'), copyCompactJson: t('json.copyCompactJson'), copied: t('copied'), copyFailed: t('copyFailed'), collapseNode: t('json.collapseNode'), expandNode: t('json.expandNode'), copyButtonTitle: action => t('json.copyButtonTitle', { action }) }} />
     }
     case 'text/markdown':
-      return <MarkdownText text={state.text} />
+      return <MarkdownText text={state.text} labels={{ code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') }} />
     case 'text/plain': {
       const capped = capTextForDisplay(state.text, MAX_ARTIFACT_TEXT_CHARACTERS)
       return <BoundedPreText text={capped.value} truncated={capped.truncated} total={capped.total} t={t} />

@@ -1,7 +1,7 @@
 /**
  * Image and text artifact loaders for Science project-store content.
  *
- * Both loaders call `ISession.readScienceArtifact`, whose Host endpoint folds
+ * Both loaders call `remote.science.scienceArtifact`, whose Host endpoint folds
  * the named session before reading the project store. `loadImage` returns a
  * fresh `data:` URI and `loadText` decodes the same authenticated bytes as
  * UTF-8. Each loader memoizes by `versionId` (`memoizedByVersionId`): a
@@ -11,7 +11,9 @@
  * never needs to revoke one.
  */
 
-import type { ISession, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { VersionId } from '@deepseek-ai/dsh-science-artifact-store/ids'
 import type { ScienceArtifactMediaType } from '@deepseek-ai/dsh-science-session/types'
 
@@ -62,48 +64,36 @@ function memoizedByVersionId<T>(
   }
 }
 
-/** Base64-encode bytes in fixed-size chunks (call-stack-safe for large PNGs). */
-function bytesToBase64(data: Uint8Array): string {
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < data.length; offset += chunkSize) {
-    binary += String.fromCharCode(...data.subarray(offset, offset + chunkSize))
-  }
-  return btoa(binary)
-}
-
-/** Read authenticated bytes once the addressed session has a live binding. */
-async function readArtifact(sessions: ISessions, sessionId: SessionId, content: ScienceArtifactContentRef) {
-  const session: ISession | undefined = sessions.binding(sessionId)?.session
-  if (session === undefined) throw new Error(`ui-science: session "${sessionId}" resolved no binding`)
-  const result = await session.readScienceArtifact(content.versionId as VersionId)
+/** Read project-authorized bytes through the generated Science Remote. */
+async function readArtifact(remote: Context['remote'], sessionId: SessionId, content: ScienceArtifactContentRef) {
+  const result = await remote.science.scienceArtifact(sessionId, content.versionId as VersionId)
   if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
   return result.value
 }
 
 /**
  * Build the Details entry's `loadImage` for one session mount.
- * @param sessions - the injected runtime sessions service.
+ * @param remote - the generated Science Remote client.
  * @param sessionId - the Details entry's own session mount (bound per registration inject call).
  * @returns a loader resolving one durable image reference to a displayable `data:` URI.
  */
-export function createScienceImageLoader(sessions: ISessions, sessionId: SessionId): ScienceImageLoader {
+export function createScienceImageLoader(remote: Context['remote'], sessionId: SessionId): ScienceImageLoader {
   return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
-    const value = await readArtifact(sessions, sessionId, content)
-    return `data:${value.mediaType};base64,${bytesToBase64(value.data)}`
+    const value = await readArtifact(remote, sessionId, content)
+    return `data:${value.mediaType};base64,${value.data}`
   })
 }
 
 /**
  * Build the Details entry's `loadText` for one session mount — the CSV/
  * JSON/Markdown content dispatch's byte source.
- * @param sessions - the injected runtime sessions service.
+ * @param remote - the generated Science Remote client.
  * @param sessionId - the Details entry's own session mount (bound per registration inject call).
  * @returns a loader resolving one durable text reference to its decoded content.
  */
-export function createScienceTextLoader(sessions: ISessions, sessionId: SessionId): TextLoader {
+export function createScienceTextLoader(remote: Context['remote'], sessionId: SessionId): TextLoader {
   return memoizedByVersionId(async (content: ScienceArtifactContentRef): Promise<string> => {
-    const value = await readArtifact(sessions, sessionId, content)
-    return new TextDecoder('utf-8', { fatal: true }).decode(value.data)
+    const value = await readArtifact(remote, sessionId, content)
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(value.data), char => char.charCodeAt(0)))
   })
 }

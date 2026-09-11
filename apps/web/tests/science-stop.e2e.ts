@@ -15,13 +15,12 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ReplayEntry } from '@deepseek-ai/dsh-llm-replay'
 import { type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { replayScience } from '@deepseek-ai/dsh-science-session'
 import ScienceRuntime from '@deepseek-ai/dsh-science-runtime'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { launchWebScaffold, webSnapshotMode, type WebScaffold } from './scaffold.ts'
+import { launchWebScaffold, webSnapshotMode, type WebScaffold } from './science-scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 import { createFakePythonPrefix, DirectSandbox, installTestKernelSet } from './science-persistent-kernel-test-helpers.ts'
 
@@ -32,7 +31,7 @@ const PROMPT = 'Run the prepared Science kernel action now.'
 
 /** One model response that dispatches a fake kernel run which waits for SIGINT. */
 function sleepingRunEntry(): ReplayEntry {
-  const callId = CallId('science-stop-run-python')
+  const callId = ToolCallId('science-stop-run-python')
   const argumentsJson = JSON.stringify({
     code: JSON.stringify({ action: 'sleep', sleepMs: 60_000, trapSigint: true }),
   })
@@ -50,7 +49,7 @@ function sleepingRunEntry(): ReplayEntry {
 
 /** One model response that dispatches a fake kernel run settling per `action` (the shared kernel_python.py fixture's action DSL). */
 function runEntry(action: Record<string, unknown>): ReplayEntry {
-  const callId = CallId(`science-run-${Math.random().toString(36).slice(2)}`)
+  const callId = ToolCallId(`science-run-${Math.random().toString(36).slice(2)}`)
   const argumentsJson = JSON.stringify({ code: JSON.stringify(action) })
   return {
     kind: 'chunks',
@@ -66,8 +65,8 @@ function runEntry(action: Record<string, unknown>): ReplayEntry {
 
 /** One model response dispatching two adjacent fake kernel runs in the same step (P3d Tool grouping). */
 function pairedRunEntry(action: Record<string, unknown>): ReplayEntry {
-  const firstId = CallId(`science-run-a-${Math.random().toString(36).slice(2)}`)
-  const secondId = CallId(`science-run-b-${Math.random().toString(36).slice(2)}`)
+  const firstId = ToolCallId(`science-run-a-${Math.random().toString(36).slice(2)}`)
+  const secondId = ToolCallId(`science-run-b-${Math.random().toString(36).slice(2)}`)
   const argumentsJson = JSON.stringify({ code: JSON.stringify(action) })
   return {
     kind: 'chunks',
@@ -91,8 +90,8 @@ function pairedRunEntry(action: Record<string, unknown>): ReplayEntry {
  * its own independent row).
  */
 function reasoningThenPairedRunEntry(action: Record<string, unknown>, reasoningText: string): ReplayEntry {
-  const firstId = CallId(`science-run-think-a-${Math.random().toString(36).slice(2)}`)
-  const secondId = CallId(`science-run-think-b-${Math.random().toString(36).slice(2)}`)
+  const firstId = ToolCallId(`science-run-think-a-${Math.random().toString(36).slice(2)}`)
+  const secondId = ToolCallId(`science-run-think-b-${Math.random().toString(36).slice(2)}`)
   const argumentsJson = JSON.stringify({ code: JSON.stringify(action) })
   return {
     kind: 'chunks',
@@ -138,9 +137,9 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
   beforeAll(async () => {
     scratch = await mkdtemp(join(REPO_ROOT, '.web-science-stop-scratch-'))
     replayRoot = await mkdtemp(join(tmpdir(), 'dsh-web-science-stop-'))
-    const replayFixture = join(replayRoot, 'session.jsonl')
+    const replayFixture = join(replayRoot, 'session.v3.jsonl')
     const replayOverride = join(replayRoot, 'replay.override.json')
-    await writeFile(replayFixture, '{"type":"session","version":0,"id":"science-stop","createdAt":0}\n')
+    await writeFile(replayFixture, '{"type":"session","version":3,"id":"science-stop","createdAt":0,"isSeeded":false,"delegationDepth":0}\n')
     await writeFile(replayOverride, JSON.stringify([
       // Consumed in order, one entry per model call, across every `it` below
       // (one shared session/page): the original Stop scenario's single call
@@ -164,12 +163,11 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
       replayFixture,
       replayOverride,
       agentPresets: {
-        roots: [{ path: join(REPO_ROOT, 'apps/cli/config/agent-presets'), trust: 'system' }],
+        roots: [{ path: join(REPO_ROOT, 'packages/bundle/science-app/presets'), trust: 'system' }],
         default: 'science',
       },
     })
-    const isolated = scaffold.ctx.isolate('subprocess').isolate('sandbox')
-    await isolated.plugin(LocalSubprocessRuntime)
+    const isolated = scaffold.ctx.isolate('sandbox')
     await isolated.plugin(DirectSandbox)
     await isolated.plugin(ScienceRuntime, {
       dshHome: join(scratch, 'dsh-home'),
@@ -183,7 +181,7 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
@@ -200,7 +198,7 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
   it('stops a dispatched run_python call through the browser and commits cancelled/CANCELLED', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-persistent-stop'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]')
     await input.waitFor({ timeout: 15_000 })
     const settled = scaffold.whenTurnSettled(90_000)
     await input.fill(PROMPT)
@@ -214,9 +212,9 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
     await settled
     const session = liveSession
     if (session === undefined) throw new Error('Science Stop session was not retained after its turn settled')
-    const run = replayScience(session.events)?.runs.at(-1)
+    const run = replayScience(session.snapshotEvents())?.runs.at(-1)
     expect(run).toMatchObject({ status: 'cancelled', failureCode: 'CANCELLED' })
-    expect(session.events.find(event => event.type === 'tool/result' && event.data.error?.code === 'ABORTED')).toBeDefined()
+    expect(session.snapshotEvents().find(event => event.type === 'tool/result' && event.data.error?.code === 'ABORTED')).toBeDefined()
 
     const stoppedRow = page.locator('[data-tool="science-run"][data-state="stopped"]')
     await stoppedRow.waitFor({ timeout: 15_000 })
@@ -225,12 +223,13 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
   it('keeps the kernel badge visible and reveals complete stdout when expanded', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-run-success'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]')
     const settled = scaffold.whenTurnSettled(60_000)
     await input.fill('Run the short successful action now.')
     await input.press('Enter')
     await settled
 
+    await page.locator('[data-turn-process][aria-expanded="false"]').last().click()
     const successRow = page.locator('[data-tool="science-run"][data-state="success"]').last()
     await successRow.waitFor({ timeout: 15_000 })
     await expect.poll(async () => successRow.locator('text=/Kernel #\\d+/').count()).toBe(1)
@@ -242,15 +241,15 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
   it('folds two adjacent run_python calls into one generated Tool group, both nested rows real and settled', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-tool-group'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]')
     const settled = scaffold.whenTurnSettled(60_000)
     await input.fill('Run the paired action twice now.')
     await input.press('Enter')
     await settled
 
-    const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u })
+    const groupHeader = page.getByRole('button', { name: '2 tool calls', exact: true })
     await groupHeader.waitFor({ timeout: 15_000 })
-    expect(await page.getByText('2 steps', { exact: true }).count()).toBeGreaterThanOrEqual(1)
+    expect(await groupHeader.getAttribute('aria-expanded')).toBe('false')
     // The group is collapsed by default; open it to reach the nested member rows.
     await groupHeader.click()
     expect(await page.locator('[data-tool="science-run"][data-state="success"]').count()).toBeGreaterThanOrEqual(2)
@@ -258,12 +257,13 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
   it('renders a mid-run kernel crash as the amber kernel-exited state, naming the exited and next epoch', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-kernel-died'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]')
     const settled = scaffold.whenTurnSettled(60_000)
     await input.fill('Run the crashing action now.')
     await input.press('Enter')
     await settled
 
+    await page.locator('[data-turn-process][aria-expanded="false"]').last().click()
     const diedRow = page.locator('[data-tool="science-run"][data-state="kernel-died"]')
     await diedRow.waitFor({ timeout: 15_000 })
     expect(await diedRow.getByText('Interrupted · kernel exited', { exact: true }).count()).toBe(1)
@@ -272,19 +272,19 @@ describe.skipIf(MODE === 'record')('web e2e: Science persistent-kernel Stop', ()
 
     const session = liveSession
     if (session === undefined) throw new Error('Kernel-died session was not retained after its turn settled')
-    const run = replayScience(session.events)?.runs.at(-1)
+    const run = replayScience(session.snapshotEvents())?.runs.at(-1)
     expect(run).toMatchObject({ status: 'failed', failureCode: 'KERNEL_DIED' })
   }, 90_000)
 
   it('folds a Think step ahead of two adjacent run_python calls onto the group, with no independent Think row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-science-think-attach'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]')
     const settled = scaffold.whenTurnSettled(60_000)
     await input.fill('Think it through, then run the paired action twice.')
     await input.press('Enter')
     await settled
 
-    const groupHeader = page.getByRole('button', { name: /Ran 2 code executions/u }).last()
+    const groupHeader = page.getByRole('button', { name: '2 tool calls', exact: true }).last()
     await groupHeader.waitFor({ timeout: 15_000 })
     // The group is collapsed by default; the attached Think fold is part of a
     // member row, so it is not mounted until the group opens.

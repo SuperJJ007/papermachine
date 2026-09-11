@@ -9,78 +9,56 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ISessions, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { ComposerAttachment } from './contract/slots.ts'
-import type { QueueAction, QueueItemId } from './contract/queue.ts'
-import type { ComposerBlocks } from './contract/input.ts'
-import type { SessionInputResolver } from './contract/input.ts'
-import type { DraftAttachmentId } from './contract/input.ts'
-import type { InputSubmitMode } from './contract/composer-submission.ts'
-
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
+import type {
+  ISessions, PendingSubmissionRetirement, SessionFace,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-file-upload/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {
+  ComposerAttachment, ComposerFileAttachment, ComposerImageAttachment, DraftFileUpload,
+} from './contract/slots.ts'
+import type { QueueAction, QueueItemId } from './contract/queue.ts'
+import type { ComposerBlocks } from './contract/composer-blocks.ts'
+import type {
+  DraftAttachmentId, DraftAttachmentSerializationResult, SessionInputResolver, SubmitAttachment, SubmitOutcome,
+} from './contract/input.ts'
+import type { InputSubmitMode } from './contract/composer-submission.ts'
 
-/** One composer submission before the default prompt transport claims it. */
+/** One ordinary composer submission offered to feature handlers before normal prompt admission. */
 export interface ComposerSubmission {
   readonly sessionId: SessionId
   readonly text: string
-  readonly imageIds: readonly DraftAttachmentId[]
+  readonly attachmentIds: readonly DraftAttachmentId[]
   readonly mode: InputSubmitMode
   readonly signal: AbortSignal | undefined
 }
-
-/** A domain handler claims a submission by returning its settlement promise. */
+/** Undefined declines; a returned promise owns the submission outcome. */
 export type ComposerSubmissionHandler = (submission: ComposerSubmission) => Promise<SubmitOutcome> | undefined
 
-/**
- * A main-view Session predicate with its own invalidation signal. `visible`
- * is read fresh on every `viewVisible` query (never cached), and `subscribe`
- * fires whenever a FUTURE `visible` call could answer differently for any
- * Session — the source's own state changed, not necessarily the addressed
- * one — so the tab strip re-lists rather than staying stuck on a stale
- * answer. A registrant whose predicate depends only on immutable Session
- * facts already fixed at registration time may return a no-op disposer.
- */
-export interface ViewVisibilitySource {
-  /** Whether the view is currently available to this Session. */
-  visible(sessionId: SessionId): boolean
-  /**
-   * Subscribe to a change in what `visible` might answer.
-   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
-   * @returns disposer removing this subscription.
-   */
-  subscribe(callback: () => void): () => void
-}
-
-/**
- * A transcript process-detail Session predicate with its own invalidation
- * signal, the same shape as {@link ViewVisibilitySource}. A registrant with
- * its own denser transcript presentation (e.g. Science's folded tool cells
- * and Turn-end artifact groups) reports `false` for a matching Session to
- * hide context-injection rows and turn-timing stats from the chat flow; that
- * detail remains reconstructable from the durable log and, for Session
- * kinds that render one, the Trajectory detailed subview.
- */
-export interface TranscriptDetailVisibilitySource {
-  /** Whether transcript process-detail chrome currently shows for this Session. */
-  visible(sessionId: SessionId): boolean
-  /**
-   * Subscribe to a change in what `visible` might answer.
-   * @param callback - invoked with no arguments; the caller re-reads `visible` itself.
-   * @returns disposer removing this subscription.
-   */
-  subscribe(callback: () => void): () => void
-}
-
-/**
- * The outward conversation face (`ctx.conversation`): the scope-addressed
- * verbs and the input registry other plugins may reach — and exactly what a
- * test fake must supply.
- */
+/** Session-addressed input and View operations exposed to Client plugins as `ctx.conversation`. */
 export interface IConversation {
+  /**
+   * Offer ordinary composer submissions to a feature before normal prompt admission.
+   * @param handler - Returns undefined to decline or a promise owning the submission outcome.
+   * @returns Disposer that removes this handler from subsequent submissions.
+   */
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
+  /**
+   * Open the originating Session in the Conversation main panel and commit its View and focus.
+   * @param sessionId - Addressed Session, whose Conversation store must have been registered.
+   * @param view - Public View id.
+   * @param focus - Target-owned focus key.
+   * @throws when the Session has no registered Conversation store.
+   */
+  openView(sessionId: SessionId, view: string, focus: string): void
+
   /** The per-session input machine registry (SessionInputResolver face). */
   readonly input: SessionInputResolver
   /**
@@ -88,25 +66,6 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
-  /** Register a domain submission handler ahead of the ordinary prompt sink. */
-  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void
-  /** Select and reveal one Details entry for an already-mounted Session. */
-  openDetailsView(sessionId: SessionId, id: string): void
-  /** Toggle the selected Details entry, or select and reveal a different one. */
-  toggleDetailsView(sessionId: SessionId, id: string): void
-  /** Select one main conversation view for an already-mounted Session. */
-  openView(sessionId: SessionId, id: string): void
-  /** Select Chat and center one rendered semantic anchor in its scrollport. */
-  openChatAt(sessionId: SessionId, anchorKey: string): void
-  /** Register a predicate that limits one main view to matching Sessions. */
-  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void
-  /**
-   * Register a predicate that hides transcript process-detail chrome
-   * (context-injection rows, turn-timing stats) for matching Sessions.
-   * Every registered source must answer `visible` for a Session to keep the
-   * chrome shown there; no registrant means it stays shown everywhere.
-   */
-  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -114,10 +73,10 @@ export interface IConversation {
    */
   send(text: string): Promise<void>
   /**
-   * Apply one edit, remove, or strict steer operation to a pending queue occurrence.
+   * Apply one edit, remove, or Steer operation to a pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
    * @param action - requested queue operation.
-   * @returns completion; converged strict-steer races resolve, while other failures reject.
+   * @returns completion; converged QueueDock races resolve, while other failures reject.
    */
   updateQueue(itemId: QueueItemId, action: QueueAction): Promise<void>
   /**
@@ -132,20 +91,70 @@ export interface IConversation {
   loadOlder(): Promise<void>
 }
 
-/** Create one browser-only draft descriptor; only its id enters input state. */
-function browserDraftAttachment(file: File): ComposerAttachment {
+/** Create one browser-only image draft descriptor; only its id enters input state. */
+function browserDraftAttachment(file: File): ComposerImageAttachment {
   return {
     kind: 'image',
-    id: crypto.randomUUID() as DraftAttachmentId,
+    id: randomUUID() as DraftAttachmentId,
     previewUrl: URL.createObjectURL(file),
     file,
   }
 }
 
-interface ImageUrlEntry {
-  readonly sessionId: SessionId
-  readonly generation: number
-  readonly pending: Promise<string>
+/**
+ * Fill the draft's intrinsic dimensions once the browser parses the image
+ * header (a metadata read off the preview URL, not a full decode). Failures
+ * and non-browser runtimes leave them absent — consumers size those images
+ * from CSS constraints instead. The descriptors stay registry-owned; submit
+ * reads the dimensions into an immutable echo snapshot, so this late write
+ * does not require a store notification.
+ */
+function probeDimensions(attachment: ComposerImageAttachment): void {
+  if (typeof Image !== 'function') return
+  const probe = new Image()
+  probe.onload = () => {
+    attachment.width = probe.naturalWidth
+    attachment.height = probe.naturalHeight
+  }
+  probe.src = attachment.previewUrl
+}
+
+/** Give the echo one paint opportunity without letting a throttled frame clock block admission. */
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        setTimeout(resolve, 0)
+        return
+      }
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(fallback)
+        setTimeout(resolve, 0)
+      }
+      const fallback = setTimeout(finish, 100)
+      requestAnimationFrame(finish)
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
+/** Native canonical base64 of one browser image (FileReader data-URL encode; no main-thread byte loop). */
+function base64ImageOf(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const url = reader.result as string
+      resolve(url.slice(url.indexOf(',') + 1))
+    }
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('conversation: image read failed'))
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 /** Unsupported browser-declared image type, localized by the UI boundary. */
@@ -163,29 +172,49 @@ export class UnsupportedImageMediaTypeError extends Error {
 
 /** Scope-addressed conversation service (root singleton, provided as `conversation`). */
 export class ConversationController extends Service implements IConversation {
+  private readonly submissionHandlers = new Set<ComposerSubmissionHandler>()
+  private readonly viewOpeners = new Map<SessionId, (view: string, focus: string) => void>()
+
+  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void {
+    this.submissionHandlers.add(handler)
+    return () => { this.submissionHandlers.delete(handler) }
+  }
+
+  openView(sessionId: SessionId, view: string, focus: string): void {
+    const open = this.viewOpeners.get(sessionId)
+    if (open === undefined) throw new Error(`Conversation view is not mounted: ${sessionId}`)
+    open(view, focus)
+  }
+
+  /**
+   * Bind view navigation to the session that owns the mounted conversation store.
+   * @param sessionId - Store owner.
+   * @param open - Shell view writer.
+   * @returns Disposer that removes this binding only while it remains current.
+   */
+  bindViewOpener(sessionId: SessionId, open: (view: string, focus: string) => void): () => void {
+    this.viewOpeners.set(sessionId, open)
+    return () => { if (this.viewOpeners.get(sessionId) === open) this.viewOpeners.delete(sessionId) }
+  }
+
   /** The per-session input machine registry (SessionInputResolver face). */
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  /** Live upload state per file-kind draft; images never appear here. */
+  readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>> = createSnapshotStore<Record<string, DraftFileUpload>>({})
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
-  private readonly imageUrls = new Map<string, ImageUrlEntry>()
-  private readonly imageGenerations = new Map<SessionId, number>()
-  private readonly createdImageUrls = new Set<string>()
-  private readonly submissionHandlers: ComposerSubmissionHandler[] = []
-  private readonly detailsOpeners = new Map<SessionId, (id: string) => void>()
-  private readonly detailsTogglers = new Map<SessionId, (id: string) => void>()
-  private readonly viewOpeners = new Map<SessionId, (id: string) => void>()
-  private readonly chatAnchorOpeners = new Map<SessionId, (anchorKey: string) => void>()
-  private readonly pendingChatAnchors = new Map<SessionId, string>()
-  private readonly viewVisibility = new Map<string, ViewVisibilitySource>()
-  private readonly viewVisibilityDisposers = new Map<string, () => void>()
-  /** Bumped whenever any registered {@link ViewVisibilitySource} invalidates; the `views` snapshot in apply.ts. */
-  private viewVisibilityVersionCounter = 0
-  private readonly viewVisibilitySubscribers = new Set<() => void>()
-  private readonly detailVisibilitySources: TranscriptDetailVisibilitySource[] = []
-  private readonly detailVisibilityDisposers = new Map<TranscriptDetailVisibilitySource, () => void>()
-  private readonly detailVisibilitySubscribers = new Set<() => void>()
-  private disposed = false
+  private readonly fileUploadOperations = new Map<DraftAttachmentId, {
+    readonly controller: AbortController
+    readonly done: Promise<void>
+  }>()
+  private readonly pendingFileUploads = new Set<Promise<void>>()
+  private readonly fileUploadQueue: Array<{
+    readonly run: () => Promise<void>
+    readonly settle: () => void
+  }> = []
+  private activeFileUploads = 0
+  private readonly maxConcurrentFileUploads: number
 
   /**
    * @param ctx - owning root context (the plugin apply context; the service
@@ -194,31 +223,27 @@ export class ConversationController extends Service implements IConversation {
    * constructed by the plugin apply (the same instances the slot inject
    * factories close over).
    */
-  constructor(ctx: Context, config: { input: SessionInputResolver; blocks: ComposerBlocks }) {
+  constructor(ctx: Context, config: {
+    input: SessionInputResolver
+    blocks: ComposerBlocks
+    maxConcurrentFileUploads: number
+  }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
-    ctx.effect(() => () => {
-      this.disposed = true
-      for (const url of this.createdImageUrls) revokePreview(url)
-      this.createdImageUrls.clear()
+    this.maxConcurrentFileUploads = config.maxConcurrentFileUploads
+    ctx.effect(() => async () => {
+      const operations = [...this.fileUploadOperations.values()]
+      for (const operation of operations) operation.controller.abort()
+      await Promise.allSettled([...this.pendingFileUploads])
+      this.fileUploadOperations.clear()
+      this.fileUploadQueue.length = 0
+      for (const attachment of this.draftAttachments.values()) {
+        if (attachment.kind === 'image') revokePreview(attachment.previewUrl)
+      }
       this.draftAttachments.clear()
-      this.imageUrls.clear()
-      this.imageGenerations.clear()
-      this.detailsOpeners.clear()
-      this.detailsTogglers.clear()
-      this.viewOpeners.clear()
-      this.chatAnchorOpeners.clear()
-      this.pendingChatAnchors.clear()
-      this.viewVisibility.clear()
-      for (const dispose of this.viewVisibilityDisposers.values()) dispose()
-      this.viewVisibilityDisposers.clear()
-      this.viewVisibilitySubscribers.clear()
-      this.detailVisibilitySources.length = 0
-      for (const dispose of this.detailVisibilityDisposers.values()) dispose()
-      this.detailVisibilityDisposers.clear()
-      this.detailVisibilitySubscribers.clear()
-    }, 'conversation attachment URL cache')
+      this.fileUploads.set({})
+    }, 'conversation draft attachments')
   }
 
   /**
@@ -234,236 +259,224 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Submit ordered draft images with text through one host admission.
-   * @param sessionId - target Session id.
+   * Submit ordered draft attachments with text through one host admission. A local
+   * submission echo enters the session snapshot synchronously; serialization
+   * and the prompt round-trip start after the browser can paint it. On the
+   * echo's observed retirement seeds admitted image previews into the durable
+   * cache and removes every attachment from the draft registry. On failure,
+   * every attachment remains registered so the composer can restore it.
    * @param session - target session.
    * @param text - serialized prompt text.
-   * @param imageIds - ordered draft-local attachment ids.
+   * @param attachmentIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
    * @param signal - optional cancellation for the complete Host admission.
    * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
-    sessionId: SessionId,
     session: SessionFace,
     text: string,
-    imageIds: readonly DraftAttachmentId[],
+    attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
   ): Promise<SubmitOutcome> {
     for (const handler of this.submissionHandlers) {
-      const claimed = handler({ sessionId, text, imageIds, mode, signal })
-      if (claimed !== undefined) return claimed
+      const outcome = handler({ sessionId: session.sessionId, text, attachmentIds, mode, signal })
+      if (outcome !== undefined) return outcome
     }
-    if (text === '' && imageIds.length === 0) return { kind: 'success' }
-    const attachments = this.draftImages(imageIds)
-    if (attachments.length !== imageIds.length) {
-      throw new Error('conversation.sendSession: one or more draft images are no longer available')
+    const attachments = this.resolveDraftAttachments(attachmentIds)
+    if (attachments.length !== attachmentIds.length) {
+      throw new Error('conversation.sendSession: one or more draft attachments are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
-    const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
-    const result = await session.prompt(content, mode, signal)
+    const uploads = this.fileUploads.getSnapshot()
+    const uploadFor = (attachment: ComposerFileAttachment): Extract<DraftFileUpload, { status: 'ready' }> => {
+      const upload = uploads[attachment.id]
+      if (upload === undefined || upload.status !== 'ready') {
+        throw new Error('conversation.sendSession: one or more files have not finished uploading')
+      }
+      return upload
+    }
+    const pendingAttachments = attachments.map(attachment => attachment.kind === 'image'
+      ? {
+        type: 'image' as const,
+        value: {
+          previewUrl: attachment.previewUrl,
+          ...(attachment.file.name === '' ? {} : { name: attachment.file.name }),
+          ...(attachment.width === undefined ? {} : { width: attachment.width }),
+          ...(attachment.height === undefined ? {} : { height: attachment.height }),
+        },
+      }
+      : { type: 'file' as const, value: uploadFor(attachment).file })
+    const serializeAttachments = (): Promise<Parameters<SessionFace['prompt']>[0]> => Promise.all(
+      attachments.map(async attachment => attachment.kind === 'image'
+        ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }
+        : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId }),
+    )
+    const snapshot = session.getSnapshot()
+    if (snapshot.subagent !== null) {
+      const uploaded = await serializeAttachments()
+      const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+      const result = await session.prompt(content, mode, signal)
+      return result.ok ? { kind: 'success' } : { kind: 'error' }
+    }
+    let finishRetirement: ((retirement: PendingSubmissionRetirement) => void) | undefined
+    const retirement = attachments.length === 0
+      ? undefined
+      : new Promise<PendingSubmissionRetirement>((resolve) => { finishRetirement = resolve })
+    const submission = session.beginSubmission({
+      mode,
+      text,
+      attachments: pendingAttachments,
+      onRetire: (settlement) => {
+        this.settleSubmittedAttachments(session.sessionId, attachments, settlement)
+        finishRetirement?.(settlement)
+      },
+    })
+    let content: Parameters<SessionFace['prompt']>[0]
+    try {
+      await nextPaint()
+      const uploaded = await serializeAttachments()
+      content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+    } catch (error) {
+      submission.abandon()
+      throw error
+    }
+    const result = await session.prompt(content, mode, signal, submission.requestId)
     if (!result.ok) return { kind: 'error' }
-    this.releaseDraftImages(attachments)
+    if (retirement !== undefined && (await retirement).reason !== 'observed') return { kind: 'error' }
     return { kind: 'success' }
   }
 
-  /** Register one ordered composer submission claimant. */
-  registerSubmissionHandler(handler: ComposerSubmissionHandler): () => void {
-    this.submissionHandlers.push(handler)
-    return () => {
-      const index = this.submissionHandlers.indexOf(handler)
-      if (index >= 0) this.submissionHandlers.splice(index, 1)
-    }
-  }
-
   /**
-   * Bind the current Details router actions for one mounted Session.
-   * @param sessionId - mounted Session.
-   * @param opener - current Details route action.
-   * @returns disposer that removes this exact binding.
-   */
-  bindDetailsOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
-    this.detailsOpeners.set(sessionId, opener)
-    return () => {
-      if (this.detailsOpeners.get(sessionId) === opener) this.detailsOpeners.delete(sessionId)
-    }
-  }
-
-  /** Select one Details route and reveal the column. */
-  openDetailsView(sessionId: SessionId, id: string): void {
-    const open = this.detailsOpeners.get(sessionId)
-    open?.(id)
-  }
-
-  /** Toggle one Details route through its mounted Session header. */
-  toggleDetailsView(sessionId: SessionId, id: string): void {
-    this.detailsTogglers.get(sessionId)?.(id)
-  }
-
-  /**
-   * Bind the current Details toggle semantics for one mounted Session.
-   * @param sessionId - mounted Session.
-   * @param toggle - current Details route toggle action.
-   * @returns disposer that removes this exact binding.
-   */
-  bindDetailsToggler(sessionId: SessionId, toggle: (id: string) => void): () => void {
-    this.detailsTogglers.set(sessionId, toggle)
-    return () => {
-      if (this.detailsTogglers.get(sessionId) === toggle) this.detailsTogglers.delete(sessionId)
-    }
-  }
-
-  /**
-   * Bind the current main-view router action for one mounted Session.
-   * @param sessionId - mounted Session.
-   * @param opener - current main-view route action.
-   * @returns disposer that removes this exact binding.
-   */
-  bindViewOpener(sessionId: SessionId, opener: (id: string) => void): () => void {
-    this.viewOpeners.set(sessionId, opener)
-    return () => {
-      if (this.viewOpeners.get(sessionId) === opener) this.viewOpeners.delete(sessionId)
-    }
-  }
-
-  /** Select one main conversation view. */
-  openView(sessionId: SessionId, id: string): void {
-    this.viewOpeners.get(sessionId)?.(id)
-  }
-
-  /** Select Chat and hand one semantic anchor to its mounted scroll owner. */
-  openChatAt(sessionId: SessionId, anchorKey: string): void {
-    this.pendingChatAnchors.set(sessionId, anchorKey)
-    this.openView(sessionId, 'chat')
-    const open = this.chatAnchorOpeners.get(sessionId)
-    if (open === undefined) return
-    this.pendingChatAnchors.delete(sessionId)
-    open(anchorKey)
-  }
-
-  /**
-   * Bind the mounted Chat view's semantic-anchor action.
-   * @param sessionId - mounted Session.
-   * @param opener - Chat-owned scroll action.
-   * @returns disposer that removes this exact binding.
-   */
-  bindChatAnchorOpener(sessionId: SessionId, opener: (anchorKey: string) => void): () => void {
-    this.chatAnchorOpeners.set(sessionId, opener)
-    const pending = this.pendingChatAnchors.get(sessionId)
-    if (pending !== undefined) {
-      this.pendingChatAnchors.delete(sessionId)
-      opener(pending)
-    }
-    return () => {
-      if (this.chatAnchorOpeners.get(sessionId) === opener) this.chatAnchorOpeners.delete(sessionId)
-    }
-  }
-
-  /** Register one main-view Session predicate. */
-  registerViewVisibility(id: string, source: ViewVisibilitySource): () => void {
-    if (this.viewVisibility.has(id)) throw new Error(`conversation view visibility already registered: ${id}`)
-    this.viewVisibility.set(id, source)
-    this.viewVisibilityDisposers.set(id, source.subscribe(() => {
-      this.viewVisibilityVersionCounter += 1
-      for (const callback of this.viewVisibilitySubscribers) callback()
-    }))
-    return () => {
-      if (this.viewVisibility.get(id) !== source) return
-      this.viewVisibility.delete(id)
-      this.viewVisibilityDisposers.get(id)?.()
-      this.viewVisibilityDisposers.delete(id)
-    }
-  }
-
-  /**
-   * Resolve whether one registered main view is available to an addressed Session.
-   * @param sessionId - addressed Session.
-   * @param id - main-view id.
-   * @returns `true` when no predicate rejects the view for this Session.
-   */
-  viewVisible(sessionId: SessionId, id: string): boolean {
-    return this.viewVisibility.get(id)?.visible(sessionId) ?? true
-  }
-
-  /**
-   * Subscribe to every registered {@link ViewVisibilitySource}'s invalidation,
-   * present and future — apply.ts's `views.subscribe` folds this in beside the
-   * `conversation.view` slot ledger, so a tab strip re-lists when a source's
-   * answer changes for reasons the slot ledger itself never sees (a session
-   * list update, a projection update).
-   * @param callback - invoked with no arguments on any source's invalidation.
-   * @returns disposer removing this subscription.
-   */
-  subscribeViewVisibility(callback: () => void): () => void {
-    this.viewVisibilitySubscribers.add(callback)
-    return () => { this.viewVisibilitySubscribers.delete(callback) }
-  }
-
-  /**
-   * Monotonic counter bumped on every registered source's invalidation; part of the `views` snapshot.
-   * @returns the current counter value.
-   */
-  viewVisibilityVersion(): number {
-    return this.viewVisibilityVersionCounter
-  }
-
-  /** Register one transcript process-detail Session predicate. */
-  registerTranscriptDetailVisibility(source: TranscriptDetailVisibilitySource): () => void {
-    this.detailVisibilitySources.push(source)
-    this.detailVisibilityDisposers.set(source, source.subscribe(() => {
-      for (const callback of this.detailVisibilitySubscribers) callback()
-    }))
-    return () => {
-      const index = this.detailVisibilitySources.indexOf(source)
-      if (index < 0) return
-      this.detailVisibilitySources.splice(index, 1)
-      this.detailVisibilityDisposers.get(source)?.()
-      this.detailVisibilityDisposers.delete(source)
-    }
-  }
-
-  /**
-   * Resolve whether transcript process-detail chrome shows for an addressed Session.
-   * @param sessionId - addressed Session.
-   * @returns `true` when every registered source answers `visible` (including none registered).
-   */
-  transcriptDetailVisible(sessionId: SessionId): boolean {
-    return this.detailVisibilitySources.every(source => source.visible(sessionId))
-  }
-
-  /**
-   * Subscribe to every registered {@link TranscriptDetailVisibilitySource}'s
-   * invalidation, present and future.
-   * @param callback - invoked with no arguments on any source's invalidation.
-   * @returns disposer removing this subscription.
-   */
-  subscribeTranscriptDetailVisibility(callback: () => void): () => void {
-    this.detailVisibilitySubscribers.add(callback)
-    return () => { this.detailVisibilitySubscribers.delete(callback) }
-  }
-
-  /**
-   * Create runtime-only draft images and their object URLs.
-   * @param files - browser files to register after MIME validation.
+   * Create runtime-only draft attachments. Files whose browser MIME is an
+   * accepted image type become image drafts (object URL preview, bytes sent
+   * with the prompt); every other file becomes a file draft whose background
+   * upload starts immediately and remains owned by this service across Session
+   * navigation until completion or explicit removal.
+   * @param sessionId - target Agent-scope identity.
+   * @param files - browser files to register.
    * @returns ordered draft descriptors.
    */
-  createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
-    for (const file of files) imageMediaType(file.type)
+  createDrafts(sessionId: SessionId, files: readonly File[]): readonly ComposerAttachment[] {
     return files.map((file) => {
-      const attachment = browserDraftAttachment(file)
+      if (isImageMediaType(file.type)) {
+        const attachment = browserDraftAttachment(file)
+        this.draftAttachments.set(attachment.id, attachment)
+        probeDimensions(attachment)
+        return attachment
+      }
+      const attachment: ComposerFileAttachment = {
+        kind: 'file',
+        id: randomUUID() as DraftAttachmentId,
+        file,
+      }
       this.draftAttachments.set(attachment.id, attachment)
-      this.createdImageUrls.add(attachment.previewUrl)
+      this.beginFileUpload(sessionId, attachment)
       return attachment
     })
   }
 
   /**
-   * Resolve ordered input-state ids to runtime-owned draft images.
+   * Restart one failed file upload.
+   * @param sessionId - target Agent-scope identity.
+   * @param id - draft attachment id whose upload previously failed.
+   */
+  retryFileUpload(sessionId: SessionId, id: DraftAttachmentId): void {
+    const attachment = this.draftAttachments.get(id)
+    if (attachment === undefined || attachment.kind !== 'file') return
+    if (this.fileUploads.getSnapshot()[id]?.status !== 'error') return
+    this.beginFileUpload(sessionId, attachment)
+  }
+
+  /**
+   * Stage carried file drafts again for a new Session.
+   * @param sessionId - target Agent-scope identity after a Workspace switch.
+   * @param ids - carried draft attachment ids.
+   */
+  rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[]): void {
+    for (const id of ids) {
+      const attachment = this.draftAttachments.get(id)
+      if (attachment?.kind === 'file') this.beginFileUpload(sessionId, attachment)
+    }
+  }
+
+  private beginFileUpload(sessionId: SessionId, attachment: ComposerFileAttachment): void {
+    this.fileUploadOperations.get(attachment.id)?.controller.abort()
+    const controller = new AbortController()
+    this.fileUploads.update((draft) => {
+      draft[attachment.id] = { status: 'uploading', loaded: 0 }
+    })
+    let settle!: () => void
+    const done = new Promise<void>((resolve) => { settle = resolve })
+    this.fileUploadOperations.set(attachment.id, { controller, done })
+    this.pendingFileUploads.add(done)
+    void done.then(() => { this.pendingFileUploads.delete(done) })
+    const run = async (): Promise<void> => {
+      try {
+        if (controller.signal.aborted
+          || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        const result = await this.ctx.fileUpload.upload(
+          sessionId,
+          attachment.file,
+          attachment.file.name === '' ? undefined : attachment.file.name,
+          controller.signal,
+          (progress) => {
+            if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+            this.fileUploads.update((draft) => {
+              if (!(attachment.id in draft)) return
+              draft[attachment.id] = {
+                status: 'uploading',
+                loaded: progress.loaded,
+                ...(progress.total === undefined ? {} : { total: progress.total }),
+              }
+            })
+          },
+        )
+        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        this.fileUploads.update((draft) => {
+          if (!(attachment.id in draft)) return
+          draft[attachment.id] = result.ok
+            ? { status: 'ready', receiptId: result.value.receiptId, file: result.value.file }
+            : { status: 'error', message: result.error.message }
+        })
+      } catch (error) {
+        if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
+        this.fileUploads.update((draft) => {
+          if (!(attachment.id in draft)) return
+          draft[attachment.id] = {
+            status: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          }
+        })
+      } finally {
+        if (this.fileUploadOperations.get(attachment.id)?.controller === controller) {
+          this.fileUploadOperations.delete(attachment.id)
+        }
+      }
+    }
+    this.fileUploadQueue.push({ run, settle })
+    this.pumpFileUploads()
+  }
+
+  /** Start queued upload Workers until the configured concurrency is occupied. */
+  private pumpFileUploads(): void {
+    while (this.activeFileUploads < this.maxConcurrentFileUploads) {
+      const task = this.fileUploadQueue.shift()
+      if (task === undefined) return
+      this.activeFileUploads += 1
+      void task.run().finally(() => {
+        this.activeFileUploads -= 1
+        task.settle()
+        this.pumpFileUploads()
+      })
+    }
+  }
+
+  /**
+   * Resolve ordered input-state ids to runtime-owned draft attachments.
    * @param ids - draft attachment ids.
    * @returns descriptors that remain live, in requested order.
    */
-  draftImages(ids: readonly DraftAttachmentId[]): readonly ComposerAttachment[] {
+  resolveDraftAttachments(ids: readonly DraftAttachmentId[]): readonly ComposerAttachment[] {
     const attachments: ComposerAttachment[] = []
     for (const id of ids) {
       const attachment = this.draftAttachments.get(id)
@@ -473,95 +486,59 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /**
-   * Serialize ordered draft images to command-submit wire payloads without
-   * sending or releasing them (the composer releases only after the command
-   * settles successfully).
-   * @param imageIds - ordered draft-local attachment ids.
-   * @returns base64 payloads in id order.
+   * Serialize ordered draft attachments to command-submit wire payloads without
+   * sending or releasing them. Images are encoded; generic files cite receipts
+   * from their completed background uploads and never reread browser bytes.
+   * @param attachmentIds - ordered draft-local attachment ids.
+   * @returns wire payloads in id order.
    */
-  async serializeDraftImages(imageIds: readonly DraftAttachmentId[]): Promise<readonly SubmitImageAttachment[]> {
-    const attachments = this.draftImages(imageIds)
-    if (attachments.length !== imageIds.length) {
-      throw new Error('conversation.serializeDraftImages: one or more draft images are no longer available')
+  async serializeDraftAttachments(
+    attachmentIds: readonly DraftAttachmentId[],
+  ): Promise<DraftAttachmentSerializationResult> {
+    const attachments = this.resolveDraftAttachments(attachmentIds)
+    if (attachments.length !== attachmentIds.length) {
+      throw new Error('conversation.serializeDraftAttachments: one or more draft attachments are no longer available')
     }
-    return Promise.all(attachments.map(attachment => this.encodeImage(attachment.file)))
+    const uploads = this.fileUploads.getSnapshot()
+    return {
+      attachments: await Promise.all(attachments.map(async (attachment) => {
+        if (attachment.kind === 'image') return { type: 'image' as const, ...await this.encodeImage(attachment.file) }
+        const upload = uploads[attachment.id]
+        if (upload === undefined || upload.status !== 'ready') {
+          throw new Error('conversation.serializeDraftAttachments: one or more files have not finished uploading')
+        }
+        return { type: 'file' as const, receiptId: upload.receiptId }
+      })),
+    }
   }
 
   /**
-   * Release one browser-owned draft image and preview URL.
+   * Release one browser-owned draft attachment, aborting its active upload.
    * @param id - draft attachment id.
    */
-  releaseDraftImage(id: DraftAttachmentId): void {
+  releaseDraftAttachment(id: DraftAttachmentId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
+    const operation = this.fileUploadOperations.get(id)
+    this.fileUploadOperations.delete(id)
+    operation?.controller.abort()
     this.draftAttachments.delete(id)
-    this.createdImageUrls.delete(attachment.previewUrl)
-    revokePreview(attachment.previewUrl)
+    if (attachment.kind === 'image') {
+      revokePreview(attachment.previewUrl)
+      return
+    }
+    // The stored Host object stays durable; only the draft's upload state ends.
+    this.fileUploads.set(Object.fromEntries(
+      Object.entries(this.fileUploads.getSnapshot()).filter(([key]) => key !== id),
+    ))
   }
 
   /**
-   * Release a set of browser-owned draft images.
+   * Release a set of browser-owned draft attachments.
    * @param attachments - descriptors to release.
    */
-  releaseDraftImages(attachments: readonly ComposerAttachment[]): void {
-    for (const attachment of attachments) this.releaseDraftImage(attachment.id)
-  }
-
-  /**
-   * Resolve and cache one session-authorized historical image URL.
-   * @param sessionId - owning session authorization scope.
-   * @param attachment - durable image reference.
-   * @returns browser URL valid until its rendered session is released.
-   */
-  resolveImage(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string> {
-    if (this.disposed) return Promise.reject(new Error('conversation.resolveImage: service is disposed'))
-    const key = `${sessionId}:${attachment.attachmentId}`
-    const cached = this.imageUrls.get(key)
-    if (cached !== undefined) return cached.pending
-    const generation = this.imageGenerations.get(sessionId) ?? 0
-    const session = this.requireSessions().binding(sessionId)?.session
-    if (session === undefined) {
-      return Promise.reject(new Error(`conversation.resolveImage: unknown session "${sessionId}"`))
-    }
-    const pending = session.readAttachment(attachment.attachmentId)
-      .then((result) => {
-        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        if (this.disposed) throw new Error('conversation.resolveImage: service was disposed before loading completed')
-        if ((this.imageGenerations.get(sessionId) ?? 0) !== generation) {
-          throw new Error('historical image scope was released before loading completed')
-        }
-        if (typeof URL.createObjectURL !== 'function') {
-          return `data:${result.value.attachment.mediaType};base64,${bytesToBase64(result.value.data)}`
-        }
-        const bytes = Uint8Array.from(result.value.data)
-        const url = URL.createObjectURL(new Blob([bytes.buffer], { type: result.value.attachment.mediaType }))
-        this.createdImageUrls.add(url)
-        return url
-      })
-      .catch((error: unknown) => {
-        if (this.imageUrls.get(key)?.generation === generation) this.imageUrls.delete(key)
-        throw error
-      })
-    this.imageUrls.set(key, { sessionId, generation, pending })
-    return pending
-  }
-
-  /**
-   * Release every historical image URL owned by one rendered session.
-   * @param sessionId - rendered session scope.
-   */
-  releaseSessionImages(sessionId: SessionId): void {
-    this.imageGenerations.set(sessionId, (this.imageGenerations.get(sessionId) ?? 0) + 1)
-    for (const [key, entry] of this.imageUrls) {
-      if (entry.sessionId !== sessionId) continue
-      this.imageUrls.delete(key)
-      void entry.pending.then((url) => {
-        if (!this.createdImageUrls.delete(url)) return
-        revokePreview(url)
-      }, () => {
-        // A failed or invalidated load owns no object URL.
-      })
-    }
+  releaseDraftAttachments(attachments: readonly ComposerAttachment[]): void {
+    for (const attachment of attachments) this.releaseDraftAttachment(attachment.id)
   }
 
   /** Apply one operation to a pending queue occurrence. */
@@ -571,7 +548,7 @@ export class ConversationController extends Service implements IConversation {
     if (!result.ok) {
       if (
         action.kind === 'steer'
-        && (result.error.code === 'steer-unavailable' || result.error.code === 'queue-item-not-found')
+        && (result.error.code === 'session/steer-unavailable' || result.error.code === 'session/queue-item-not-found')
       ) return
       throw new Error(`conversation.updateQueue failed: ${result.error.code}: ${result.error.message}`)
     }
@@ -614,16 +591,42 @@ export class ConversationController extends Service implements IConversation {
     return sessions
   }
 
-  /** Convert browser files to canonical base64 prompt parts. */
-  private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
+  /**
+   * Settle one submission's draft attachments when its echo retires. Observed:
+   * each image leaves the registry, handing its preview URL to the durable
+   * image cache (seeded under the admitted reference so the transcript node
+   * renders immediately while the cache reads canonical bytes) or revoking it
+   * when the cache already holds that reference. Failed: nothing changes;
+   * the ids stay registered for the composer's rail restore.
+   */
+  private settleSubmittedAttachments(
+    sessionId: SessionId,
+    attachments: readonly ComposerAttachment[],
+    retirement: PendingSubmissionRetirement,
+  ): void {
+    if (retirement.reason !== 'observed') return
+    const uiConversation = this.ctx.get('uiConversation')
+    let observedIndex = 0
+    for (const attachment of attachments) {
+      const live = this.draftAttachments.get(attachment.id)
+      const ref = retirement.attachments[observedIndex++]
+      if (live === undefined) continue
+      if (attachment.kind === 'file') {
+        this.releaseDraftAttachment(attachment.id)
+        continue
+      }
+      this.draftAttachments.delete(attachment.id)
+      if (ref !== undefined && 'mediaType' in ref
+        && uiConversation?.seedImageUrl(sessionId, ref, attachment.previewUrl) === true) continue
+      revokePreview(attachment.previewUrl)
+    }
   }
 
   /** Canonical base64 wire form of one browser image file. */
-  private async encodeImage(file: File): Promise<SubmitImageAttachment> {
+  private async encodeImage(file: File): Promise<Omit<Extract<SubmitAttachment, { type: 'image' }>, 'type'>> {
     return {
       mediaType: imageMediaType(file.type),
-      data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+      data: await base64ImageOf(file),
       ...(file.name === '' ? {} : { name: file.name }),
     }
   }
@@ -641,13 +644,9 @@ function imageMediaType(value: string): ImageMediaType {
   }
 }
 
-function bytesToBase64(data: Uint8Array): string {
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < data.length; offset += chunk) {
-    binary += String.fromCharCode(...data.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
+/** Whether a browser-declared MIME selects the image draft path (all other files upload verbatim). */
+function isImageMediaType(value: string): boolean {
+  return value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif'
 }
 
 function revokePreview(url: string): void {

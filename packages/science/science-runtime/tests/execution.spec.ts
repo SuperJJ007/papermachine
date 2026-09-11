@@ -40,7 +40,7 @@ class FakeSandbox extends SandboxProvider {
 
   confine(argv: readonly string[], _policy: SandboxPolicy): ConfinedArgv {
     if (this.unavailable) throw new SandboxUnavailableError('workspace-write')
-    return { argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [], env: {} }
+    return { env: {}, argv: [...argv], enforcement: this.enforcement, denialSignatures: [], runnerFailureRules: [] }
   }
 }
 
@@ -201,11 +201,11 @@ describe('quiesce', () => {
     contexts.push(ctx)
     await ctx.plugin(LocalSubprocessRuntime)
     const handle = ctx.subprocess.spawn({
+      environmentBase: 'scrubbed-parent' as const,
       argv: [process.execPath, '-e', 'setInterval(() => {}, 1_000)'],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
       graceMs: 3_000,
-      environmentBase: 'empty',
     })
     // The process never exits on its own within the first grace window, so
     // the first waitForExit(grace) proves false; terminate() then sends
@@ -223,27 +223,40 @@ describe('quiesce', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await ctx.plugin(LocalSubprocessRuntime)
+    // The child reports its own pid over stdout because SubprocessHandle no
+    // longer exposes one (upstream keeps target identity provider-private);
+    // this test still needs it to force a final SIGKILL from outside the seam.
     const handle = ctx.subprocess.spawn({
-      argv: [process.execPath, '-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)"],
+      environmentBase: 'scrubbed-parent' as const,
+      argv: [process.execPath, '-e', "process.on('SIGTERM', () => {}); process.stdout.write(String(process.pid)); setInterval(() => {}, 1_000)"],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 4_096 }, stderr: { maxBytes: 4_096 } },
-      graceMs: 3_000,
-      environmentBase: 'empty',
+      // Keep provider escalation beyond both quiesce windows; this test owns final SIGKILL.
+      graceMs: 90_000,
     })
-    // This process ignores SIGTERM, so terminate() cannot prove quiescence
-    // within the second grace window either; the caller keeps quarantine
-    // active on the returned eventualQuiescence instead.
-    const result = await quiesce(handle)
-    expect(result).toMatchObject({ quiescent: false, forced: true })
-    if (result.quiescent) throw new Error('unreachable: asserted above')
-    // SIGTERM alone never reaps this process: prove eventualQuiescence
-    // resolves once something unblockable (SIGKILL) finally does, rather
-    // than hanging the test forever on a tree only this test owns.
-    try {
-      process.kill(-handle.pid, 'SIGKILL')
-    } catch {
-      process.kill(handle.pid, 'SIGKILL')
+    // The PID is also a readiness handshake: the SIGTERM handler is installed
+    // before it is written. Do not spend either grace window on cold startup.
+    await expect.poll(() => handle.collected.stdout!.readFrom(0).text).toMatch(/^\d+$/)
+    const pid = Number(handle.collected.stdout!.readFrom(0).text)
+    if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error('child did not report a valid process id')
+    const kill = (): void => {
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {
+        try { process.kill(pid, 'SIGKILL') } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+        }
+      }
     }
-    await expect(result.eventualQuiescence).resolves.toBe(true)
+    try {
+      const result = await quiesce(handle)
+      expect(result).toMatchObject({ quiescent: false, forced: true })
+      if (result.quiescent) throw new Error('unreachable: asserted above')
+      kill()
+      await expect(result.eventualQuiescence).resolves.toBe(true)
+    } finally {
+      kill()
+      await handle.waitForExit()
+    }
   }, 30_000)
 })

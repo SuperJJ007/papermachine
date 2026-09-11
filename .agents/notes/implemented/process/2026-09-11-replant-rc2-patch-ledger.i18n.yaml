@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-11-replant-rc2-patch-ledger.md
+2026-09-11-replant-rc2-patch-ledger.md: d6b551afa9152f5684208e346fabaf5c3e5e2a26
+2026-09-11-replant-rc2-patch-ledger.zh.md: e25244663f5c8bbddf33ad521da874bd0dd0141a

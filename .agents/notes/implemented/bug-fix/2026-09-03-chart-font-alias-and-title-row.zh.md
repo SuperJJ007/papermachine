@@ -36,7 +36,7 @@ Status: implemented
 
 **保留 R `.dsh_font_available` 的严格一致性检查,只对 `"sans"`/`"serif"`/`"mono"` 单独处理,与既有的 `systemfonts` 不可用兜底分支保持一致。** 已拒绝:共享面板的字体控件无论产出图表的语言是什么,都会把 CSS 风格的 `"sans-serif"`/`"monospace"` 拼写当作自己的默认值暂存(`fontInitial` 的 `'sans-serif'` 兜底),因此若要与图表语言无关地修复,就需要同时覆盖两种拼写,否则同一缺陷会在任何尚无字体元素的 R 图表上重现。
 
-**把结构化的 `failedOps` 一路传递到抛出的提交错误中,而不是把它们格式化进错误文字。** 在本次改动范围内已拒绝:这会需要拓宽 `ScienceRuntimeError`、`ScienceEditError` 的 RPC 边界以及客户端的 `RpcError` 结构以携带结构化细节。选定的信息格式(`op <n> <操作名> — <原因>`)刻意做到无歧义,使面板的单词元替换无需完整的结构化传递也能可靠工作。
+**把结构化的 `failedOps` 一路传递到抛出的提交错误中,而不是把它们格式化进错误文字。** 在本次改动范围内已拒绝:这需要从 Runtime 经领域 Remote 到客户端协调结构化错误表示。选定的信息格式(`op <n> <操作名> — <原因>`)刻意做到无歧义,使面板的单词元替换无需完整的结构化传递也能可靠工作。
 
 **把 `CHART_ELEMENT_NOT_FOUND` 按失败原因拆分成多个错误码。** 已拒绝:一次提交可能同时混合元素解析失败和字体解析失败,而 `translateChartRuntimeError` 已经把两个既有错误码同样映射到 `CHART_OP_INVALID`,新拆分出的错误码对现有任何消费者都不会带来可区分的行为。
 
@@ -45,3 +45,7 @@ Status: implemented
 ## 影响
 
 `set_font` 配合通用别名——面板自身的默认值及其 `FONT_FAMILIES` 列表——现在两种语言都能成功;重新发送当前字族的纯改字号编辑不再失败。整体提交被拒绝时会给出哪个操作失败及原因,与同一组操作做预览时已报告的细节一致;运行时 README 记录了这段更丰富的信息。图表编辑面板可以为任何图表——无论原本有没有标题——从同一行添加标题;`x_label`/`y_label` 在内核未提取出对应元素时仍无法添加,因此使用默认坐标轴标签的无标题图表,这两类元素仍需通过代码编辑。
+
+## 相关决策
+
+相关 owner：[science-live-figure-editing](../architecture/2026-08-28-science-live-figure-editing.zh.md); [chart-edit-baseline-isolation](2026-08-31-chart-edit-baseline-isolation.zh.md).

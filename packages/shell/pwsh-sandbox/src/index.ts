@@ -3,26 +3,18 @@
  * `@deepseek-ai/dsh-bash-sandbox`. It wraps the exact local pwsh argv through
  * `ctx.sandbox` (which on Windows resolves to the ACL restricted-token runner
  * chain), inherits local process mechanics, and reports the selected mode,
- * enforcement, and denial facts. Positive runner-launch evidence means the
- * command never ran: foreground calls throw `SANDBOX_UNAVAILABLE`, while
- * background processes carry `runnerFailed`; other spawn rejections retain
- * local-executor semantics. The tool layer owns the escalation approval flow
- * through `ctx.approval`; this executor reports the sandbox facts the tool
- * renders.
+ * enforcement, and denial facts. Positive runner-executable evidence
+ * identifies a broken confinement runner: foreground calls throw
+ * `SANDBOX_UNAVAILABLE`, while background processes carry `runnerFailed`;
+ * other provider rejections retain stage-neutral local-executor semantics. The
+ * tool layer owns the escalation approval flow through `ctx.approval`; this
+ * executor reports the sandbox facts the tool renders.
  * @module @deepseek-ai/dsh-pwsh-sandbox
  */
 
-// The shell providers independently declare the same capability imports; imports do not warrant an adapter between providers.
-/* jscpd:ignore-start */
 import { Context } from '@deepseek-ai/cordis'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import {
-  SandboxUnavailableError,
-  classifyDenial,
-  classifyRunnerFailure,
-  isRunnerSpawnFailure,
-  matchesSignature,
-} from '@deepseek-ai/dsh-sandbox'
+import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type {
   ConfinedArgv,
   ConfinedSandboxMode,
@@ -33,9 +25,9 @@ import type {
   SandboxPolicy,
 } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-/* jscpd:ignore-end */
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-pwsh-local'
+import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from '@deepseek-ai/dsh-sandbox'
 
 /**
  * Plugin config: the local executor's knobs, verbatim. The sandbox policy —
@@ -109,13 +101,9 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
       return { ...result, sandbox: { mode, denied: false } }
     }
     const confined = this.confine(spec, { ...policy, mode })
-    // confined.env carries entries the selected sandbox backend's runner
-    // invocation itself requires (e.g. the win32 ACL rung's
-    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
-    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let result: ShellRunResult
     try {
-      result = await this.runArgv(confinedSpec, confined.argv)
+      result = await this.runArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
@@ -130,14 +118,8 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
     if (runnerFailure !== undefined) {
       throw new SandboxUnavailableError(mode, runnerFailure.detail)
     }
-    return {
-      ...result,
-      sandbox: {
-        mode,
-        denied: classifyDenial(result.exitCode, result.stderr.text, confined.denialSignatures),
-        enforcement: confined.enforcement,
-      },
-    }
+    const denied = classifyDenial(result.exitCode, result.stderr.text, confined.denialSignatures)
+    return { ...result, sandbox: { mode, denied, enforcement: confined.enforcement } }
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
@@ -147,13 +129,9 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
     // Once startArgv returns, install facts synchronously; promise settlement
     // cannot run before start() returns.
     const confined = this.confine(spec, { ...policy, mode })
-    // confined.env carries entries the selected sandbox backend's runner
-    // invocation itself requires (e.g. the win32 ACL rung's
-    // ELECTRON_RUN_AS_NODE); merged last so the backend's requirement wins.
-    const confinedSpec = { ...spec, env: { ...spec.env, ...confined.env } }
     let proc: ShellProcess
     try {
-      proc = this.startArgv(confinedSpec, confined.argv)
+      proc = this.startArgv({ ...spec, env: { ...spec.env, ...confined.env } }, confined.argv)
     } catch (error) {
       if (isRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
         throw new SandboxUnavailableError(mode, String(error))
@@ -176,14 +154,15 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
    * Stamp per-process sandbox facts before `done` settles. Full-access
    * processes have no facts; signal deaths are not denials.
    */
-  protected override onProcessDone(proc: ShellProcess, stderr: string, spawnFailed: boolean, spawnError?: unknown): void {
+  protected override onProcessDone(proc: ShellProcess, stderr: string, providerRejected: boolean, providerError?: unknown): void {
     const facts = this.processFacts.get(proc)
     if (facts !== undefined) {
       this.processFacts.delete(proc)
-      // A rejected spawn never started the confined launch. Otherwise runner
-      // failure outranks denial because its diagnostics may contain denial terms.
-      const runnerFailed = spawnFailed
-        ? isRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
+      // A provider rejection exposes no public failure stage. Attribute it to
+      // the confinement runner only when the error independently names argv[0].
+      // Otherwise settled runner failure outranks denial-like diagnostics.
+      const runnerFailed = providerRejected
+        ? isRunnerSpawnFailure(providerError, facts.runnerProgram, facts.workdir)
         : classifyRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
       proc.sandbox = {
         mode: facts.mode,
@@ -192,7 +171,7 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
         ...(runnerFailed ? { runnerFailed } : {}),
       }
     }
-    super.onProcessDone(proc, stderr, spawnFailed, spawnError)
+    super.onProcessDone(proc, stderr, providerRejected, providerError)
   }
 
   /**

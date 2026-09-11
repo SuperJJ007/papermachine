@@ -1,40 +1,33 @@
-# Agent Note：一个可插拔的 kernel response-channel transport，让 win32 上的 Science kernel execution 成为可能
+# Agent Note: 一个可插拔的 kernel response-channel transport，让 win32 上的 Science kernel execution 成为可能
 
 Status: implemented
 
 [English](2026-09-05-win32-kernel-response-transport.md) | 中文
 
-## Problem
+## 问题
 
-`@deepseek-ai/dsh-science-runtime` 的持久化 kernel 一直从一个 Host 在 kernel 私有 scratch 中创建的 POSIX FIFO 读取每一个 response frame(`READY`/`DONE`/`CHART`)，通过一个受管的 `cat` 子进程转发，使空闲读取不占用 Host 文件系统 worker。`mkfifo` 与 named pipe 的阻塞式 open 语义在 win32 上没有等价物，因此 `startRun`(`index.ts`)与 `prepareObservation`(`environment.ts`)都会在任何 scratch 或 process 工作之前，就在 win32 上以 `ScienceRuntimeError('KERNEL_UNSUPPORTED_PLATFORM', …)` 做 pre-publication 拒绝——Science kernel execution，进而整个 Science Runtime，在 Windows 上完全无法运行(papermachine issue [#14](https://github.com/SuperJJ007/papermachine/issues/14))。
+内核协议响应需要不受用户 stdout 污染的通道，并适配各平台可用的进程及隔离机制。
 
-## Decision
+## 决策
 
-response channel 现在是一个 seam,`KernelResponseTransport`(`kernel-transport.ts`)，有两个实现，由 `selectKernelTransportKind(platform = process.platform)` 按 kernel 逐个选定：darwin/linux 上是 `FifoTransport`(与之前完全相同的 FIFO 加 `cat` 机制，原样搬进这个模块——相同的 frame、相同的 quiescence 与 teardown 顺序、相同的错误信息)，win32 上是 `LoopbackTcpTransport`。两者交给 `KernelProcess` 的东西完全一样——一个携带相同 wire-protocol frame 的可读字节流，加上一个 `faulted` 信号——因此 frame parser 与 `KernelProcess` 状态机从不关心是哪种 transport 产生了它们；只有 `kernel-process.ts` 自身的 spawn/teardown 时序改为通过这个 seam(`transport.endpointArg`、`transport.connect()`、`transport.end()`、`transport.endStartFailure()`)调用，而不是直接持有 FIFO 路径与一个 `cat` reader。`KernelProcessOptions.transportKind` 允许调用方强制指定某个 transport 而不是平台默认值；每一个生产调用点都省略它，只有一个测试用它，在 POSIX 主机上练习 `LoopbackTcpTransport`，且不 mock 全局的 `process.platform`。 `kernel-process.ts` 的逐行 frame parser 如今会在拆分字段前先去掉恰好一个尾随的 `\r`：R 的 `socketConnection` 文本模式在 win32 上可能会发出 CRLF，而 Python 的 `makefile(newline="\n")` 从不会。
+POSIX 使用带独立 reader 的 FIFO。Windows 使用认证 loopback TCP：每内核秘密只允许一个 driver 连接，拒绝其他 token 和后续连接，并将协议帧与 stdout、stderr 分离。每个接受的 socket 在启动排队、token 移交及销毁期间持续保留 error listener；请求的 stdin 缺失时在移交通道前失败。
 
-`LoopbackTcpTransport` 通过 `node:net` 监听 `127.0.0.1` 的 0 端口(由操作系统分配一个临时端口)，持续接受连接，直到有一个连接给出正确的 token 为止；只有那一个连接会停掉 listener，此后的第二次连接才会被拒绝。一个 token 错误或缺失、或者第一行到来之前就 EOF、或者其它方式出错的连接会被销毁，但 listener 会继续接受后续连接，直到 `connect()` 自身的 deadline 到期或 kernel process 自己退出为止：token 是 128 bit 的 CSPRNG 输出，因此无限次猜测并不构成现实威胁；反过来，如果不论 token 是否正确都在第一次连接时就关闭 listener，任何一个无关的本机进程都能靠抢先连接来让 kernel 启动直接失败。listener 级别的 `'error'` handler 与 `'connection'` handler 都在构造时就一次性挂上，而不是只在某一次 `connect()` 调用期间存在：`create()` 返回(它的地址必须先嵌入 kernel driver 的 argv)与调用方真正调用 `connect()` 之间是一段真实存在的墙钟时间，一次 listener 级别的故障或者 kernel 自己的连接尝试都可能在这段时间内先到达，二者都不能没人处理——没有监听器的故障会作为一次未捕获的 `'error'` 事件让 Host process 崩溃，没有监听器的连接则会被接受后原样泄漏，从此再也没有人读取它。kernel 在确实给出了正确 token 的那个连接上写的第一行,必须是专门为这个 kernel 生成的 32 位十六进制随机 token(`randomBytes(16).toString('hex')`——没有为此新增依赖)；token 行的解析使用 `'readable'` + `socket.read()` 循环(与 Node 自身 HTTP 模块用于协议升级探测的模式相同)，并用 `socket.unshift()` 把 token 换行符之后、尚未消费的字节交还给这个流：一个 `'data'` 监听器无法在 flowing 到 paused 模式的转换过程中保住已经缓冲的字节，因此必须使用 paused 模式下的 `'readable'`/`read()` 模式。
+最小 Windows OS-root 变量允许进程和 Winsock 初始化，私有 TEMP/TMP 及 Conda 可执行路径仍显式设置。受管理协作中断遵循 provider：Windows 不提供等效的保留状态 SIGINT 确认，因此取消可能升级终止并丢失内核内存。
 
-driver argv 唯一的位置参数，现在要么是一个绝对 FIFO 路径(不变)，要么是 `tcp:127.0.0.1:<port>:<token>`。`kernel_python.py` 新增的 `open_response_channel(endpoint)` 按 `endpoint.startswith("tcp:")` 前缀分支：TCP 分支执行 `socket.create_connection((host, int(port)))`，用 `sock.makefile('w', encoding='utf-8', newline='\n')` 包一层，先写 token 行，之后每一次 `send()` 都像使用 FIFO handle 一样使用这个 file object。`kernel_r.R` 用 `socketConnection(host=, port=, open='w', blocking=TRUE)` 与 `writeLines(token, con)` 做同样的事。两个 driver 都保留了原有的每一个 hardening flag(R 的 UTF-8 probe 路径用的 `--vanilla --encoding=UTF-8` 与此无关；kernel 自身的 argv 对 Python 保留 `-B -u -X utf8`，R 保留与之前相同的 flag)——endpoint 参数的形状是两个 driver 自身 argv 约定唯一的变化。
+## 考虑过的替代方案
 
-win32 上选择放弃 named pipe，尽管它在字面上更接近 FIFO：Windows ACL sandbox 可能不会把 Host 创建的 named pipe 的写权限授予受限 token 的 kernel process(两端可能在不同的、不可继承的安全上下文下创建)，而 loopback socket 根本不是一种可被 ACL 保护的对象——sandbox 没有东西可拒绝。POSIX 保留 FIFO/`cat` 机制，而不是全平台统一改用 loopback TCP：这次改动不触碰既有的 sandbox network policy(一个 POSIX kernel 除了用户自己代码打开的连接外仍然被拒绝网络访问)，为了追求 transport 对称性去重写一个已经工作、已经测试过的机制，在预发布"基础优先于影响面"的立场下属于不正当的折腾——两种 transport 已经在一个 seam 背后完全解耦，保持它们不同没有任何共享代码上的代价。
+**立即采用 Windows named pipe。** 用它替换现有认证通道前，需要真实平台证明 ACL 与 sandbox token 交互。
 
-`kernelEnvironment()`(`kernel-process.ts`)现在会在 `process.platform === 'win32'` 时，从 Host 自身的 environment 原样携带一组固定的 win32 ambient 变量：`SystemRoot`、`windir`、`SystemDrive`、`ComSpec`、`PATHEXT`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA`、`NUMBER_OF_PROCESSORS`、`PROCESSOR_ARCHITECTURE`，外加把 `TEMP`/`TMP` 设为 kernel 自己的 scratch temp 目录(Python 的 `tempfile` 与 R 的 `tempdir()` 在 Windows 上都不读取 `TMPDIR`)。一个不带第一组变量启动的 win32 process 无法初始化 Winsock(`WinError 10106`)，而 loopback TCP response channel 与 interpreter 自身的标准库都依赖 Winsock；既有的 POSIX allowlist(`PYTHONUSERBASE`/`R_LIBS_USER`、`HOME`、`TMPDIR`、`PATH`、`SCIENCE_STATE_DIR`、`SCIENCE_WORKSPACE_DIR`)不变。`interpreterPathEnv()`(`execution.ts`)现在在 `process.platform === 'win32'` 时分支，用 `node:path` 的 `win32` 子模块构造一个以 `;` 拼接的 `PATH`：`<prefix>`、`<prefix>\Library\mingw-w64\bin`、`<prefix>\Library\usr\bin`、`<prefix>\Library\bin`、`<prefix>\Scripts`、`<prefix>\bin`——与 Windows 上 `conda activate` 自身使用的顺序一致——因此这个值与运行该函数的宿主平台无关，是确定性的(测试在 macOS 上练习它，与[package-cache MAX_PATH note](../bug-fix/2026-09-05-win32-package-cache-max-path.zh.md)中 win32 `PATH` 解析的先例一致)。POSIX 的 `<prefix>/bin:/usr/bin:/bin` 不变。
+**也把 POSIX FIFO 替换成 TCP。** 没有相应需求却改变 POSIX 网络策略。
 
-Cooperative interrupt 没有获得任何新的 win32 机制。`SubprocessHandle.interrupt()` 在 win32 上早已是一个有文档记录的空操作(`dsh-subprocess-local` 的 `spawn.ts`)；这次改动没有尝试添加一个基于 `CTRL_BREAK_EVENT` 的等价物。因此一次被取消或超时的 win32 run 总会落入既有的"kernel 未能在宽限窗口内证明自己捕获了中断"路径，直接走向 `run-escalation`，结束 kernel 并丢失其内存状态——这与一个 POSIX kernel 只有在 `SIGINT` 未获回应时才会到达的路径相同。这被接受为一个 v1 已知限制，而不是这次改动要修的缺陷：构建一个独立的 win32 中断机制是实质上独立的工作，有自己的设计问题(`GenerateConsoleCtrlEvent` 在这个 Runtime 的进程组 spawn 形状下是否可达)，而这次改动自身的范围——让 kernel execution 在 win32 上首先成为可能——并不需要先回答这些问题。
+**把响应混入 stdout。** 原生库写入，尤其 base R，不能假定服从 Python 风格描述符重定向。
 
-两处 pre-publication 的 win32 拒绝被直接移除：`index.ts` 中 `startRun` 的那段，以及 `environment.ts` 中 `prepareObservation` 的那段。`ScienceRuntimeErrorCode` 封闭 union 中的 `'KERNEL_UNSUPPORTED_PLATFORM'` 成员被移除(`types.ts`)，连同 `run.spec.ts` 中断言了这次改动所移除的那个 `startRun` 拒绝、且没有替代断言的调用点——preflight 拒绝一旦移除，win32 上的 `startRun` 调用就与 darwin/linux 完全一致，已经被该文件里其余所有与平台无关的测试覆盖到。`environment.ts` 中的那处拒绝，在本分支进行期间被同一 session 下的一条并行 PR(`#17`，"refuse Science onboarding on Windows"，已合并进 `main`)就地改写成了同一个 `KERNEL_UNSUPPORTED_PLATFORM` 代码下的另一段文案——这正是这片共享代码预期会产生的那种平凡冲突；把本分支重新接到那次合并之上时，按这次改动自身的既定设计意图保留了对该代码块的整段移除。`environment.spec.ts` 中对应的测试在那次调解后被改写而非删除：它仍然构造同一个 Windows 形态的 Conda 前缀(前缀根目录下的 `python.exe`，与 `WINDOWS_LAYOUT` 对应)并强制 `process.platform`，但现在断言 `bindEnvironment` 会完成(`status: 'applied'`)、且每个 probe spec 的 argv 都指向 `python.exe`——因为这个 harness 完全伪造的 subprocess provider 并不关心那个文件是不是真的可执行——这使该文件继续保留对 `environment.ts` 早已存在的 win32 候选选择分支(`WINDOWS_LAYOUT`)的唯一一处测试覆盖。
+**把合成确认当成 Windows 信号支持。** Fixture 协议测试不证明原生 console 和进程组行为。
 
-每个已接受的 socket 从接受到销毁始终保留错误监听器，覆盖 token 解析前的排队阶段，以及 token 移交后仍可能发生启动清理的阶段。该监听器销毁故障 socket；token 和帧消费者仍会接收同一个错误事件并进行分类。缺少所请求 stdin 的子进程句柄在响应通道移交前就被拒绝。若这些所有者之间出现没有监听器的空档，启动失败清理期间的对端重置会变成 Host 未捕获异常。单元回归覆盖排队阶段和移交后的 socket 重置，组装 Runtime 的测试覆盖缺少 stdin 句柄时的启动拒绝。
+## 后果
 
-## Alternatives considered
+仍须测试错误 token、重复连接、排队 reset、缺失 stdin、EOF 及清理。支持 TCP 协议不证明 Windows 打包或协作中断已验收。未来 Windows 中断机制需要明确 console/进程树设计及真实执行证据。
 
-- **用 Windows named pipe(`\\.\pipe\...`)代替 loopback TCP。** 否决：上文的 ACL/sandbox-token 不匹配是一种在没有真实 Windows 主机可供测试的情况下，这次改动无法承担的、貌似合理但未经验证的失败模式；loopback socket 完全绕开了整个 ACL 问题。
-- **全平台统一用一种 transport(全用 loopback TCP，淘汰 FIFO)。** 否决：这会无谓地触碰 sandbox 的 POSIX network policy，且没有任何行为收益，还会丢弃一个已经完全测试过、且与这次改动真正目标(让 win32 变得可能，而不是让 POSIX 变得不同)无关的机制。
-- **在同一次改动里加入基于 `CTRL_BREAK_EVENT` 的 win32 cooperative interrupt。** 作为独立范围被否决：它需要自己的进程组/控制台子系统设计工作,这不是这次改动任务书要求的；发布 win32 kernel execution 并不需要它——只需要诚实地记录 win32 上的中断总会丢失 kernel 状态，而这一点现在已经写进文档。
-- **让 fake JS driver 仅支持 FIFO。** 否决：这会导致 Windows 跳过已支持的执行、成果和图表路径。共享夹具同时支持经过 token 认证的 TCP 和 FIFO；协作中断状态机测试注入 provider 确认，原生 SIGINT 投递仍是 POSIX 专属测试。
+## 相关决策
 
-## Consequences
-
-`kernel-transport.ts` 有一套专门的单元测试(`tests/kernel-transport.spec.ts`)，针对一个真实的 `node:net` client：token 接受、错误 token 拒绝、第二次连接被拒绝、EOF 与 FIFO EOF 采用相同分类，以及 listener teardown 不留下任何打开的 handle。另有一套 real-driver 测试(`tests/kernel-transport-real.spec.ts`)强制使用 `transportKind: 'tcp'`(从不 mock `process.platform`)，让真实的随包发布 `kernel_python.py`/`kernel_r.R` 走完整的 RUN/DONE/EXIT 周期，针对本机自身已绑定(`~/.papermachine/environment-binding.json`)或从 PATH 解析出的 interpreter，任一语言不存在时自行跳过并给出原因；两种语言都在构建这次改动的机器上跑通了。之前每一个 FIFO 路径的 kernel-process 与 kernel-set 测试都原样通过，证明 POSIX 行为逐字节不变。`packages/science/science-runtime/src/**/*.ts` 的 per-file coverage 保持 100%(`npx vitest run --coverage packages/science/science-runtime/tests --coverage.include='packages/science/science-runtime/src/**/*.ts' --coverage.reportOnFailure`；需要 `--coverage.reportOnFailure` 仅仅是因为下文那个与这次改动无关、既已存在的 `kernel-set.spec.ts` flake，否则它会让 vitest 完全不输出 coverage 报告)。
-
-没有真实 Windows 主机就无法验证的部分：`interrupt()` 作为空操作在这个 Runtime 真实 confinement 下针对一个真实 win32 进程树的真实表现，以及这次改动固定的 allowlist 是否遗漏了某个实际必需的 ambient environment 变量。其余部分后来已由一次真实 Windows Server 2022 运行确认——一次真正由 `micromamba`/Conda 配置的 win32 kernel 端到端 spawn(真实 interpreter、真实 sandbox 强制、在新的 environment allowlist 下真实初始化 Winsock)——详见[win32 scratch 隐私与 probe 排序的 Agent Note](../bug-fix/2026-09-06-win32-scratch-privacy-and-probe-ordering.zh.md)与[win32 R locale 与 probe-argv 的 Agent Note](../bug-fix/2026-09-06-win32-r-locale-and-ascii-probe-argv.zh.md)。发现了一个既有的、与这次改动无关的 flake，且未被这次改动修复：`kernel-set.spec.ts` 的 `discards the losing kernel through EXIT/quiesce after a same-id byId conflict, never leaving it running unregistered` 在未改动的 baseline checkout 上以相同方式失败(通过 `git stash` 确认)，因此不在这次改动的范围内。
+相关 owner：[managed-cooperative-interruption](../architecture/2026-09-09-managed-cooperative-interruption.zh.md); [science-fifo-reader-isolation](../bug-fix/2026-08-31-science-fifo-reader-isolation.zh.md); [kernel-reset-exit-cause](../bug-fix/2026-09-09-kernel-reset-exit-cause.zh.md).

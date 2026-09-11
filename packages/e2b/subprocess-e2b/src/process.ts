@@ -155,13 +155,15 @@ function waitWithSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined)
   })
 }
 
-/** E2B-backed subprocess handle with deferred remote PID acquisition. */
+/** E2B-backed subprocess handle with private remote process-group tracking. */
 export class E2BSubprocessHandle implements SubprocessHandle {
   readonly stdin: Writable | undefined
   readonly stdout: PassThrough | undefined
   readonly stderr: PassThrough | undefined
   readonly collected: SubprocessHandle['collected']
   readonly done: Promise<SubprocessOutcome>
+
+  private completed = false
 
   private readonly commandState = Promise.withResolvers<CommandHandle | undefined>()
   private readonly readyState = Promise.withResolvers<CommandHandle>()
@@ -174,7 +176,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   private readonly stderrReader: E2BOutputReader | undefined
   private readonly paths: RemotePaths
   private controlEnvs: Record<string, string> = {}
-  private remotePid = -1
+  private remoteProcessGroupId: number | undefined
   private outputTransportError: Error | undefined
   private outputDrainExpired = false
   private stateDirectoryCreated = false
@@ -221,13 +223,20 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     void this.readyState.promise.catch(() => {})
     spec.signal?.addEventListener('abort', this.onAbort, { once: true })
     this.done = this.run()
-    void this.done.catch(() => {})
+    void this.done.then(() => { this.completed = true }, () => { this.completed = true })
     if (spec.signal?.aborted === true) this.terminate()
   }
 
-  /** Remote process id after start; `-1` while E2B startup is pending or after it fails. */
-  get pid(): number {
-    return this.remotePid
+  /** @inheritdoc */
+  interrupt(): void {
+    const group = this.remoteProcessGroupId
+    if (group === undefined || this.completed || this.terminationController.signal.aborted) return
+    void this.runtime.getSandbox().then(async (sandbox) => {
+      if (this.completed || this.terminationController.signal.aborted) return
+      await signalRemoteGroups(sandbox, this.controlEnvs, [group], 'INT')
+    }).catch((_interruptDeliveryFailure: unknown) => {
+      // Cooperative delivery is best-effort; termination and quiescence remain independent.
+    })
   }
 
   /** @inheritdoc */
@@ -248,17 +257,6 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     )
   }
 
-  /**
-   * Documented no-op: the remote bootstrap's published process identity is a
-   * process GROUP (the `setsid` leader), never the user argv's own pid, so
-   * this provider has no target that matches the seam's direct-child-only
-   * contract without new remote plumbing to publish that pid separately (see
-   * the package README's Known Limitations). Signalling the group instead
-   * would reach descendants {@link SubprocessHandle.interrupt} promises not
-   * to touch, so this stays inert rather than widening the contract.
-   */
-  interrupt(): void {}
-
   /** @inheritdoc */
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescenceProven) return true
@@ -271,7 +269,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
         this.markQuiescent()
         return true
       }
-      if (this.remotePid <= 0) {
+      if (this.remoteProcessGroupId === undefined) {
         const attempt = this.terminationAttempt
         if (attempt !== undefined && await waitWithSignal(attempt.catch(() => undefined), signal) === WAIT_ABORTED) {
           return false
@@ -304,7 +302,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
       }
       throw error
     }
-    const processGroupId = this.remotePid > 0 ? this.remotePid : handle.pid
+    const processGroupId = this.remoteProcessGroupId ?? handle.pid
     while (await this.groupAlive(sandbox, processGroupId, signal)) {
       this.throwTerminationFailure()
       if (!await waitTick(this.pollMs, signal)) return false
@@ -360,7 +358,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
       }
       this.commandState.resolve(handle)
       try {
-        this.remotePid = await this.waitForProcessGroupId(sandbox, completion)
+        this.remoteProcessGroupId = await this.waitForProcessGroupId(sandbox, completion)
       } catch (error: unknown) {
         try {
           await this.rollbackUnpublishedGroup(sandbox, handle)
@@ -533,6 +531,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     while (true) {
       const rawStatus = (await sandbox.files.read(this.paths.status)).trim()
       if (rawStatus.length > 0) {
+        this.completed = true
         const exitCode = Number(rawStatus)
         if (!/^(?:0|[1-9][0-9]*)$/.test(rawStatus) || !Number.isSafeInteger(exitCode) || exitCode > 255) {
           throw new Error(`subprocess-e2b: remote wrapper published invalid exit code ${JSON.stringify(rawStatus)}`)
@@ -570,7 +569,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   }
 
   private async rollbackPublishedFailure(error: unknown): Promise<unknown> {
-    if (this.remotePid <= 0 || this.quiescenceProven) return error
+    if (this.remoteProcessGroupId === undefined || this.quiescenceProven) return error
     this.terminate()
     try {
       await this.waitForExit()
@@ -610,13 +609,13 @@ export class E2BSubprocessHandle implements SubprocessHandle {
       this.markQuiescent()
       return
     }
-    if (!isValidProcessId(handle.pid) && this.remotePid <= 0) {
+    if (!isValidProcessId(handle.pid) && this.remoteProcessGroupId === undefined) {
       await handle.kill()
       this.markQuiescent()
       return
     }
     const sandbox = await this.runtime.getSandbox()
-    const processGroupId = this.remotePid > 0 ? this.remotePid : handle.pid
+    const processGroupId = this.remoteProcessGroupId ?? handle.pid
     await this.terminateGroup(sandbox, handle, processGroupId)
   }
 

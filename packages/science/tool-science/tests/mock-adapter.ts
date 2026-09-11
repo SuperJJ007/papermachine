@@ -4,7 +4,7 @@
  */
 
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 
 export function textResponse(text: string): StreamChunk[] {
   return [
@@ -17,7 +17,7 @@ export function textResponse(text: string): StreamChunk[] {
 }
 
 export function toolCallResponse(rawCallId: string, name: string, args: object): StreamChunk[] {
-  const callId = CallId(rawCallId)
+  const callId = ToolCallId(rawCallId)
   const argumentsJson = JSON.stringify(args)
   return [
     { type: 'block-start', index: 0, blockType: 'tool-call' },

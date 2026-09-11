@@ -23,3 +23,7 @@ Concurrent first opens share one identity, and multiple surviving copies of a re
 ## Verification
 
 Concurrent first-open and move/copy regressions verify identity ownership. Real OS processes reopen and append to one store. The runnable Science snapshot opens its workspace concurrently before producing artifacts and verifies one project identity alongside cold history.
+
+## Related
+
+Related owners: [project-artifact-store](../architecture/2026-08-25-project-artifact-store.md); [project-artifact-store-s1](../architecture/2026-08-26-project-artifact-store-s1.md).

@@ -5,8 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DSH_HOME_DISPLAY,
   DSH_HOME_DIR_NAME,
-  DSH_HOME_ENV,
-  PAPERMACHINE_HOME_ENV,
   canonicalizeWatchPath,
   defaultDshHome,
   dshHomeDisplay,
@@ -74,10 +72,5 @@ describe('dsh path helpers', () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
-  })
-
-  it('resolves PAPERMACHINE_HOME with precedence over DSH_HOME', () => {
-    const pmHome = join(homedir(), 'custom-pm-home')
-    expect(resolveDshHome(undefined, { [PAPERMACHINE_HOME_ENV]: '~/custom-pm-home', [DSH_HOME_ENV]: '~/dsh-home' })).toBe(pmHome)
   })
 })

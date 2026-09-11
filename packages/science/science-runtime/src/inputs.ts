@@ -1,5 +1,6 @@
 /** Artifact-version input and edit-baseline preparation for unpublished runs. */
 
+import { isScienceLogicalName, isScienceMaterializationPath } from '@deepseek-ai/dsh-science-artifact-store/logical-name'
 import type { ScienceArtifactStore } from '@deepseek-ai/dsh-science-artifact-store'
 import type {
   ScienceArtifactVersion,
@@ -24,21 +25,20 @@ export interface PreparedRunArtifacts {
 }
 
 /**
- * Require one forward-slash relative file path. Empty, dot,
- * parent, backslash, NUL, and malformed-Unicode segments are rejected.
+ * Validate an unchanged relative path for its caller-owned purpose.
  * @param path - Caller-supplied input or capture-relative path.
  * @param subject - Caller-facing noun used in the stable error message.
  * @param code - Stable path-error classification for this request surface.
+ * @param accepts - Identity or materialization predicate selected by the caller.
  * @returns The unchanged path after validation.
  */
 function safeRelativePath(
   path: string,
   subject: string,
   code: 'INPUT_PATH_INVALID' | 'INVALID_REQUEST',
+  accepts: (value: string) => boolean,
 ): string {
-  const segments = path.split('/')
-  if (path.length === 0 || path.includes('\\') || path.includes('\0') || !path.isWellFormed()
-    || segments.some(segment => segment.length === 0 || segment === '.' || segment === '..')) {
+  if (!accepts(path)) {
     throw new ScienceRuntimeError(code, `${subject} must be a forward-slash relative file path`)
   }
   return path
@@ -168,7 +168,7 @@ export async function prepareRunArtifacts(
   const inputs = (requestedInputs ?? []).map(input => ({
     artifactId: input.artifactId,
     version: input.version,
-    path: safeRelativePath(input.path, 'Science artifact input path', 'INPUT_PATH_INVALID'),
+    path: safeRelativePath(input.path, 'Science artifact input path', 'INPUT_PATH_INVALID', isScienceMaterializationPath),
   }))
   if (inputs.length > maxFiles) {
     throw new ScienceRuntimeError('INPUT_TOO_LARGE', `Science artifact inputs exceed the configured ${String(maxFiles)}-file bound`)
@@ -197,7 +197,7 @@ export async function prepareRunArtifacts(
   }
 
   const baselines = Object.entries(requestedBaselines ?? {}).map(([rawPath, ref]) => ({
-    path: safeRelativePath(rawPath, 'Science edit baseline path', 'INVALID_REQUEST'),
+    path: safeRelativePath(rawPath, 'Science edit baseline path', 'INVALID_REQUEST', isScienceLogicalName),
     ref,
   }))
   assertNoPathCollisions(
@@ -219,11 +219,10 @@ export async function prepareRunArtifacts(
 
   // Naming an unrelated (non-`.png`) or nonexistent path here is harmless —
   // capture.ts only ever consults this set for an eligible `.png` file — so
-  // this validates path safety only, the same rule inputs and edit
-  // baselines already enforce, without requiring the path to exist or end
+  // this validates identity only, without requiring the path to exist or end
   // in `.png`.
   const rasterArtifacts = new Set(
-    (requestedRasterArtifacts ?? []).map(path => safeRelativePath(path, 'Science raster artifact path', 'INVALID_REQUEST')),
+    (requestedRasterArtifacts ?? []).map(path => safeRelativePath(path, 'Science raster artifact path', 'INVALID_REQUEST', isScienceLogicalName)),
   )
   return { inputs, materialized, editBaselines, rasterArtifacts }
 }

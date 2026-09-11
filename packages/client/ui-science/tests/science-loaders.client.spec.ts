@@ -2,7 +2,8 @@
 /** Session-scoped artifact loaders and current version fact conversion. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ScienceClientArtifactVersion } from '@deepseek-ai/dsh-science-session/types'
 import { createScienceImageUrlLoader, createScienceTextUrlLoader } from '../src/client/science-artifact-url-loader.ts'
 import { createScienceChartStateLoader } from '../src/client/science-chart-state-loader.ts'
@@ -16,7 +17,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 describe('raw artifact URL loaders', () => {
   it('resolves an encoded image URL without fetching it', async () => {
-    expect(await createScienceImageUrlLoader(SESSION)(CONTENT)).toContain('/api/science/artifact/session%2Fa/version%2F1')
+    expect(await createScienceImageUrlLoader(SESSION)(CONTENT)).toContain('/api/science-artifact?sessionId=session%2Fa&versionId=version%2F1')
   })
 
   it('returns fetched text and rejects a failed response with its status', async () => {
@@ -31,28 +32,28 @@ describe('raw artifact URL loaders', () => {
 })
 
 describe('session-scoped readers', () => {
-  it('reads chart state and reports missing bindings and RPC failures', async () => {
+  it('reads chart state and reports RPC failures', async () => {
     const readScienceChartState = vi.fn()
       .mockResolvedValueOnce({ ok: true, value: { chart: null } })
       .mockResolvedValueOnce({ ok: false, error: { code: 'missing', message: 'gone' } })
-    const sessions = { binding: vi.fn(() => ({ session: { readScienceChartState } })) } as unknown as ISessions
+    const sessions = { science: { scienceChartState: readScienceChartState } } as unknown as Context['remote']
     const load = createScienceChartStateLoader(sessions, SESSION)
     await expect(load(CONTENT)).resolves.toBeNull()
     await expect(load(CONTENT)).rejects.toThrow('missing: gone')
-    expect(readScienceChartState).toHaveBeenCalledWith('version/1')
+    expect(readScienceChartState).toHaveBeenCalledWith(SESSION, 'version/1')
 
-    const absent = createScienceChartStateLoader({ binding: vi.fn() } as unknown as ISessions, SESSION)
-    await expect(absent(CONTENT)).rejects.toThrow('resolved no binding')
+    readScienceChartState.mockRejectedValueOnce(new Error('transport offline'))
+    await expect(load(CONTENT)).rejects.toThrow('transport offline')
   })
 
-  it('reads a version batch and reports a missing binding', async () => {
+  it('reads a version batch and propagates transport failure', async () => {
     const readScienceVersions = vi.fn().mockResolvedValue({ ok: true, value: { versions: [] } })
-    const sessions = { binding: vi.fn(() => ({ session: { readScienceVersions } })) } as unknown as ISessions
+    const sessions = { science: { scienceVersions: readScienceVersions } } as unknown as Context['remote']
     await expect(createLoadScienceVersions(sessions, SESSION)(['version/1'])).resolves.toEqual({ ok: true, value: { versions: [] } })
-    expect(readScienceVersions).toHaveBeenCalledWith(['version/1'])
+    expect(readScienceVersions).toHaveBeenCalledWith(SESSION, ['version/1'])
 
-    const absent = createLoadScienceVersions({ binding: vi.fn() } as unknown as ISessions, SESSION)
-    await expect(absent(['version/1'])).rejects.toThrow('resolved no binding')
+    readScienceVersions.mockRejectedValueOnce(new Error('transport offline'))
+    await expect(createLoadScienceVersions(sessions, SESSION)(['version/1'])).rejects.toThrow('transport offline')
   })
 })
 

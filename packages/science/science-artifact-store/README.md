@@ -1,11 +1,40 @@
+---
+description: "Save versioned Science artifacts in a project library that survives individual sessions."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-science-artifact-store
 
 English | [中文](README.zh.md)
 
-Project-owned Science artifact registry and content-addressed version store. Sessions are producers, consumers, and provenance of an artifact — never its owner: a second session in the same project reads, references, and appends to an artifact a first session created, and an artifact outlives the session that produced it. Design rationale: [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md); the schema v2 authority rule (the store is the sole authority for a version's provenance, never the session log) is in [project artifact store schema v2 Agent Note](../../../.agents/notes/implemented/architecture/2026-09-01-project-artifact-store-schema-v2.md).
+## Summary
+
+Save versioned Science artifacts in a project library that survives individual sessions. Sessions in the same project can reuse exact versions and inspect their provenance. Artifact bytes remain owned by the project store.
+
+## Table of Contents
+
+- [Package responsibilities](#package-section-0)
+- [Project identity](#package-section-1)
+- [Store layout](#package-section-2)
+- [Artifact, Version, and side-table records](#package-section-3)
+- [Concurrent append linearization](#package-section-4)
+- [Schema migration](#package-section-5)
+- [Delete boundaries](#package-section-6)
+- [Reconciliation](#package-section-7)
+- [Configuration (schemastery)](#package-section-8)
+- [Runtime assertions](#package-section-9)
+- [Model Experience](#package-section-10)
+- [Known Limitations and Deferred Work](#package-section-11)
+- [Dev Note](#dev-note)
+
+<a id="package-section-0"></a>
+## Package responsibilities
+
+Project-owned Science artifact registry and content-addressed version store. Sessions are producers, consumers, and provenance of an artifact — never its owner: a second session in the same project reads, references, and appends to an artifact a first session created, and an artifact outlives the session that produced it. Design rationale: [project artifact store Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md); the schema v2 authority rule (the store is the sole authority for a version's provenance, never the session log) is in [project artifact store schema v2 Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-09-01-project-artifact-store-schema-v2.md).
 
 Loading the service does not load SQLite. The engine imports `node:sqlite` only when it opens a project database; an idle Web host does not incur database startup work or SQLite experimental warnings.
 
+<a id="package-section-1"></a>
 ## Project identity
 
 A project is a workspace directory. `openProject(workspacePath)` resolves its identity from a marker file at `<workspace>/.papermachine/project.json` (`{projectId, createdAt}`), creating one on first use. The store keeps its own record at `<storeRoot>/project.json` (`{projectId, createdAt, workspacePath, workspaceUpdatedAt}`), refreshed on every open — this record is the registry; there is no separate global index.
@@ -21,6 +50,7 @@ Resolution rule when the store's recorded `workspacePath` differs from the path 
 
 `openProject` returns this outcome (`ProjectIdentityOutcome`) alongside the resolved `projectId` and `storeRoot`.
 
+<a id="package-section-2"></a>
 ## Store layout
 
 Every other method takes a `projectId` directly and is self-sufficient — it opens (or reuses a cached connection to) that project's store without requiring a prior `openProject` call in the same process, so a Host restart or a second session that already knows a project id can resume work immediately. The store directory, rooted under the harness home (`@deepseek-ai/dsh-home-paths`'s `resolveDshHome`, never a hardcoded path) at `<harnessHome>/projects/<projectId>/`, holds:
@@ -30,7 +60,10 @@ Every other method takes a `projectId` directly and is self-sufficient — it op
 - `store.sqlite.v<N>.bak` — a pre-upgrade snapshot of `store.sqlite`, written before a schema migration touches the file (see Schema migration below). Retention is configurable.
 - `blobs/sha256/<hh>/<hash>` — content-addressed verbatim bytes, admitted by writing a temp file under `blobs/tmp` then renaming it onto the final path. The rename atomically replaces an existing target, which is always byte-identical for the same digest, so admission is idempotent by hash with no existence pre-check. Blobs are never touched by a schema migration — they are content-addressed and outside `store.sqlite`.
 
+<a id="package-section-3"></a>
 ## Artifact, Version, and side-table records
+
+Logical names preserve Unicode, spaces, underscores, and nested forward-slash paths without normalization. The pure `@deepseek-ai/dsh-science-artifact-store/logical-name` export owns identity validation: 1–4096 UTF-16 code units, well-formed Unicode, no empty/dot/parent segments, backslashes, controls, or Windows-reserved punctuation. Historical device names and trailing dots remain readable identities; the separate materialization predicate rejects device names and trailing dots/spaces before writing input destinations. `createArtifact` and `reconstructVersion` reject invalid identities before opening a database or admitting bytes. See the [path-validation decision](../../../.agents/notes/implemented/bug-fix/2026-09-11-science-logical-name-validation.md).
 
 An **Artifact** row (`artifact_id` PRIMARY KEY, `UNIQUE(owningProjectId, logicalName)`): `owningProjectId`, `originSessionId` (the session that created it), `logicalName`, `kind` (`'figure' | 'dataset' | 'document' | 'job-output'`), `latestVersionId`, `createdAt`.
 
@@ -58,10 +91,12 @@ A **VersionHealth** row (`version_health`, `version_id` PRIMARY KEY) records rec
 
 `listNotes`/`putNote`/`removeNote` manage `artifact_notes`; `getFigureState` reads `figure_state` (write it via `figureState` on `createArtifact`/`appendVersion`); `setVersionHealth` is this package's one write method onto `version_health` — building the reconciliation algorithm that calls it is a consumer's job.
 
+<a id="package-section-4"></a>
 ## Concurrent append linearization
 
 `appendVersion`'s write transaction (`BEGIN IMMEDIATE` … `COMMIT`) is the linearization point: it reads the artifact's current `latestVersionId` only to compute the next `ordinal`, inserts the new version, and updates `latestVersionId`. SQLite's `sqlite3_busy_timeout()` (the `busyTimeoutMs` connection option) makes a second writer block-and-retry on `BEGIN IMMEDIATE` instead of failing outright, so two sessions — including two separate OS processes — appending concurrently serialize on this transaction: the later committer becomes latest, and the chain never forks automatically.
 
+<a id="package-section-5"></a>
 ## Schema migration
 
 `PROJECT_ARTIFACT_STORE_SCHEMA_VERSION` (currently `2`) is the highest on-disk `PRAGMA user_version` this build writes; whether an OLDER on-disk version can still be opened depends on whether `STORE_MIGRATIONS` has an unbroken chain toward it, not on the version number's shape. Opening a store branches on the on-disk value:
@@ -80,10 +115,12 @@ The v1→v2 migration (`STORE_MIGRATIONS`'s only step today) does six things in 
 
 `storeBackupRetention` (Config, default `1`) controls how many `store.sqlite.v<N>.bak` files a project keeps, pruned oldest-numbered-first after each upgrade. A failure listing the backup directory degrades silently (best-effort pruning); a failure checkpointing WAL before the copy is likewise best-effort — the backup is still usable, just possibly missing very recent writes.
 
+<a id="package-section-6"></a>
 ## Delete boundaries
 
 `deleteProject(projectId)` permanently removes `<storeRoot>/` — index and blobs — the one cascade this package performs. There is no session-scoped delete operation: deleting a session's log is a `dsh-session` concern this package never observes, and every stored row keeps its producer `sessionId` as provenance regardless of whether that session still exists.
 
+<a id="package-section-7"></a>
 ## Reconciliation
 
 `reconcile.ts` compares the store's own version rows against `science/artifact-saved` events a caller has already read from that project's session logs and folded per `versionId` (last write wins) — this package never reads session logs itself. `ScienceArtifactStore.reconcileProject(projectId, events, eventSetComplete, cursor?)` runs the comparison and repairs the store to match; `eventSetComplete` states whether the caller read every relevant session log and event, and a returned cursor continues bounded work over that stable event set. `getReconciliationSummary(projectId)` is a pure read of whatever the last reconciliation run recorded. The hard rule: **reconciliation only ever writes the store, never a session log** — the log is append-only, and rewriting its history would break the replay contract.
@@ -104,6 +141,7 @@ Reconciliation is idempotent: rerunning it over an unchanged store and event set
 
 Who calls `reconcileProject`, and how the event set is built, is a consumer's job: `dsh-science-runtime`'s `sessionProject` triggers a bounded pass when it resolves a project id, reading that project's own session logs through `@deepseek-ai/dsh-session-persistence`'s `SessionPersistence.inspect()` (bounded by its own `reconcileMaxSessions` Config). The Runtime retains both the accumulated per-session events and the store cursor between eligible attempts. A complete event collection followed by a cursor-free, error-free store pass suppresses later attempts for that project during the Host lifetime; otherwise a later project resolution may retry after `reconcileRetryDelayMs`. See that package's README for the trigger mechanism and W2/W3 crash-window narrowing at its own `annotateArtifact`/`performChartEdit`/`saveArtifactAs` append sites.
 
+<a id="package-section-8"></a>
 ## Configuration (schemastery)
 
 ```ts
@@ -132,6 +170,12 @@ interface Config {
 
 `backfillProvenance` is a function value, validated by `z.any()` like other injected-instance config fields in this repo (e.g. `dsh-session-telemetry-otel`'s `exporter`/`processor`) — it is supplied programmatically, not from `cordis.yml`. This package never reads session-log format itself; a consumer that does (e.g. `dsh-science-runtime`) supplies the hook.
 
+<a id="package-section-9"></a>
+## Runtime assertions
+
+No runtime invariant companion is published: Schema-version and blob-digest checks run when opening or reading the store; SQLite transactions own append atomicity. No independent in-process observations require a companion assertion.
+
+<a id="package-section-10"></a>
 ## Model Experience
 
 None, as the package persists project-owned artifact bytes and metadata; model-facing consumers such as `dsh-science-runtime` and `dsh-tool-science` own any prompt, schema, or request rendering of what it stores.
@@ -142,8 +186,15 @@ None — this package never assembles or sends provider requests; it has no live
 
 ## Known Limitations and Deferred Work
 
+<a id="package-section-11"></a>
+
 - **No unreferenced-blob garbage collection** — a blob admitted for an append that then fails its artifact-existence check (bytes are admitted before the transaction validates the target artifact) is never reclaimed; content addressing makes this an inert orphan, not a correctness issue.
 - **Workspace identity uses `resolve()`, not `realpath()`** — a workspace reached through two different symlink paths is not recognized as the same directory; only literal path equality distinguishes reopen from move/copy.
 - **Copy detection is heuristic at open time** — a copy opened while the original is unreachable (e.g. an unmounted disk) is indistinguishable from a move and keeps the id, per the design note's accepted v1 risk.
-- **No cross-project read/write, retention policy, or dependency DAG** — this package implements spec items 1/2/5/6/10 of the [project artifact store Agent Note](../../../.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md) only; cross-project access, version retention, and dependency tracking are explicitly deferred.
+- **No cross-project read/write, retention policy, or dependency DAG** — this package implements spec items 1/2/5/6/10 of the [project artifact store Agent Note](https://github.com/SuperJJ007/papermachine/blob/44575f3bf0/.agents/notes/implemented/architecture/2026-08-25-project-artifact-store.md) only; cross-project access, version retention, and dependency tracking are explicitly deferred.
 - **`reconstructVersion`'s recovered `mediaType`/`kind` is inferred, not verified** — a dangling event whose `logicalName` extension is not in the fixed five-type set falls back to `application/octet-stream`/`document`; there is no way to recover the real value once both the store row and the event have stopped carrying it.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

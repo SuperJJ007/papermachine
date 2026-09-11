@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-09-project-identity-locking.md
-2026-09-09-project-identity-locking.md: a530eb34709cdec64df88b4b8d294b3d24a04c6d
-2026-09-09-project-identity-locking.zh.md: a4230712f3de8b0a861891ef70d5f713660bcf6b
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-09-09-project-identity-locking.md: c68093385f4fe5a3969382f7c2dc32dc92c24bfb
+2026-09-09-project-identity-locking.zh.md: 855674a6b1e91ed2a9a3275b3ce5adc3d09613e2

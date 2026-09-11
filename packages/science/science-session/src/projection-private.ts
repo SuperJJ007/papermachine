@@ -1,6 +1,6 @@
 /** Private plain-JSON state retained by the Science projection registry. */
 
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ScienceFoldState } from './fold-state.ts'
 
 /** Redacted Session event retained to verify a persisted checkpoint. */

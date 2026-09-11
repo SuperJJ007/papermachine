@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-Science 提供执行、状态查看与产物标注。结果通过普通 assistant 回复呈现。发布工具、对应指引以及模型可见状态中的 Outcome 字段均不提供。已记录的 Outcome 事件及其只读展示仍可读取；此决策不删除会话历史。
+Science 提供执行、状态查看与产物标注。结果通过普通 assistant 回复呈现。发布工具、对应指引以及模型可见状态中的 Outcome 字段均不提供。已通过 admission 的原生 V3 会话保留已记录 Outcome 事件的只读展示；这不承诺旧 V0/V1/V2 Science 会话可打开。
 
 元素引用保留精确身份，但不在 PNG 上绘制覆盖框。只有记录了颜色的元素才在名称后显示色块。显式区域框选仍可使用。空白私有备注输入框包含输入提示与隐私说明，以换行分隔；两者均不会作为备注文本提交。
 
@@ -26,4 +26,8 @@ Science 提供执行、状态查看与产物标注。结果通过普通 assistan
 
 不会产生新的证据支持的发布修订。重新引入需要同时覆盖生产者、模型指引与展示的明确产品决策。组件测试与产物查看器快照固定图像无遮挡、有色元素的尾随色块，以及仅作为占位提示的隐私文本；工具目录、组装后的 CLI 预设、真实 Web 预设与无密钥快照固定不含发布工具的模型工具列表。
 
-此决策部分取代 [R5 发布](../feature/2026-08-16-dsh-science-v01-r5-charts-outcome.zh.md)，并把 [transcript 中的 Outcome 位置](../feature/2026-08-25-science-trajectory-and-transcript-ia.zh.md)限定为已记录历史的展示。两份记录仍保留独立的附件授权、回放与 transcript 布局依据。
+原 R5 与 transcript 布局记录已冻结为历史。当前读取授权、必读事件 admission 及原生布局各有 owner。
+
+## 相关决策
+
+相关 owner：[science-required-session-events](../architecture/2026-09-10-science-required-session-events.zh.md); [science-native-sidebar](../architecture/2026-09-10-science-native-sidebar.zh.md).

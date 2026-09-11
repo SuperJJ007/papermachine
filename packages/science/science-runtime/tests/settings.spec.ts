@@ -120,7 +120,7 @@ describe('Science Runtime settings-namespace ownership', () => {
     await expect(ctx.scienceRuntime.bindEnvironment({
       session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
-    expect(session.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
+    expect(session.snapshotEvents().map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
     ])
 

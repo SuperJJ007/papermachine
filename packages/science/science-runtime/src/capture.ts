@@ -7,6 +7,7 @@
  * its two `science/run-finished` append sites.
  */
 
+import { isScienceLogicalName } from '@deepseek-ai/dsh-science-artifact-store/logical-name'
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
@@ -208,6 +209,9 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     return !isRasterCaptureAllowed(relativePath, mediaType, request.rasterCapture, request.rasterArtifacts)
   })
   const eligible = walked.filter(relativePath => !skippedRasterPaths.includes(relativePath))
+  if (eligible.some(relativePath => !isScienceLogicalName(relativePath))) {
+    throw new ProjectArtifactStoreError('Science capture contains an invalid logical name', 'LOGICAL_NAME_INVALID')
+  }
   const truncatedPerRun = eligible.length > request.captureMaxFilesPerRun
   const files = eligible.slice(0, request.captureMaxFilesPerRun)
 
@@ -218,7 +222,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
   let appendFailed = false
   // Advance from the complete log incrementally, including events appended
   // by kernel teardown while the artifact store performs asynchronous I/O.
-  const state: ScienceFoldState = foldScience(session.events)
+  const state: ScienceFoldState = foldScience(session.snapshotEvents())
   // The authorizing run's own turn number, read once from this same fold's
   // tool-call index (`tool/call` facts are unaffected by the Science
   // artifact-event slimming) rather than per file — the authorizing call is
@@ -404,7 +408,7 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
       }
       break
     }
-    for (const event of session.events.slice(state.nextSeq, appended.seq + 1)) {
+    for (const event of session.snapshotEvents().slice(state.nextSeq, appended.seq + 1)) {
       applyScienceEvent(state, event)
     }
     captured.push(artifact)

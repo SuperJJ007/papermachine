@@ -19,7 +19,7 @@ import type {
   ScienceVersionId,
 } from '@deepseek-ai/dsh-science-session'
 import type { CaptureRunArtifactsResult } from './capture.ts'
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 
 export type { CaptureRunArtifactsResult } from './capture.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -158,6 +158,8 @@ export interface ScienceRunResult {
    * discoverable through `get_science_state`.
    */
   readonly capture?: CaptureRunArtifactsResult
+  /** Capture outcome independent of interpreter status; safe for persisted tool output. */
+  readonly captureFailure?: 'invalid-logical-name' | 'filesystem' | 'capture-failed' | 'session-detached' | 'event-append-failed'
 }
 
 /** Inputs for installing packages into this session's applied environment for one language. */
@@ -221,7 +223,7 @@ export interface AnnotateScienceArtifactRequest {
   /** Optional human-readable artifact caption. */
   readonly caption?: string
   /** Model-issued call already recorded in the Session log. */
-  readonly toolCallId: CallId
+  readonly toolCallId: ToolCallId
   /** Latest Science-era `request/header` event already recorded in the log. */
   readonly requestHeaderSeq: number
   /** Caller-owned cancellation signal. */
@@ -261,7 +263,7 @@ export interface ScienceChartEditRequest {
   readonly version: number
   readonly ops: readonly ScienceChartOp[]
   readonly signal: AbortSignal
-  readonly toolCallId?: CallId
+  readonly toolCallId?: ToolCallId
   readonly requestHeaderSeq?: number
 }
 

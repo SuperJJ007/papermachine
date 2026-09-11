@@ -67,7 +67,7 @@ async function captureFiles(
   files: Readonly<Record<string, Uint8Array | string>>,
   options: Pick<StartScienceRunRequest, 'rasterArtifacts'> & { readonly chartResult?: unknown } = {},
 ): Promise<void> {
-  if (replayScience(session.events)?.environment === null) {
+  if (replayScience(session.snapshotEvents())?.environment === null) {
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
   }
   captureCallCounter += 1
@@ -96,7 +96,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-basic')
     await captureFiles(root, harness, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     if (source === undefined) throw new Error('expected a captured summary.csv version')
     await harness.runtime.annotateArtifact({
       session, logicalName: 'summary.csv', title: 'Result summary', caption: 'The final table',
@@ -145,7 +145,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     const sourceBytes = await harness.ctx.scienceArtifactStore.readBlob(source.projectId, source.sha256)
     expect(savedBytes).toEqual(sourceBytes)
 
-    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary-copy.csv')
+    const artifacts = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'summary-copy.csv')
     expect(artifacts?.map(a => a.version)).toEqual([1])
   })
 
@@ -156,7 +156,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-producer-turn')
     await captureFiles(root, harness, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     if (source === undefined) throw new Error('expected a captured summary.csv version')
     session.append('turn/start', { turn: 1 })
 
@@ -179,7 +179,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-no-turn')
     await captureFiles(root, harness, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     if (source === undefined) throw new Error('expected a captured summary.csv version')
 
     const saved = await harness.runtime.saveArtifactAs({
@@ -197,7 +197,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-no-caption')
     await captureFiles(root, harness, session, { 'notes.txt': 'v1' })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'notes.txt')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'notes.txt')
     if (source === undefined) throw new Error('expected a captured notes.txt version')
 
     const saved = await harness.runtime.saveArtifactAs({
@@ -222,7 +222,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     await captureFiles(root, harness, session, { 'chart.png': 'PNG' }, {
       rasterArtifacts: ['chart.png'], chartResult: { charts: { 'chart.png': chart }, errors: {} },
     })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
     if (source === undefined) throw new Error('expected a captured chart.png version')
     const sourceFigureState = await harness.ctx.scienceArtifactStore.getFigureState(source.projectId, source.versionId)
     expect(sourceFigureState).toMatchObject({ figureKey: 'chart.png', dpi: 120 })
@@ -242,7 +242,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-conflict')
     await captureFiles(root, harness, session, { 'a.csv': 'a', 'b.csv': 'b' })
-    const a = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'a.csv')
+    const a = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'a.csv')
     if (a === undefined) throw new Error('expected a captured a.csv version')
 
     await expect(harness.runtime.saveArtifactAs({
@@ -271,7 +271,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     const workspace = join(root, 'workspace')
     const producer = createScienceSession(harness.ctx, 'science-save-as-cross-session-producer', workspace)
     await captureFiles(root, harness, producer, { 'shared.csv': 'shared' })
-    const source = replayScience(producer.events)?.artifacts.find(candidate => candidate.logicalName === 'shared.csv')
+    const source = replayScience(producer.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'shared.csv')
     if (source === undefined) throw new Error('expected a captured shared.csv version')
 
     const viewer = createScienceSession(harness.ctx, 'science-save-as-cross-session-viewer', workspace)
@@ -316,7 +316,7 @@ describe('ScienceRuntime.saveArtifactAs', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-save-as-store-failure')
     await captureFiles(root, harness, session, { 'a.csv': 'a' })
-    const source = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'a.csv')
+    const source = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'a.csv')
     if (source === undefined) throw new Error('expected a captured a.csv version')
     const failure = new Error('disk full')
     const createArtifact = vi.spyOn(harness.ctx.scienceArtifactStore, 'createArtifact').mockRejectedValueOnce(failure)

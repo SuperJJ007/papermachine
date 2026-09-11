@@ -42,7 +42,7 @@
 .subTabs {
   display: flex;
   gap: 2px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .subTab {
@@ -95,7 +95,7 @@
 .messageActions { display: flex; gap: 6px; padding-left: 52px; }
 .primaryAction, .secondaryAction {
   padding: 5px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   font-size: 12px;
   line-height: 18px;

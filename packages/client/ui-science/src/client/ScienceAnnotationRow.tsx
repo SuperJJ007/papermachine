@@ -14,6 +14,6 @@ export function ScienceAnnotationRow({ block, inspect, t }: ToolCallViewProps & 
     : state === 'error' ? t('artifact.curateFailed')
       : state === 'stopped' ? t('artifact.curateStopped')
         : output?.split(/\r?\n/u)[0] ?? ''
-  return <ScienceToolCell state={state} icon={<IconDataOutline16 size={14} />} title={t('artifact.title')}
+  return <ScienceToolCell inspectLabel={t('inspect')} state={state} icon={<IconDataOutline16 size={14} />} title={t('artifact.title')}
     summary={summary} output={output} inspect={inspect} copyLabel={t('cell.copy')} copiedLabel={t('cell.copied')} toolKind="science-annotation" />
 }

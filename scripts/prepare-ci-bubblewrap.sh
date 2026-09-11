@@ -9,7 +9,6 @@ readonly BUBBLEWRAP_SHA256='1b506492bd9c7fd0cdb4f02ac822f1d3e336b0aead5113c1239b
 readonly BUBBLEWRAP_URL="https://archive.ubuntu.com/ubuntu/pool/main/b/bubblewrap/bubblewrap_${BUBBLEWRAP_VERSION}_amd64.deb"
 
 : "${RUNNER_TEMP:?prepare-ci-bubblewrap requires RUNNER_TEMP}"
-: "${GITHUB_PATH:?prepare-ci-bubblewrap requires GITHUB_PATH}"
 
 if [[ "$(uname -s)" != 'Linux' || "$(uname -m)" != 'x86_64' ]]; then
   echo 'prepare-ci-bubblewrap supports only Linux x86_64 hosted runners' >&2
@@ -23,10 +22,11 @@ curl --fail --silent --show-error --location --retry 3 --retry-all-errors --outp
 printf '%s  %s\n' "$BUBBLEWRAP_SHA256" "$archive" | sha256sum --check --status
 mkdir -p "$root"
 dpkg-deb --extract "$archive" "$root"
-printf '%s\n' "$root/usr/bin" >> "$GITHUB_PATH"
+# Science interpreter children use /usr/bin:/bin rather than the runner PATH.
+sudo install -m 755 "$root/usr/bin/bwrap" /usr/bin/bwrap
 
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
   || echo 'apparmor userns knob absent — the functional probe decides'
-"$root/usr/bin/bwrap" --version
-"$root/usr/bin/bwrap" --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- true
+/usr/bin/bwrap --version
+env -i PATH=/usr/bin:/bin /usr/bin/bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- true
 echo 'bubblewrap functional probe passed'

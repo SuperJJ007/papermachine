@@ -11,11 +11,12 @@
 
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConversationNode, ConversationSnapshot, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode, ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: ChatNode narrows the generic view-node store's value for the
 // 'tool-call' target the same way ui-conversation's own tool-node reader does.
-import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { conversationContextKey } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+/** Transcript facts supplied by the Chat target. */
+export type ScienceTranscriptSnapshot = ChatSnapshot['legacy'] & { readonly chat: ChatSnapshot }
 import type { ScienceClientEnvironmentBinding, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { ScienceProvenanceSubTab } from './selection-store.ts'
 import type { ScienceRenderableVersion } from './version-summaries.ts'
@@ -37,13 +38,12 @@ export interface ScienceArtifactProvenanceProps {
   /** The version's producing tool call id, when resolvable in the current session. */
   producingCallId: string | undefined
   environment: ScienceClientEnvironmentBinding | null | undefined
-  snapshot: ConversationSnapshot
+  snapshot: ScienceTranscriptSnapshot
   subTab: ScienceProvenanceSubTab
   onSubTabChange: (subTab: ScienceProvenanceSubTab) => void
   onBack: () => void
   inspectCall: (callId: string) => void
   /** Select the detailed trajectory subview before inspecting one call. */
-  selectDetailed: () => void
   returnToConversation: (anchorKey: string) => void
   /** Display title or id for a producer outside the current session. */
   sourceSessionTitle?: string
@@ -59,9 +59,9 @@ function userText(node: Extract<ConversationNode, { kind: 'user' | 'steering' }>
 }
 
 /** Resolve the generating turn plus nearby dialogue without parsing model prose. */
-function generationSummary(snapshot: ConversationSnapshot, callId: string): {
+function generationSummary(snapshot: ScienceTranscriptSnapshot, callId: string): {
   readonly turn: number
-  readonly anchorKey: string
+  readonly anchorKey: string | undefined
   readonly user: string
   readonly agent: string
 } | undefined {
@@ -78,16 +78,18 @@ function generationSummary(snapshot: ConversationSnapshot, callId: string): {
     : undefined
   return {
     turn: assistant.turn,
-    anchorKey: conversationContextKey('assistant-step', `${String(assistant.turn)}:${String(assistant.step)}`),
+    anchorKey: [...snapshot.chat.nodes.values()].find(node => node.kind === 'assistant-step' && (node as ChatNode<'assistant-step'>).data.turn === assistant.turn && (node as ChatNode<'assistant-step'>).data.step === assistant.step)?.key,
     user: priorUser?.kind === 'user' || priorUser?.kind === 'steering' ? normalizedSummary(userText(priorUser)) : '',
     agent: agent?.kind === 'text' ? normalizedSummary(agent.text) : '',
   }
 }
 
 /** Resolve one tool call through the internal Chat Node index (direct-dispatch calls are always root). */
-function resolveCall(snapshot: ConversationSnapshot, callId: string): ToolCallBlock | undefined {
-  const node = snapshot.chat.nodes.get(conversationContextKey('tool-call', callId))
-  return node?.kind === 'tool-call' ? (node as ChatNode<'tool-call'>).data.root : undefined
+function resolveCall(snapshot: ScienceTranscriptSnapshot, callId: string): ToolCallBlock | undefined {
+  for (const node of snapshot.chat.nodes.values()) {
+    if (node.kind === 'tool-call' && (node as ChatNode<'tool-call'>).data.root.callId === callId) return (node as ChatNode<'tool-call'>).data.root
+  }
+  return undefined
 }
 
 /** Flatten a settled result's content blocks into displayable text. */
@@ -210,13 +212,12 @@ function ExecutionLogSection({ run, block, t }: { run: ScienceClientRun; block: 
 }
 
 function MessagesSection({
-  summary, sourceSessionTitle, returnToConversation, inspectCall, selectDetailed, producingCallId, t,
+  summary, sourceSessionTitle, returnToConversation, inspectCall, producingCallId, t,
 }: {
   summary: ReturnType<typeof generationSummary>
   sourceSessionTitle: string | undefined
   returnToConversation: (anchorKey: string) => void
   inspectCall: (callId: string) => void
-  selectDetailed: () => void
   producingCallId: string | undefined
   t: TranslateNS<'science'>
 }) {
@@ -235,13 +236,14 @@ function MessagesSection({
   if (summary === undefined || producingCallId === undefined) {
     return <section className={css.section}><p className={css.notice} role="status">{t('provenance.messages.pending')}</p></section>
   }
+  const anchorKey = summary.anchorKey
   return (
     <section className={css.messagesSection}>
       <div className={css.messageSummary}><span>{t('provenance.messages.question')}</span><p>{summary.user}</p></div>
       <div className={css.messageSummary}><span>{t('provenance.messages.result')}</span><p>{summary.agent}</p></div>
       <div className={css.messageActions}>
-        <button type="button" className={css.primaryAction} onClick={() => { returnToConversation(summary.anchorKey) }}>{t('provenance.messages.conversation')}</button>
-        <button type="button" className={css.secondaryAction} onClick={() => { selectDetailed(); inspectCall(producingCallId) }}>{t('provenance.messages.trajectory')}</button>
+        <button type="button" className={css.primaryAction} disabled={anchorKey === undefined} onClick={anchorKey === undefined ? undefined : () => { returnToConversation(anchorKey) }}>{t('provenance.messages.conversation')}</button>
+        <button type="button" className={css.secondaryAction} onClick={() => { inspectCall(producingCallId) }}>{t('provenance.messages.trajectory')}</button>
       </div>
     </section>
   )
@@ -279,7 +281,7 @@ function EnvironmentSection({ run, environment, t }: {
  * @returns the drill-in body.
  */
 export function ScienceArtifactProvenance({
-  chart, run, producingCallId, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall, selectDetailed,
+  chart, run, producingCallId, environment, snapshot, subTab, onSubTabChange, onBack, inspectCall,
   returnToConversation, sourceSessionTitle, t,
 }: ScienceArtifactProvenanceProps) {
   const block = producingCallId === undefined ? undefined : resolveCall(snapshot, producingCallId)
@@ -314,7 +316,7 @@ export function ScienceArtifactProvenance({
         : <ExecutionLogSection run={run} block={block} t={t} />)}
       {subTab === 'messages' && <MessagesSection
         summary={summary} sourceSessionTitle={sourceSessionTitle} returnToConversation={returnToConversation}
-        inspectCall={inspectCall} selectDetailed={selectDetailed} producingCallId={producingCallId} t={t} />}
+        inspectCall={inspectCall} producingCallId={producingCallId} t={t} />}
       {subTab === 'environment' && (run === undefined
         ? <UnavailableRunSection chart={chart} sourceSessionTitle={sourceSessionTitle} t={t} />
         : <EnvironmentSection run={run} environment={environment} t={t} />)}

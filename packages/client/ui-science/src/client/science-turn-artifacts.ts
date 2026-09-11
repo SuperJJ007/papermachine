@@ -1,8 +1,8 @@
 /** Turn-local Science artifact facts published to the chat tail. */
 
-import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ScienceArtifactPresentation, ScienceArtifactPresentationItem } from '@deepseek-ai/dsh-tool-science/types'
 
 /** Latest artifact versions produced by one conversation Turn. */
@@ -10,7 +10,7 @@ export interface ScienceTurnArtifactsData {
   readonly artifacts: ScienceArtifactPresentation['artifacts']
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
     /** Science artifacts accumulated within one authoritative Turn. */
     'science-turn-artifacts': ScienceTurnArtifactsData
@@ -79,7 +79,7 @@ export const scienceTurnArtifactsDefinition: ConversationNodeDefinition<ScienceT
 }
 
 /**
- * Claim the Turn-tail chain only when the completed Turn produced artifacts.
+ * Select this Turn's artifacts independently of other output list entries.
  * @param owner Completed Turn and its projected conversation data.
  * @returns Artifact data for the Turn or null when it produced none.
  */

@@ -1,6 +1,3 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-06-win32-desktop-provisioning-env-and-space-path.md
-2026-09-06-win32-desktop-provisioning-env-and-space-path.md: 6fdd82632c0f03acdf2f5cb1feaeb08a20070a96
-2026-09-06-win32-desktop-provisioning-env-and-space-path.zh.md: edcb7d249c1eb2f8fe8117f4ff6eb49ee3699f00
+# Bilingual-pair consistency record; both languages carry equal authority.
+2026-09-06-win32-desktop-provisioning-env-and-space-path.md: db9b4aaf745dafaee2a28be17ad8a5749290a09f
+2026-09-06-win32-desktop-provisioning-env-and-space-path.zh.md: 40e00a6868bde6d9f20671d96d76235e710cea9c

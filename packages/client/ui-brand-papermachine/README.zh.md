@@ -1,23 +1,52 @@
+---
+description: "PaperMachine 浏览器品牌组件。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-brand-papermachine
 
 [English](README.md) | 中文
 
-本包为 PaperMachine 桌面产品填充 `sidebar.brand.mark`、`sidebar.brand.name`、`conversation.hero.brand.mark`，并提供 `ui-renderer` document title 投影所读取的 `clientBrand` 服务（`{ productName: 'PaperMachine' }`）。与 `@deepseek-ai/dsh-client-ui-brand-official` 不同，本包不带构建 profile 守卫：挂载本包的 `dsh-web-app` bundle 行默认 `disabled: true`，只有桌面端 Host overlay 这一层会把它打开（同时禁用官方 occupant 所在行及其 `clientBrand`），因此 Web 产品的官方品牌与标题保持不变。
+## 概述
 
-三个 occupant 通过嵌套的 `slots.inject()` 作为一组声明感知注册安装，结构与官方包一致：无论该行先于还是后于侧边栏和会话声明方激活，它都能工作；任一声明折叠时会撤回全部 occupant，HMR 期间不会留下混合品牌。`clientBrand` 与它们一同无条件提供（本包整个 `apply()` 已经由桌面 overlay 的 bundle 行 `disabled` 把关，见下文）。它不保留运行时状态。node 半边是空的 Loader seat。
+当 `DSH_CLIENT_BUILD_PROFILE` 为 `papermachine` 时，此浏览器插件填充侧栏图标、侧栏名称和会话首页图标。启用其 Loader 配置行，并以 `DSH_CLIENT_TITLE=PaperMachine` 构建客户端产物来设置文档标题。标题由构建配置拥有；插件不提供品牌服务。
 
-`PaperMachineBrandMark`原样复用 `@deepseek-ai/dsh-client-ui-primitives` 的 `FishLogo`——PaperMachine 的标记美术尚未设计，因此两个 brand-mark slot 目前都沿用共享的鲸鱼标，直到有 PaperMachine 专属标记替换它。`PaperMachineBrandName` 是本包特有的文字字标："PaperMachine" 作为一个词，用两种字重呈现（"Paper" 500、"Machine" 700），共享同一个主题 token 墨色，通过宿主操作系统的字体栈渲染，而不是打包美术或外部字体文件——桌面应用离线运行。它在默认字号下的高度盒为 24px，与 `BrandWordmark` 在同一侧边栏 slot、默认尺寸下占据的高度盒一致，因此更换品牌插件不会让该行的其它内容位移。
+## 目录
 
-## 模型体验
+- [Registration](#package-section-0)
+- [运行时断言](#package-section-1)
+- [Model Experience](#package-section-2)
+- [Known Limitations and Deferred Work](#package-section-3)
+- [开发备注](#dev-note)
 
-无，因为本包只贡献浏览器呈现；这里没有任何内容进入模型请求。
+<a id="package-section-0"></a>
+## Registration
 
-#### KV Cache 影响
+三个组件通过感知槽位声明的 `slots.inject()` 注册，在声明或插件销毁时退出。非 PaperMachine 构建不会注册任何组件。Node 入口不执行操作。
 
-无；本包既不组装也不发送 provider 请求。
+图标使用共享的 `FishLogo`。文字标识通过系统字体呈现“PaperMachine”，两个部分使用不同字重，颜色使用主题令牌。
 
-## 已知限制与暂缓事项
+<a id="package-section-1"></a>
+## 运行时断言
 
-- **标记美术是占位物** —— `PaperMachineBrandMark` 沿用 `FishLogo`，直到 PaperMachine 专属标记设计完成。
-- **本包只提供一组 occupant** —— 其他呈现应由占用相同 slot 的另一个 Cordis 包提供。
-- **启用方式是 bundle 行的 `disabled`，不是环境变量守卫** —— `packages/bundle/web-app/cordis.patch.yml` 中该行默认关闭；只有 `apps/desktop/src/runtime-overlay.ts` 这一层会把它打开。
+本包没有 `./invariant` 入口。它不保留可变状态；插槽内容通过 effect 所有的注册安装与移除。
+
+<a id="package-section-2"></a>
+## Model Experience
+
+浏览器展示不贡献模型输入或会话事件。
+
+#### KV Cache effect
+
+无；插件不组装提供方请求。
+
+## Known Limitations and Deferred Work
+
+<a id="package-section-3"></a>
+
+- 在专用 PaperMachine 图标就绪前使用共享图案。运行时 profile 变更不能改变现有客户端产物中的品牌；需要使用目标公开环境重新构建。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

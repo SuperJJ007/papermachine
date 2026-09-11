@@ -1,0 +1,45 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Science transcript chrome" [disabled]
+  - button "More actions":
+    - img
+  - button "Artifact library"
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- text: Summarize the dataset. {{clock}}
+- button "Copy":
+  - img
+- button "Thought for a while":
+  - text: Thought for a while
+  - img
+- paragraph: SCIENCE_CHROME_DONE
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- button "1 turns 1 steps":
+  - img
+  - text: 1 turns 1 steps
+- text: Latest kernel records python · epoch 1 · interrupted

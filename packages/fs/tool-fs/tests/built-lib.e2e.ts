@@ -40,7 +40,8 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
       const { default: SystemPrompt } = await import('@deepseek-ai/dsh-system-prompt')
       const { default: ToolRuntime } = await import('@deepseek-ai/dsh-tools')
       const { default: LocalFileSystem } = await import('@deepseek-ai/dsh-fs-local')
-      const { CallId } = await import('@deepseek-ai/dsh-llm')
+      const FsPolicy = await import('@deepseek-ai/dsh-fs-observation-policy')
+      const { ToolCallId } = await import('@deepseek-ai/dsh-llm')
 
       const identity = root.Config === readOnly.Config
 
@@ -48,12 +49,13 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
       await ctx.plugin(LocalFileSystem, { cwd: ${JSON.stringify(cwd)} })
+      await ctx.plugin(FsPolicy)
       await ctx.plugin(readOnly)
       const names = ctx.tools.schemas().map(s => s.name)
 
       const result = await ctx.tools.execute({
         signal: new AbortController().signal,
-        callId: CallId('built-read'),
+        callId: ToolCallId('built-read'),
         name: 'read',
         arguments: { file_path: 'a.txt' },
       })
@@ -66,6 +68,7 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
         await invalidCtx.plugin(SystemPrompt)
         await invalidCtx.plugin(ToolRuntime)
         await invalidCtx.plugin(LocalFileSystem, { cwd: ${JSON.stringify(cwd)} })
+        await invalidCtx.plugin(FsPolicy)
         await invalidCtx.plugin(readOnly, { readLimit: 0 })
       } catch {
         invalidRejected = true

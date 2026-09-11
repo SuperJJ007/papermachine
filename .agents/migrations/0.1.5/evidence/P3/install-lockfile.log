@@ -1,0 +1,16 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 3h ago)
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Progress: resolved 96, reused 0, downloaded 0, added 0
+Progress: resolved 150, reused 0, downloaded 0, added 0
+Progress: resolved 245, reused 0, downloaded 0, added 0
+Progress: resolved 682, reused 0, downloaded 0, added 0
+Progress: resolved 1430, reused 0, downloaded 0, added 0
+[WARN] 11 deprecated subdependencies found: boolean@3.2.0, glob@10.5.0, glob@11.1.0, glob@7.2.3, inflight@1.0.6, lodash.isequal@4.5.0, node-domexception@1.0.0, prebuild-install@7.1.3, rimraf@2.6.3, tsconfck@3.1.6, whatwg-encoding@2.0.0
+Progress: resolved 1530, reused 0, downloaded 0, added 0, done
+
+Done in 6.9s using pnpm v11.7.0

@@ -1,0 +1,76 @@
+{
+  "candidateSha": "df03df3e2656a1e2a66baa1d148ed6dc83a299b8",
+  "workingTreeAcceptance": true,
+  "exitCode": 0,
+  "sessionId": "session-84cfc7c7-22c9-4186-b2e4-6ad053e701aa",
+  "source": "/Users/superjj/ccproj/pm-rc1-acceptance-home/sessions/--private-tmp-pm-rc1-acceptance-workspace--/session-84cfc7c7-22c9-4186-b2e4-6ad053e701aa/session.v3.jsonl.zstd",
+  "cwd": "/private/tmp/pm-rc1-acceptance-workspace",
+  "eventCount": 36,
+  "node": "24.14.0",
+  "runtimeHome": "/Users/superjj/ccproj/pm-rc1-acceptance-home",
+  "modelSelections": [
+    {
+      "seq": 13,
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "maxTokens": 256000,
+      "reasoningEffort": "high"
+    }
+  ],
+  "toolCalls": [
+    {
+      "seq": 19,
+      "name": "run_python",
+      "callId": "call_00_nSsV6pmJ130kkHKIpqF33421"
+    },
+    {
+      "seq": 28,
+      "name": "annotate_artifact",
+      "callId": "call_00_2U5I4jcs0pgytWwWPbzr6821"
+    }
+  ],
+  "runResults": [
+    {
+      "seq": 22,
+      "status": "success",
+      "language": "python",
+      "runId": "d820e893-21df-470a-96cb-93c8802f0ec5",
+      "toolCallId": "call_00_nSsV6pmJ130kkHKIpqF33421"
+    }
+  ],
+  "artifactEvents": [
+    {
+      "seq": 23,
+      "artifactId": "bea14cb9-c8b0-4c08-b111-f0d07c278554",
+      "logicalName": "rc1-acceptance.png",
+      "version": 1,
+      "title": "rc1-acceptance.png",
+      "projectId": "51c5e213-d437-4e1d-99cc-a3f9b99eaa9d",
+      "versionId": "c7f157f5-65cd-48d5-87e6-e4bb23f91a5e",
+      "sha256": "7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "seenAt": 1789013753096,
+      "blobPath": "/Users/superjj/ccproj/pm-rc1-acceptance-home/projects/51c5e213-d437-4e1d-99cc-a3f9b99eaa9d/blobs/sha256/7b/7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "byteCount": 28148,
+      "diskSha256": "7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "sha256Matches": true,
+      "pngSignatureMatches": true
+    },
+    {
+      "seq": 29,
+      "artifactId": "bea14cb9-c8b0-4c08-b111-f0d07c278554",
+      "logicalName": "rc1-acceptance.png",
+      "version": 1,
+      "title": "rc1 验收折线图 (x=[1,2,3], y=[1,4,9])",
+      "caption": "用 matplotlib 绘制的折线图，带圆点标记，展示点 (1,1)、(2,4)、(3,9)。",
+      "projectId": "51c5e213-d437-4e1d-99cc-a3f9b99eaa9d",
+      "versionId": "c7f157f5-65cd-48d5-87e6-e4bb23f91a5e",
+      "sha256": "7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "seenAt": 1789013754042,
+      "blobPath": "/Users/superjj/ccproj/pm-rc1-acceptance-home/projects/51c5e213-d437-4e1d-99cc-a3f9b99eaa9d/blobs/sha256/7b/7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "byteCount": 28148,
+      "diskSha256": "7b196316f005cb2f6c472950d16d7463a2755671277b1b097d18d9f2ee8ab589",
+      "sha256Matches": true,
+      "pngSignatureMatches": true
+    }
+  ]
+}

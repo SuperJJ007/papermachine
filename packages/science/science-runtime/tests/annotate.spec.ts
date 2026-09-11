@@ -85,7 +85,7 @@ async function captureFiles(
     readonly chartResult?: unknown
   } = {},
 ): Promise<ScienceRunId> {
-  if (replayScience(session.events)?.environment === null) {
+  if (replayScience(session.snapshotEvents())?.environment === null) {
     await harness.runtime.bindEnvironment({ session, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal })
   }
   captureCallCounter += 1
@@ -115,7 +115,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-latest')
     const runId = await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const captured = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     expect(captured).toBeDefined()
     if (captured === undefined) throw new Error('expected a captured summary.csv version')
     const beforeAnnotate = await harness.ctx.scienceArtifactStore.getVersion(captured.projectId, captured.versionId)
@@ -158,7 +158,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(afterAnnotate?.caption).toBe('The final table')
     expect(afterAnnotate?.latestAnnotation).toMatchObject({ actor: 'model', title: 'Result summary', caption: 'The final table' })
 
-    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv')
+    const artifacts = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'summary.csv')
     expect(artifacts?.map(a => a.version)).toEqual([1])
     expect(artifacts?.at(0)?.title).toBe('Result summary')
   })
@@ -170,7 +170,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-append-veto')
     await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const captured = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     if (captured === undefined) throw new Error('expected a captured summary.csv version')
 
     const appendVeto = new Error('forced append veto')
@@ -196,7 +196,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-append-veto-health-fail')
     await captureFiles(harness, root, session, { 'summary.csv': 'a,b\n1,2\n' })
-    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
+    const captured = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'summary.csv')
     if (captured === undefined) throw new Error('expected a captured summary.csv version')
 
     const warnSpy = vi.spyOn(harness.ctx.logger, 'warn').mockImplementation(() => {})
@@ -299,7 +299,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-human-edit')
     await captureFiles(harness, root, session, { 'chart.png': 'PNG original' }, { rasterArtifacts: ['chart.png'] })
-    const parent = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
+    const parent = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
     if (parent === undefined) throw new Error('expected run-produced PNG parent')
     const store = harness.ctx.scienceArtifactStore
     const stored = await store.appendVersion(parent.projectId, parent.artifactId, {
@@ -350,7 +350,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       rasterArtifacts: ['chart.png'],
       chartResult: { charts: { 'chart.png': chart }, errors: {} },
     })
-    const captured = replayScience(session.events)?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
+    const captured = replayScience(session.snapshotEvents())?.artifacts.find(candidate => candidate.logicalName === 'chart.png')
     if (captured === undefined) throw new Error('expected a captured chart.png version')
     const beforeFigureState = await harness.ctx.scienceArtifactStore.getFigureState(captured.projectId, captured.versionId)
     expect(beforeFigureState).toMatchObject({ figureKey: 'chart.png', dpi: 120 })
@@ -387,7 +387,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-annotate-exact-version')
     await captureFiles(harness, root, session, { 'notes.txt': 'v1' })
-    const v1 = replayScience(session.events)?.artifacts.find(a => a.logicalName === 'notes.txt' && a.version === 1)
+    const v1 = replayScience(session.snapshotEvents())?.artifacts.find(a => a.logicalName === 'notes.txt' && a.version === 1)
     expect(v1).toBeDefined()
     if (v1 === undefined) throw new Error('expected notes.txt v1')
     await captureFiles(harness, root, session, { 'notes.txt': 'v2' }, {
@@ -410,7 +410,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(annotated.sha256).toBe(v1.sha256)
     await expect(harness.ctx.scienceArtifactStore.getVersion(annotated.projectId, annotated.versionId))
       .resolves.toMatchObject({ contentOrigin: 'run-auto' })
-    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'notes.txt')
+    const artifacts = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'notes.txt')
     expect(artifacts?.map(a => a.version)).toEqual([1, 2])
     expect(artifacts?.at(0)?.title).toBe('Original notes')
     expect(artifacts?.at(1)).toMatchObject({ title: 'Current notes' })
@@ -435,7 +435,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
     expect(second.artifactId).toBe(first.artifactId)
     expect(second.version).toBe(first.version)
     expect(second.title).toBe('final')
-    const artifacts = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'plot.json')
+    const artifacts = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'plot.json')
     expect(artifacts?.map(a => a.version)).toEqual([1])
     expect(artifacts?.at(0)?.title).toBe('final')
   })
@@ -471,7 +471,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       'file "plots/result.png" exists in retained run output but was not captured; '
       + 'run the code that writes it again with raster_artifacts: ["plots/result.png"], then call annotate_artifact again',
     )
-    expect(replayScience(session.events)?.artifacts).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
     if (session.header.cwd === undefined) throw new Error('expected test Session workspace')
     const project = await harness.ctx.scienceArtifactStore.openProject(session.header.cwd)
     await expect(harness.ctx.scienceArtifactStore.listArtifacts(project.projectId)).resolves.toEqual([])
@@ -495,7 +495,7 @@ describe('ScienceRuntime.annotateArtifact', () => {
       'file "figure.png" exists in retained run output but was written outside SCIENCE_ARTIFACT_DIR; '
       + 'run the code that writes it again, save it under SCIENCE_ARTIFACT_DIR, and declare it with raster_artifacts: ["figure.png"], then call annotate_artifact again',
     )
-    expect(replayScience(session.events)?.artifacts).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
   })
 
   it('inspects a retained run within the annotateDiagnosticMaxRuns bound', async () => {

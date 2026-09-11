@@ -4,11 +4,11 @@
  * @module @deepseek-ai/dsh-tool-science/context
  */
 
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-science-runtime'
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import { SCIENCE_PRESET_ID, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceInterpreterBinding, ScienceKernel, ScienceKernelEndReason, ScienceProjection } from '@deepseek-ai/dsh-science-session'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -82,19 +82,16 @@ export function closedKernelFacts(kernel: ScienceKernel): ClosedKernelFacts | un
 }
 
 /**
- * Whether the exact live Session currently runs under the `science` preset.
- *
- * Reads the resolved preset (creation header, overridden by the last
- * `agent-preset/selected` event), not the header alone: a session that
- * switched preset while blank keeps its creation-time header forever, and
- * every turn since the switch runs under the newer composition — the same
- * fact `dsh-host-apiproxy` resolves this way for tool visibility, transcript
- * presenters, and resume/adoption.
- * @param session - candidate Session.
- * @returns whether the session's resolved agent preset is `SCIENCE_PRESET_ID`.
+ * Read the upstream agentPreset projection over this Session's complete log.
+ * @param session - the Session whose selected preset determines Science eligibility.
+ * @returns whether the projected preset is Science.
  */
 export function isScienceSession(session: Session): boolean {
-  return resolveSessionPreset(session) === SCIENCE_PRESET_ID
+  const preset = session.snapshotEvents().reduce(
+    agentPresetProjectionDefinition.apply,
+    agentPresetProjectionDefinition.init(session.header),
+  )
+  return preset === SCIENCE_PRESET_ID
 }
 
 /** Render one interpreter binding line, omitting source, credentials, and Host paths. */
@@ -136,7 +133,7 @@ export function renderScienceProjection(projection: ScienceProjection | null): s
  */
 export function renderScienceContext(session: Session): string {
   if (!isScienceSession(session)) return ''
-  return renderScienceProjection(replayScience(session.events))
+  return renderScienceProjection(replayScience(session.snapshotEvents()))
 }
 
 /**
@@ -155,7 +152,7 @@ export async function ensureScienceBound(
   signal: AbortSignal,
   config: ResolvedConfig,
 ): Promise<ScienceProjection> {
-  let projection = replayScience(session.events)
+  let projection = replayScience(session.snapshotEvents())
   if (projection === null) {
     // The caller already confirmed `isScienceSession(session)`, so the
     // resolved preset here is always `SCIENCE_PRESET_ID` today; recording it
@@ -163,12 +160,12 @@ export async function ensureScienceBound(
     // preset that bound Science mode" if that ever becomes a different id.
     // The caller already confirmed isScienceSession(session), whose predicate
     // requires this same resolver to name the Science preset.
-    const presetId = resolveSessionPreset(session) as typeof SCIENCE_PRESET_ID
+    const presetId = SCIENCE_PRESET_ID
     session.append('science/mode-bound', {
       version: 1,
       mode: { modeId: 'science', presetId, modeRevision: config.modeRevision },
     })
-    projection = replayScience(session.events)
+    projection = replayScience(session.snapshotEvents())
     /* v8 ignore next -- append() commits synchronously; a fresh replay observes it immediately */
     if (projection === null) throw new Error('tool-science: mode-bound append did not commit')
   } else if (projection.mode.modeRevision !== config.modeRevision) {
@@ -178,14 +175,14 @@ export async function ensureScienceBound(
     && projection.environment.status !== 'applied'
     && projection.runs.length === 0
     && session.firstLiveSeq > 0
-    && !session.events.slice(session.firstLiveSeq).some(event => event.type === 'science/environment-bound')
+    && !session.snapshotEvents().slice(session.firstLiveSeq).some(event => event.type === 'science/environment-bound')
   if (projection.environment === null || retrySeededEnvironment) {
     const scienceRuntime = ctx.get('scienceRuntime')
     if (scienceRuntime === undefined) {
       throw new Error('tool-science: no Science Runtime is mounted (ctx.scienceRuntime)')
     }
     await scienceRuntime.bindEnvironment({ session, profileId: config.profileId, signal })
-    projection = replayScience(session.events)
+    projection = replayScience(session.snapshotEvents())
     /* v8 ignore next -- bindEnvironment() commits synchronously on success; a fresh replay observes it */
     if (projection === null) throw new Error('tool-science: environment-bound append did not commit')
   }

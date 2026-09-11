@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { ProjectArtifactStoreError } from '@deepseek-ai/dsh-science-artifact-store'
 import { ScienceEnvironmentProfileId, replayScience } from '@deepseek-ai/dsh-science-session'
 import type { ScienceRunId } from '@deepseek-ai/dsh-science-session'
@@ -17,6 +17,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { StartScienceRunRequest } from '../src/types.ts'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
+import { prepareRunArtifacts } from '../src/inputs.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
 import {
   authorizePythonRun,
@@ -41,7 +42,7 @@ afterEach(async () => {
 })
 
 function tmp(prefix: string): string {
-  const root = mkdtempSync(join(process.cwd(), prefix))
+  const root = mkdtempSync(join(process.env['DSH_SCIENCE_TEST_SCRATCH_PARENT'] ?? process.cwd(), prefix))
   roots.push(root)
   return root
 }
@@ -120,12 +121,12 @@ async function runWithFiles(
  * of its own (`authorizePythonRun` opens a new turn every time).
  */
 function authorizeRunInTurn(session: Session, id: string, turn: number): {
-  readonly toolCallId: ReturnType<typeof CallId>
+  readonly toolCallId: ReturnType<typeof ToolCallId>
   readonly requestHeaderSeq: number
 } {
-  const header = session.events.filter(event => event.type === 'request/header').at(-1)
+  const header = session.snapshotEvents().filter(event => event.type === 'request/header').at(-1)
   if (header === undefined) throw new Error('capture test: the session has no request/header to reuse')
-  const toolCallId = CallId(id)
+  const toolCallId = ToolCallId(id)
   session.append('tool/call', { turn, step: 1, callId: toolCallId, name: 'run_python', arguments: '{}' })
   return { toolCallId, requestHeaderSeq: header.seq }
 }
@@ -154,6 +155,36 @@ function pngWithMetadata(): Uint8Array {
 vi.setConfig({ testTimeout: 30_000 })
 
 describe('Science auto-capture', () => {
+  it('captures Unicode, spaces, and underscore paths without changing their identities', async () => {
+    const root = tmp('.science-logical-names-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-logical-names')
+    const files = { '_probe/p.csv': 'x\n1\n', '中文 数据/结果.csv': 'x\n2\n' }
+    const { result } = await runWithFiles(harness, root, session, files)
+    expect(result.terminal.status).toBe('success')
+    expect(result.captureFailure).toBeUndefined()
+    expect(result.capture?.captured.map(artifact => artifact.logicalName).sort()).toEqual(Object.keys(files).sort())
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(2)
+  })
+
+  // C1 control characters are valid filesystem names on Windows but invalid artifact identities.
+  it('rejects the complete capture batch before saving any legal candidate when another name is unsafe', async () => {
+    const root = tmp('.science-invalid-logical-name-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-invalid-logical-name')
+    const create = vi.spyOn(harness.ctx.scienceArtifactStore, 'createArtifact')
+    const { result } = await runWithFiles(harness, root, session, { 'a.csv': 'legal', 'z\u0085stream.csv': 'unsafe' })
+    expect(result.terminal.status).toBe('success')
+    expect(result.captureFailure).toBe('invalid-logical-name')
+    expect(create).not.toHaveBeenCalled()
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
+  })
+
   it('materializes verified artifact inputs byte-exactly and records the complete mapping', async () => {
     const root = tmp('.science-input-materialization-')
     const prefix = createFakePythonPrefix(root)
@@ -167,12 +198,20 @@ describe('Science auto-capture', () => {
     const version = first.result.capture?.captured.at(0)
     if (version === undefined) throw new Error('input test: expected one captured version')
 
+    const projection = replayScience(session.snapshotEvents())
+    if (projection === null) throw new Error('input test: expected Science projection')
+    const historical = await prepareRunArtifacts(projection, harness.ctx.scienceArtifactStore, version.projectId,
+      [], { 'CON.txt': { artifactId: version.artifactId, version: 1 } }, ['CON.png', 'trailing.'],
+      10, 1024, new AbortController().signal)
+    expect(historical.editBaselines.has('CON.txt')).toBe(true)
+    expect([...historical.rasterArtifacts]).toEqual(['CON.png', 'trailing.'])
+
     const handle = await startHeldRun(harness, root, session, 'ok', true, {
       artifactInputs: [{ artifactId: version.artifactId, version: version.version, path: 'data/source.csv' }],
     })
     const scratch = await planSessionScratch(join(root, 'dsh-home'), session)
     expect(readFileSync(join(scratch.runs, String(handle.runId), 'inputs/data/source.csv'), 'utf8')).toBe(source)
-    expect(replayScience(session.events)?.runs.at(-1)).toMatchObject({
+    expect(replayScience(session.snapshotEvents())?.runs.at(-1)).toMatchObject({
       inputs: [{ artifactId: version.artifactId, version: 1, path: 'data/source.csv' }],
     })
     await expect(handle.done).resolves.toMatchObject({ terminal: {
@@ -180,6 +219,13 @@ describe('Science auto-capture', () => {
       inputs: [{ artifactId: version.artifactId, version: 1, path: 'data/source.csv' }],
     } })
 
+    for (const [index, path] of ['CON.txt', 'trailing.', 'dir/file.txt:stream', 'nested/LPT1.csv'].entries()) {
+      await expect(harness.runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        artifactInputs: [{ artifactId: version.artifactId, version: 1, path }],
+        ...authorizePythonRun(session, `science-input-windows-${String(index)}`), signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+    }
     await expect(harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       artifactInputs: [
@@ -199,6 +245,14 @@ describe('Science auto-capture', () => {
     const first = await runWithFiles(harness, root, session, { 'source.csv': 'x\n' })
     const version = first.result.capture?.captured.at(0)
     if (version === undefined) throw new Error('input test: expected one captured version')
+
+    const projection = replayScience(session.snapshotEvents())
+    if (projection === null) throw new Error('input test: expected Science projection')
+    const historical = await prepareRunArtifacts(projection, harness.ctx.scienceArtifactStore, version.projectId,
+      [], { 'CON.txt': { artifactId: version.artifactId, version: 1 } }, ['CON.png', 'trailing.'],
+      10, 1024, new AbortController().signal)
+    expect(historical.editBaselines.has('CON.txt')).toBe(true)
+    expect([...historical.rasterArtifacts]).toEqual(['CON.png', 'trailing.'])
 
     await expect(harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
@@ -343,7 +397,7 @@ describe('Science auto-capture', () => {
     await expect(harness.ctx.scienceArtifactStore.getVersion(csvV2.projectId, csvV2.versionId))
       .resolves.toMatchObject({ contentOrigin: 'run-auto' })
 
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const versions = projection?.artifacts.filter(candidate => candidate.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2])
   })
@@ -458,7 +512,7 @@ describe('Science auto-capture', () => {
       const result = await annotate.call(this, ...args)
       teardown.resolve(undefined)
       await vi.waitFor(() => {
-        expect(session.events.some(event => event.type === 'science/kernel-state' && event.data.kernel.state === 'exited')).toBe(true)
+        expect(session.snapshotEvents().some(event => event.type === 'science/kernel-state' && event.data.kernel.state === 'exited')).toBe(true)
       })
       return result
     })
@@ -476,7 +530,7 @@ describe('Science auto-capture', () => {
 
     const next = await startHeldRun(harness, root, session, 'ok', true)
     await next.done
-    const starts = session.events.filter(event => event.type === 'science/run-started')
+    const starts = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
   }, 60_000)
 
@@ -503,7 +557,7 @@ describe('Science auto-capture', () => {
 
     const next = await startHeldRun(harness, root, session, 'ok', true)
     await next.done
-    const starts = session.events.filter(event => event.type === 'science/run-started')
+    const starts = session.snapshotEvents().filter(event => event.type === 'science/run-started')
     expect(starts.map(event => event.data.run.kernelEpoch)).toEqual([1, 2])
   })
 
@@ -556,7 +610,7 @@ describe('Science auto-capture', () => {
     const second = await handle.done
     expect(second.capture?.captured[0]).toMatchObject({ logicalName: 'summary.csv', version: 2 })
 
-    const versions = replayScience(session.events)?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
+    const versions = replayScience(session.snapshotEvents())?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2])
     const latest = versions.at(1)
     if (latest === undefined) throw new Error('capture test: expected a second summary.csv version')
@@ -566,7 +620,7 @@ describe('Science auto-capture', () => {
       contentOrigin: 'run-auto', producerRunId: String(handle.runId),
     })
     expect(versions.at(1)?.sha256).not.toBe(first.result.capture?.captured[0]?.sha256)
-    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toHaveLength(2)
   })
 
   it('opens the next version instead of superseding when a same-turn baseline names the version the supersede rule would overwrite', async () => {
@@ -599,7 +653,7 @@ describe('Science auto-capture', () => {
     // The strict fold's own-versionId dedup check (transition.ts) throws
     // loudly on a versionId already backing a committed version; a clean
     // replay proves the appended version never collided with its baseline.
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const versions = projection?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2])
     // `baseVersionId`/`baseExplicit` are store-only now (T1's authority rule).
@@ -654,7 +708,7 @@ describe('Science auto-capture', () => {
     await expect(harness.ctx.scienceArtifactStore.getVersion(thirdVersion.projectId, thirdVersion.versionId))
       .resolves.toMatchObject({ baseVersionId: v1.versionId, baseExplicit: true })
 
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     const versions = projection?.artifacts.filter(a => a.logicalName === 'summary.csv') ?? []
     expect(versions.map(v => v.version)).toEqual([1, 2, 3])
     expect(versions.at(2)?.sha256).not.toBe(second.capture?.captured[0]?.sha256)
@@ -671,8 +725,8 @@ describe('Science auto-capture', () => {
     const rerun = await runWithFiles(harness, root, session, { 'notes.md': '# same\n' }, 'ok', true)
 
     expect(rerun.result.capture?.captured).toEqual([])
-    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(1)
-    const projection = replayScience(session.events)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toHaveLength(1)
+    const projection = replayScience(session.snapshotEvents())
     expect(projection?.artifacts.filter(candidate => candidate.logicalName === 'notes.md')).toHaveLength(1)
   })
 
@@ -716,7 +770,7 @@ describe('Science auto-capture', () => {
       harness, root, session, { 'chart.png': original }, 'ok', true, { rasterArtifacts: ['chart.png'] },
     )
     expect(untouched.result.capture?.captured).toEqual([])
-    expect(replayScience(session.events)?.artifacts.filter(artifact => artifact.logicalName === 'chart.png'))
+    expect(replayScience(session.snapshotEvents())?.artifacts.filter(artifact => artifact.logicalName === 'chart.png'))
       .toHaveLength(2)
 
     const changed = await runWithFiles(
@@ -785,7 +839,7 @@ describe('Science auto-capture', () => {
     expect(result.terminal.status).toBe('success')
     expect(result.capture?.captured).toEqual([])
     expect(result.capture?.skippedOversizedCount).toBe(1)
-    expect(replayScience(session.events)?.artifacts).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
   })
 
   it('truncates and flags eligible files beyond captureMaxFilesPerRun', async () => {
@@ -821,7 +875,7 @@ describe('Science auto-capture', () => {
     const second = await runWithFiles(harness, root, session, { 'two.txt': '2' }, 'ok', true)
     expect(second.result.capture?.captured).toEqual([])
     expect(second.result.capture?.truncatedPerSession).toBe(true)
-    expect(replayScience(session.events)?.artifacts).toHaveLength(1)
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(1)
   })
 
   it('excludes dotfile/dot-directory segments and non-allowlisted extensions', async () => {
@@ -854,7 +908,7 @@ describe('Science auto-capture', () => {
     if (captured === undefined) throw new Error('capture test: expected one captured version')
     await expect(harness.ctx.scienceArtifactStore.getVersion(captured.projectId, captured.versionId))
       .resolves.toMatchObject({ contentOrigin: 'run-auto' })
-    const projection = replayScience(session.events)
+    const projection = replayScience(session.snapshotEvents())
     expect(projection?.artifacts).toHaveLength(1)
   })
 
@@ -886,7 +940,7 @@ describe('Science auto-capture', () => {
 
     const third = await runWithFiles(harness, root, sessionA, { 'shared.csv': 'a,b\n5,6\n' }, 'ok', true)
     expect(third.result.capture?.captured.at(0)).toMatchObject({ artifactId: versionA.artifactId, version: 3 })
-    expect(replayScience(sessionA.events)?.artifacts.map(version => version.version)).toEqual([1, 3])
+    expect(replayScience(sessionA.snapshotEvents())?.artifacts.map(version => version.version)).toEqual([1, 3])
   })
 
   it('skips a same-named capture in another session whose content already matches the store head (D7)', async () => {
@@ -1013,7 +1067,7 @@ describe('Science auto-capture', () => {
     const { result } = await runWithFiles(harness, root, session, { 'note.txt': 'hello' })
     expect(result.terminal.status).toBe('success')
     expect(result.capture).toBeUndefined()
-    expect(replayScience(session.events)?.artifacts).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
     expect(errors).toHaveLength(1)
     expect(errors[0]).toContain('boom: capture-time infrastructure failure')
   })
@@ -1027,7 +1081,7 @@ describe('Science auto-capture', () => {
       // ErrnoException, so isCaptureFilesystemFailure classifies it at warn
       // — this test only proves the LOGICAL_NAME_CONFLICT retry itself was
       // not taken (the injected error propagates unchanged), not the log level.
-      ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+      ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof ctx.logger.warn
       failingStoreOverride(new ProjectArtifactStoreError('injected: not a logical-name conflict', 'ARTIFACT_NOT_FOUND'))(ctx)
     })
     contexts.push(harness.ctx)
@@ -1036,8 +1090,8 @@ describe('Science auto-capture', () => {
     const { result } = await runWithFiles(harness, root, session, { 'note.txt': 'hello' })
     expect(result.terminal.status).toBe('success')
     expect(result.capture).toBeUndefined()
-    expect(replayScience(session.events)?.artifacts).toEqual([])
-    expect(warnings).toHaveLength(1)
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('injected: not a logical-name conflict')
   })
 
@@ -1047,7 +1101,7 @@ describe('Science auto-capture', () => {
     const warnings: string[] = []
     const errors: string[] = []
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } }, 30_000, undefined, (ctx) => {
-      ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+      ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof ctx.logger.warn
       ctx.logger.error = ((message: unknown) => { errors.push(String(message)) }) as typeof ctx.logger.error
       failingStoreOverride(Object.assign(new Error('disk unavailable'), { code: 'EIO' }))(ctx)
     })
@@ -1057,9 +1111,9 @@ describe('Science auto-capture', () => {
     const { result } = await runWithFiles(harness, root, session, { 'note.txt': 'hello' })
     expect(result.terminal.status).toBe('success')
     expect(result.capture).toBeUndefined()
-    expect(replayScience(session.events)?.artifacts).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
     expect(errors).toHaveLength(0)
-    expect(warnings).toHaveLength(1)
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('disk unavailable')
   })
 
@@ -1068,7 +1122,7 @@ describe('Science auto-capture', () => {
     const prefix = createFakePythonPrefix(root)
     const warnings: string[] = []
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
-    harness.ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
+    harness.ctx.logger.warn = ((message: unknown) => { if (String(message).startsWith('science-runtime:')) warnings.push(String(message)) }) as typeof harness.ctx.logger.warn
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-capture-append-refused')
     rejectSessionAppend(session, 'science/artifact-saved', new Error('boom: append refused'))
@@ -1077,9 +1131,9 @@ describe('Science auto-capture', () => {
     expect(result.terminal.status).toBe('success')
     expect(result.capture?.captured).toEqual([])
     expect(result.capture?.appendFailed).toBe(true)
-    expect(session.events.filter(event => event.type === 'science/artifact-saved')).toHaveLength(0)
-    expect(session.events.filter(event => event.type === 'science/run-finished')).toHaveLength(1)
-    expect(warnings).toHaveLength(1)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toHaveLength(0)
+    expect(session.snapshotEvents().filter(event => event.type === 'science/run-finished')).toHaveLength(1)
+    expect(warnings).toEqual([expect.any(String)])
     expect(warnings[0]).toContain('auto-capture stopped early')
   })
 })

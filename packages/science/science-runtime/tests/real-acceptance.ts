@@ -6,10 +6,10 @@ import { Buffer } from 'node:buffer'
 import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { promisify } from 'node:util'
+import { inspect, promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { decodeScienceChartState, replayScience, ScienceEnvironmentProfileId } from '@deepseek-ai/dsh-science-session'
 import type {
   ScienceArtifactVersion,
@@ -23,6 +23,7 @@ import * as ScienceSessionInvariant from '@deepseek-ai/dsh-science-session/invar
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import ScienceArtifactStore from '@deepseek-ai/dsh-science-artifact-store'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MIN_KERNEL_IDLE_TIMEOUT_MS } from '../src/config.ts'
@@ -89,8 +90,11 @@ function containsPath(parent: string, child: string): boolean {
 
 /** Refuse a generic temporary-root target before a real run can create scratch there. */
 function nonTemporaryHome(path: string): boolean {
-  const resolved = resolve(path)
-  return !containsPath('/tmp', resolved)
+  const resolved = canonicalPath(resolve(path))
+  return ['/tmp', tmpdir()].every((temp) => {
+    const root = canonicalPath(resolve(temp))
+    return !containsPath(root, resolved) && !containsPath(resolved, root)
+  })
 }
 
 /** Convert a bigint stat record to the frozen executable identity string. */
@@ -118,7 +122,7 @@ function authorize(session: Session, name: string, turn: number) {
     header: { config: { provider: 'real-acceptance', model: 'local-conda' } },
     reason: 'initial',
   })
-  const toolCallId = CallId(`science-real-${name}-${String(turn)}-${randomUUID()}`)
+  const toolCallId = ToolCallId(`science-real-${name}-${String(turn)}-${randomUUID()}`)
   session.append('tool/call', {
     turn,
     step: 1,
@@ -573,7 +577,7 @@ function findExitedKernel(
   language: ScienceLanguage,
   epoch: number,
 ): ScienceKernelState | undefined {
-  for (const kernel of replayScience(session.events)?.kernels ?? []) {
+  for (const kernel of replayScience(session.snapshotEvents())?.kernels ?? []) {
     if (kernel.language === language && kernel.kernelEpoch === epoch && kernel.state === 'exited') return kernel
   }
   return undefined
@@ -608,7 +612,7 @@ function expectKernelExited(session: Session, language: ScienceLanguage, epoch: 
 
 /** Render one unexpected operational error for a machine-readable language report. */
 function failureDetail(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error ? inspect(error, { depth: null, colors: false }) : String(error)
 }
 
 /** Latches the first failure an operation-plus-cleanup sequence records, folding any later one into an `AggregateError`. */
@@ -869,7 +873,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         const filename = `mpl-replay-filler-${suffix}.png`
         await runChartSource(matplotlibReplaySource(filename), [filename])
       }
-      const eventsBeforeReplay = session.events.length
+      const eventsBeforeReplay = session.snapshotEvents().length
       const replayed = await context.scienceRuntime.applyChartEdit({
         session, artifactId: replayTarget.artifactId, version: replayTarget.version,
         ops: [{ op: 'set_title', axes: null, text: 'Recovered by replay' }],
@@ -881,7 +885,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
         || replayedChart.ops.length !== 1 || replayed.failedOps.length !== 0) {
         throw new Error('matplotlib replay apply did not commit the recovered chart edit')
       }
-      const replayEvents = session.events.slice(eventsBeforeReplay)
+      const replayEvents = session.snapshotEvents().slice(eventsBeforeReplay)
       if (replayEvents.some(event => event.type === 'science/run-started' || event.type === 'science/run-finished')) {
         throw new Error('matplotlib chart replay leaked an internal run event')
       }
@@ -1142,7 +1146,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
     }
     checks.push('chart curation and artifact-store readback')
 
-    const chartProjection = replayScience(session.events)
+    const chartProjection = replayScience(session.snapshotEvents())
     const replayedChart = chartProjection?.artifacts.find(candidate =>
       candidate.artifactId === chart.artifactId && candidate.version === chart.version)
     if (replayedChart === undefined || replayedChart.versionId !== chart.versionId) {
@@ -1168,7 +1172,7 @@ async function runLanguage(language: ScienceLanguage, prefix: string, dshHome: s
       environmentRevisions: [successResult.terminal.environmentRevision],
     }
     session.append('science/outcome-published', { version: 1, outcome })
-    const outcomeProjection = replayScience(session.events)
+    const outcomeProjection = replayScience(session.snapshotEvents())
     if (outcomeProjection?.outcome?.revision !== 1
       || outcomeProjection.outcome.evidence.length !== 2
       || outcomeProjection.outcome.environmentRevisions[0] !== successResult.terminal.environmentRevision) {
@@ -1453,7 +1457,7 @@ async function runCoexistence(pythonPrefix: string, rPrefix: string, dshHome: st
     if (rEpoch === pythonEpoch) throw new Error('python and R kernels shared an epoch instead of coexisting independently')
     checks.push('python and R kernels hold independent epochs')
 
-    const bothLive = replayScience(session.events)
+    const bothLive = replayScience(session.snapshotEvents())
     const livePython = bothLive?.kernels.find(kernel => kernel.language === 'python' && kernel.kernelEpoch === pythonEpoch)
     const liveR = bothLive?.kernels.find(kernel => kernel.language === 'r' && kernel.kernelEpoch === rEpoch)
     if (livePython?.state !== 'started' || liveR?.state !== 'started') {

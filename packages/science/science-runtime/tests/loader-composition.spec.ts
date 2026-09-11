@@ -16,7 +16,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import * as ScienceRuntimeInvariant from '../src/invariant.ts'
 import ScienceRuntime, { SCIENCE_RUNTIME_SETTINGS_NAMESPACE } from '../src/index.ts'
 import ScienceRuntimeWithSettings from '../src/with-settings.ts'
 import {
@@ -55,7 +54,6 @@ function baseModules(): Map<string, unknown> {
     ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],
     ['@deepseek-ai/dsh-science-artifact-store', ScienceArtifactStore],
     ['@deepseek-ai/dsh-science-runtime', ScienceRuntime],
-    ['@deepseek-ai/dsh-science-runtime/invariant', ScienceRuntimeInvariant],
   ])
 }
 
@@ -121,7 +119,6 @@ async function loadRuntime(): Promise<Context> {
     '    profiles:',
     '      fake:',
     `        pythonPrefix: ${quote(prefix)}`,
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     '',
   ].join('\n'))
 
@@ -168,7 +165,6 @@ async function loadSettingsRestartRuntime(
     '  config:',
     `    dshHome: ${quote(dshHome)}`,
     '    profiles: {}',
-    "- name: '@deepseek-ai/dsh-science-runtime/invariant'",
     '',
   ].join('\n'))
 
@@ -232,7 +228,7 @@ describe('Science Runtime real Loader composition', () => {
       delete process.env.SCIENCE_RUNTIME_LEAK
       await kernelServices.fiber.dispose()
     }
-    expect(session.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
+    expect(session.snapshotEvents().map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
       'science/environment-bound',
       'science/kernel-state',
@@ -264,6 +260,7 @@ describe('Science Runtime real Loader composition', () => {
     process.env.SCIENCE_RUNTIME_LEAK = 'must-not-reach-real-local-providers'
     try {
       const handle = context.subprocess.spawn({
+        environmentBase: 'empty' as const,
         argv: confined.argv,
         cwd: root,
         stdio: {
@@ -272,7 +269,6 @@ describe('Science Runtime real Loader composition', () => {
           stderr: { maxBytes: 1_024 },
         },
         graceMs: 3_000,
-        environmentBase: 'empty',
         env: {
           HOME: root,
           TMPDIR: root,
@@ -304,7 +300,7 @@ describe('Science Runtime real Loader composition', () => {
     await expect(context.scienceRuntime.bindEnvironment({
       session: before, profileId: ScienceEnvironmentProfileId('fake'), signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'PROFILE_NOT_CONFIGURED' })
-    expect(before.events.map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
+    expect(before.snapshotEvents().map(event => event.type).filter(type => type.startsWith('science/'))).toEqual([
       'science/mode-bound',
     ])
 

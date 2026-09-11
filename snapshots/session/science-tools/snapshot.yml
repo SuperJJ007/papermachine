@@ -1,0 +1,11 @@
+version: 1
+scenario: science-tools
+profile: science-headless
+composition: science
+recording: live
+platform: posix
+header:
+  class: science
+  pin: true
+workspace:
+  parent: outside-temp

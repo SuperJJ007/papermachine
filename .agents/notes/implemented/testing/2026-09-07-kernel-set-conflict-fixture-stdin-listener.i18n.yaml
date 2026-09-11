@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-07-kernel-set-conflict-fixture-stdin-listener.md
-2026-09-07-kernel-set-conflict-fixture-stdin-listener.md: 5dd4cbb7c9134f454627c14154672ab08bbb66a0
-2026-09-07-kernel-set-conflict-fixture-stdin-listener.zh.md: 7d69bb84bbf3757d6cc08179488e5fe9f5c91468

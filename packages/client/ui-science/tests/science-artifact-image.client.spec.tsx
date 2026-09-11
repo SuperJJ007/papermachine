@@ -3,7 +3,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/client'
+import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment/src/MessageImage.tsx'
 import { ScienceArtifactImage } from '../src/client/ScienceArtifactImage.tsx'
 
 const content = { versionId: 'version-1', mediaType: 'image/png', byteCount: 3 } as const
@@ -65,6 +65,42 @@ describe('ScienceArtifactImage', () => {
     fireEvent.click(retryButton)
     await screen.findByRole('img', { name: 'Chart' })
     expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers when a new chart preview replaces a failed image source', async () => {
+    const load = vi.fn().mockResolvedValue('/api/science/artifact/session/version-1')
+    const view = render(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} />)
+    fireEvent.error(await screen.findByRole('img', { name: 'Chart' }))
+    await screen.findByRole('button', { name: 'Load failed' })
+    view.rerender(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} srcOverride="data:image/png;base64,new-preview" />)
+    expect((await screen.findByRole('img', { name: 'Chart' })).getAttribute('src')).toBe('data:image/png;base64,new-preview')
+  })
+
+  it('shows an override despite an unrelated original loader rejection', async () => {
+    const load = vi.fn().mockRejectedValue(new Error('original unavailable'))
+    render(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} srcOverride="/preview/new.png" />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByRole('img', { name: 'Chart' }).getAttribute('src')).toBe('/preview/new.png')
+  })
+
+  it('keeps a new version when the earlier loader resolves late', async () => {
+    let resolveFirst: ((url: string) => void) | undefined
+    const load = vi.fn().mockImplementationOnce(() => new Promise<string>((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce('/version-2.png')
+    const view = render(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} />)
+    view.rerender(<ScienceArtifactImage content={{ ...content, versionId: 'version-2' }} label="Chart" load={load} variant="single" labels={labels} />)
+    await screen.findByRole('img', { name: 'Chart' })
+    await act(async () => { resolveFirst?.('/version-1.png') })
+    expect(screen.getByRole('img', { name: 'Chart' }).getAttribute('src')).toBe('/version-2.png')
+  })
+
+  it('isolates a replaced image element from late decode errors', async () => {
+    const load = vi.fn().mockResolvedValue('/original.png')
+    const view = render(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} srcOverride="/preview/one.png" />)
+    const oldImage = await screen.findByRole('img', { name: 'Chart' })
+    view.rerender(<ScienceArtifactImage content={content} label="Chart" load={load} variant="single" labels={labels} srcOverride="/preview/two.png" />)
+    fireEvent.error(oldImage)
+    expect(screen.getByRole('img', { name: 'Chart' }).getAttribute('src')).toBe('/preview/two.png')
   })
 
   it('discards both late resolution and late rejection after unmount', async () => {

@@ -5,32 +5,24 @@
  * production confined execution walks.
  */
 
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { AclWriteGrant, tempWriteSid, workspaceWriteSid } from '../src/index.ts'
 
 const isWin32 = process.platform === 'win32'
 const runnerEntry = fileURLToPath(new URL('../src/runner.ts', import.meta.url))
 
-// Probes the literal `pwsh` command this suite's own confined-child
-// invocations below spawn (PATH resolution only), not
-// `dsh-pwsh-local`'s `resolvePwshPath()` — that resolver's last-resort
-// fallback is legacy Windows PowerShell 5.1 (`powershell.exe`), which
-// answers this probe successfully on a host with no real pwsh 7 install
-// while the tests' own bare `pwsh` argv still fails to spawn, so that
-// probe would report "available" and let every test below fail instead of
-// skip. Checking PSEdition (not just exit status) also rejects a false
-// match against Windows PowerShell 5.1 if a `pwsh` shim ever aliased to it.
-// spawnSync never throws on a missing binary (status null) — only an
-// actual invocation's output is truth.
+// Functional probe, not where.exe: spawnSync never throws on a missing
+// binary (status null) and where.exe exits 1 without pwsh — only an actual
+// pwsh invocation's exit status is truth.
 function pwshAvailable(): boolean {
-  const probe = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSEdition'], { encoding: 'utf8' })
-  return probe.status === 0 && probe.stdout.trim() === 'Core'
+  return spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 }
 
 function runRunner(args: string[], timeoutMs = 30_000) {
@@ -39,28 +31,6 @@ function runRunner(args: string[], timeoutMs = 30_000) {
     encoding: 'utf8',
   })
 }
-
-describe.skipIf(!isWin32)('consoleless windows-acl runner', () => {
-  it('preserves pipe bytes through a console-subsystem descendant chain', () => {
-    const workspace = mkdtempSync(join(tmpdir(), 'dsh-consoleless-workspace-'))
-    const temp = mkdtempSync(join(tmpdir(), 'dsh-consoleless-temp-'))
-    const entry = fileURLToPath(new URL('./fixtures/consoleless-runner.ts', import.meta.url))
-    const child = 'process.stdout.write("dsh-\\u79d1\\u5b66-\\u2713")'
-    const launcher = `const { spawnSync } = require('node:child_process'); const child = spawnSync(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' }); process.exitCode = child.status ?? 1`
-    try {
-      const result = spawnSync(process.execPath, ['--import', 'tsx/esm', entry,
-        '--workspace', workspace, '--temp', temp, '--mode', 'workspace-write',
-        '--', process.execPath, '-e', launcher,
-      ], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 30_000 })
-      expect(result.status, result.stderr).toBe(0)
-      expect(result.stdout).toBe('dsh-科学-✓')
-      expect(result.stderr).toBe('')
-    } finally {
-      rmSync(workspace, { recursive: true, force: true })
-      rmSync(temp, { recursive: true, force: true })
-    }
-  }, 35_000)
-})
 
 describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
   let scratchRoot!: string
@@ -361,9 +331,9 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     // workspace-write keeps the ACE standing for the server lifetime. After
     // switching to read-only, the restricted token's read-only list must carry NO
     // capability SID — the standing ACE stays but the pass-2 check cannot use
-    // it, so the workspace write is denied (previously it LEAKED). The
-    // switch back reuses the SAME standing ACE: the re-upgrade write lands
-    // without any re-grant.
+    // it, so the workspace write is denied instead of leaking through the
+    // standing ACE. The switch back reuses the SAME standing ACE: the
+    // re-upgrade write lands without any re-grant.
     const writeSid = workspaceWriteSid(writableDir)
     const privateTemp = join(isolatedTemp, 'mode-switch-temp')
     mkdirSync(privateTemp)
@@ -488,4 +458,34 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
       expect(result.stderr).toContain('windows-acl-run: ')
     }
   }, 15_000)
+})
+
+// Node-only coverage keeps console initialization independent of PowerShell availability.
+describe.skipIf(!isWin32)('windowless ACL runner', () => {
+  it.each([false, true])('preserves piped output with detached=%s', async (detached) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-acl-console-'))
+    const workspace = join(root, 'workspace')
+    const temp = join(root, 'temp')
+    mkdirSync(workspace)
+    mkdirSync(temp)
+    try {
+      const child = spawn(process.execPath, ['--import', 'tsx/esm', runnerEntry,
+        '--workspace', workspace, '--temp', temp, '--mode', 'read-only', '--',
+        process.execPath, '-e', 'console.log("restricted-console-ready")',
+      ], { windowsHide: true, detached, signal: AbortSignal.timeout(15_000), stdio: ['ignore', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+      const status = await new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      expect(stderr).toBe('')
+      expect(status).toBe(0)
+      expect(stdout.trim()).toBe('restricted-console-ready')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

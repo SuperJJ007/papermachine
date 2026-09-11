@@ -1,16 +1,27 @@
-/** Experimental-package and deployment-only-app publication and dependency constraints. */
+/** Experimental-package publication and dependency constraints. */
 
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
-  checkDeploymentOnlyAppManifest,
+  checkDshFamilyVersion,
+  checkWorkspaceManifest,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
+  expectedDshPackageFiles,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
 const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
   manifest: { name: '@deepseek-ai/dsh-experimental-prototype', private: true },
+}
+
+const publicExperimental: WorkspaceManifest = {
+  dir: 'packages/experimental/agent-team',
+  manifest: {
+    name: '@deepseek-ai/dsh-experimental-agent-team',
+    publishConfig: { access: 'public' },
+  },
 }
 
 describe('experimental workspace constraints', () => {
@@ -31,6 +42,20 @@ describe('experimental workspace constraints', () => {
     })).toEqual([
       '@deepseek-ai/dsh-experimental-prototype: experimental package must set "private": true',
       '@deepseek-ai/dsh-experimental-prototype: experimental package must omit publishConfig',
+    ])
+  })
+
+  it('requires public metadata only for the Agent Teams exceptions', () => {
+    expect(checkExperimentalManifest(publicExperimental)).toEqual([])
+    expect(checkExperimentalManifest({
+      ...publicExperimental,
+      manifest: {
+        name: '@deepseek-ai/dsh-experimental-agent-team',
+        private: true,
+      },
+    })).toEqual([
+      '@deepseek-ai/dsh-experimental-agent-team: public experimental package must not set "private": true',
+      '@deepseek-ai/dsh-experimental-agent-team: public experimental package must set publishConfig.access to "public"',
     ])
   })
 
@@ -76,30 +101,90 @@ describe('experimental workspace constraints', () => {
   })
 })
 
-const deploymentOnlyApp: WorkspaceManifest = {
-  dir: 'apps/telemetry-receivers',
-  manifest: { name: '@deepseek-ai/dsh-telemetry-receivers', private: true },
-}
-
-describe('deployment-only app workspace constraints', () => {
-  it('ignores a directory outside the deployment-only allowlist', () => {
-    expect(checkDeploymentOnlyAppManifest({
-      dir: 'apps/desktop',
-      manifest: { name: '@deepseek-ai/dsh-desktop', private: false },
-    })).toEqual([])
+describe('dsh family version coherence', () => {
+  it('rejects a package carrying a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh-http-proxy: package.json version must match root version 0.1.2-rc.1')
   })
 
-  it('accepts a private manifest without publication metadata', () => {
-    expect(checkDeploymentOnlyAppManifest(deploymentOnlyApp)).toEqual([])
+  it('rejects the root-named CLI app on a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh: package.json version must match root version 0.1.2-rc.1')
   })
 
-  it('rejects a non-private manifest and any publishConfig', () => {
-    expect(checkDeploymentOnlyAppManifest({
-      ...deploymentOnlyApp,
-      manifest: { ...deploymentOnlyApp.manifest, private: false, publishConfig: { access: 'public' } },
+  it('accepts a manifest carrying the shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-rc.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+  })
+
+  it('leaves other sequences to their own version lines', () => {
+    expect(checkDshFamilyVersion({ name: '@deepseek-ai/cordis', version: '4.0.1' }, '0.1.2-rc.1')).toBeUndefined()
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/node-addon-system', version: '0.1.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+    expect(checkDshFamilyVersion({ version: '0.1.2-alpha.5' }, '0.1.2-rc.1')).toBeUndefined()
+  })
+})
+
+describe('package payload constraints', () => {
+  it('includes a declared profile patch without a package-name allowlist', () => {
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-private-profile',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
     })).toEqual([
-      '@deepseek-ai/dsh-telemetry-receivers: deployment-only app package must set "private": true',
-      '@deepseek-ai/dsh-telemetry-receivers: deployment-only app package must omit publishConfig',
+      'lib/index.js',
+      'cordis.patch.yml',
+      'lib/types/**/*.d.ts',
     ])
+  })
+})
+
+describe('Science publication payloads', () => {
+  it.each([
+    'packages/fs/tool-fs',
+    'packages/science/science-runtime',
+    'packages/science/tool-science',
+    'packages/bundle/science-app',
+    'packages/client/ui-science',
+  ])('requires every shipped payload entry in %s', (dir) => {
+    const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as
+      WorkspaceManifest['manifest'] & { files: string[] }
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    for (const missing of manifest.files) {
+      const incomplete = { ...manifest, files: manifest.files.filter(file => file !== missing) }
+      expect(checkWorkspaceManifest({ dir, manifest: incomplete })).toContainEqual(expect.stringContaining('package.json files must be'))
+    }
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files, 'unowned'] } }))
+      .toContainEqual(expect.stringContaining('package.json files must be'))
+  })
+})
+
+describe('deployment-only applications', () => {
+  const dir = 'apps/telemetry-receivers'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+
+  it('keeps the telemetry receiver private without an npm runtime entry', () => {
+    expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, private: false } }))
+      .toContainEqual(expect.stringContaining('must set "private": true'))
+  })
+
+  it.each<[string, Partial<WorkspaceManifest['manifest']>]>([
+    ['main', { main: 'server.mjs' }],
+    ['types', { types: 'server.d.ts' }],
+    ['bin', { bin: 'server.mjs' }],
+    ['exports', { exports: { '.': './server.mjs' } }],
+    ['files', { files: ['server.mjs'] }],
+    ['publishConfig', { publishConfig: { access: 'public' } }],
+  ])('rejects a %s publication declaration', (field, declaration) => {
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, ...declaration } }))
+      .toContainEqual(expect.stringContaining(`deployment-only app must omit ${field}`))
   })
 })

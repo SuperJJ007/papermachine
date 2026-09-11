@@ -1,0 +1,41 @@
+{
+  "candidate": "0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+  "baseline": "7545be293debb9623e439e2257383bf4b39cf3da",
+  "rc1": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+  "rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "p1_commits": [
+    "0888810bd4 release(dsh): align owned package versions to 0.1.5-rc.2",
+    "80a3e788bf Merge tag 'dsh-v0.1.5-rc.2' into codex/replant-0.1.5-rc2",
+    "fb2c4b9e69 Merge pull request #3978 from deepseek-harness/worktree/release-dsh-0.1.5-rc.2",
+    "a305303422 release(dsh): 0.1.5-rc.2",
+    "2107e4697e Merge pull request #3973 from deepseek-harness/worktree/release-0.1.5-backport-feedback-deliverables",
+    "060323d8e2 feat(web): backport feedback and file refinements to 0.1.5"
+  ],
+  "merge_forward_command": "git merge --no-ff --no-edit dsh-v0.1.5-rc.2",
+  "merge_conflicts_with_pairing_driver": [],
+  "merge_conflicts_without_pairing_driver": [
+    "packages/client/ui-chat/README.i18n.yaml",
+    "packages/client/ui-primitives/README.i18n.yaml"
+  ],
+  "merge_source_files_changed": 334,
+  "p1_delta_shortstat": "343 files changed, 1059 insertions(+), 1059 deletions(-)",
+  "version_alignment": {
+    "packages": 9,
+    "from": "0.1.5-rc.1",
+    "to": "0.1.5-rc.2",
+    "reason": "dsh release members must share one version (scripts/release/families.ts verifyVersions)",
+    "tool": "scripts/release/bump.ts writeVersion rule"
+  },
+  "retained_private_patch_rows": 52,
+  "private_delta_base": "rc.2 (fb2c4b9e698e30edb738bca4cf0618587db7d203)",
+  "private_delta_against_rc2": "1508 files changed, 129876 insertions(+), 2596 deletions(-)",
+  "private_delta_against_rc2_files": 1508,
+  "private_delta_at_code_candidate_0888810bd4": "1508 files changed, 129876 insertions(+), 2596 deletions(-)",
+  "product_versions": {
+    "owned_packages": "0.1.5-rc.2",
+    "apps_desktop_src_product_version_json": "0.1.3",
+    "note": "owned npm manifests follow the dsh family version; the desktop product version file is a separate product identity and is unchanged by this stage"
+  },
+  "private_delta_at_code_candidate_files": 1508,
+  "note_delivery_sha": "the carrying delivery commit is reported in the handoff write-up; the measured basis here is the immutable code candidate"
+}

@@ -19,7 +19,7 @@
  * error surface. Hidden entries are host-flagged and hidden by default; the
  * footer's fixed-label "Show hidden files" toggle (aria-pressed, check when
  * on) reveals them (client-side only). The path editor announces itself with
- * a pencil glyph and a bar-wide hover-lit outline, opens seeded with a
+ * a text label, pencil glyph and hover-lit outline, opens seeded with a
  * trailing separator, and keeps the panes under the draft: the final segment
  * prefix-filters the LAST pane while that pane's level is the one the draft's
  * directory part names (a dot-led prefix also reveals the hidden entries it
@@ -40,8 +40,7 @@ import {
   Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
   IconPlusOutline16, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
-import { DirectoryBrowseError } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
 import css from './DirectoryBrowser.module.css'
 
@@ -49,9 +48,18 @@ import css from './DirectoryBrowser.module.css'
 export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
-  /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan on the wire. */
+  /**
+   * List one directory level (absent path = the Host home directory); the
+   * signal aborts a superseded scan on the wire. A rejection may carry
+   * `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
-  /** Create one child directory under an existing parent. */
+  /**
+   * Create one child directory under an existing parent. A rejection may
+   * carry `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   createDirectory: (path: string, name: string) => Promise<string>
   /** The operator confirmed a directory (the selection, else the listed level). */
   onOpen: (path: string) => void
@@ -63,9 +71,13 @@ export interface DirectoryBrowserProps {
   t: Translate
 }
 
-/** Failure text: the Host business message when typed, else the throw's text. */
+/** Failure text from the injected directory operation. */
 function failureText(error: unknown): string {
-  if (error instanceof DirectoryBrowseError) return error.rpcError.message
+  if (error !== null && typeof error === 'object' && 'rpcError' in error) {
+    const rpcError = error.rpcError
+    if (rpcError !== null && typeof rpcError === 'object' && 'message' in rpcError
+      && typeof rpcError.message === 'string') return rpcError.message
+  }
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -182,10 +194,9 @@ function readDraft(
  * orphan it. A prefix narrows the level only while some row it would actually
  * show matches — a tail nobody matches is a name being spelled, not a demand
  * for an empty pane, so the level shows whole and its hidden rows return to
- * obeying the toggle. Counting only displayable rows is what keeps that true:
- * were a hidden row ever to match a prefix that does not reveal it (today
- * `hidden` means dot-prefixed, so it cannot), the level would narrow to
- * nothing.
+ * obeying the toggle. Counting only displayable rows keeps that true because
+ * every hidden name is dot-prefixed, and a matching prefix therefore reveals
+ * it; otherwise the level could narrow to nothing.
  */
 function visibleEntries(
   entries: readonly DirectoryEntry[],
@@ -279,7 +290,6 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   const [pathDraft, setPathDraft] = useState<string | null>(null)
   // Show-hidden toggle state (pure client-side filter, reset on each open).
   const [showHidden, setShowHidden] = useState(false)
-  // Create-folder state: null = closed; a string = the nested dialog's draft.
   const [folderDraft, setFolderDraft] = useState<string | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -686,6 +696,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     ? null
     : readDraft(crumbSource, pathDraft, scanned.current).tail
   const crumbs = crumbSource === null ? [] : displayCrumbs(crumbSource, t('browser.home'))
+  const filesystemRoot = crumbSource?.crumbs[0]
   const crumbTail = crumbs.at(-1)?.path
   useEffect(() => {
     const trail = crumbTrailRef.current
@@ -811,6 +822,17 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
             {pathDraft === null
               ? (
                 <>
+                  {filesystemRoot !== undefined && filesystemRoot.path !== crumbs[0]?.path && (
+                    <button
+                      type="button"
+                      className={css.crumb}
+                      title={filesystemRoot.path}
+                      disabled={parentInert}
+                      onClick={() => { navigate(filesystemRoot.path) }}
+                    >
+                      {t('browser.root')}
+                    </button>
+                  )}
                   <span className={css.crumbTrail} role="navigation" ref={crumbTrailRef}>
                     {crumbs.map((crumb, index) => (
                       <span key={crumb.path} className={css.crumbSeat}>
@@ -826,12 +848,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                       </span>
                     ))}
                   </span>
-                  {/* The empty zone right of the crumbs is the path-edit
-                    * affordance: the whole remainder of the bar clicks into
-                    * the editor, and the pencil glyph parked at its right
-                    * edge (with the same tooltip) is what says so — an
-                    * invisible target the operator must guess at is the one
-                    * way into typing a path. */}
+                  {/* The labeled path editor remains reachable when the breadcrumb trail scrolls. */}
                   <button
                     type="button"
                     className={css.crumbEditZone}
@@ -862,6 +879,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                       setPathDraft(base.endsWith(sep) ? base : `${base}${sep}`)
                     }}
                   >
+                    <span>{t('browser.editPath')}</span>
                     <IconEditOutline16 size={14} className={css.crumbEditGlyph} />
                   </button>
                 </>

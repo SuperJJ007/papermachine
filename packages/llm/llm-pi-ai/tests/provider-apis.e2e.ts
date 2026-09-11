@@ -8,13 +8,9 @@ import type {
   ImageRequestPolicy,
   RequestImageAttachment,
   SaveImageAttachment,
-  SaveTextAttachment,
   StoredImageAttachment,
-  StoredTextAttachment,
-  TextAttachmentLimits,
-  TextAttachmentRef,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiReplayResponse } from '../src/replay.ts'
@@ -80,21 +76,11 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
         mediaTypes: [fixture.ref.mediaType],
       }
 
-      readonly textLimits: TextAttachmentLimits = { maxTextBytes: 0, mediaTypes: [] }
-
       validateImage(_input: SaveImageAttachment): Promise<void> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 
-      validateText(_input: SaveTextAttachment): Promise<void> {
-        return Promise.reject(new Error('e2e attachment fixture is read-only'))
-      }
-
       saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-        return Promise.reject(new Error('e2e attachment fixture is read-only'))
-      }
-
-      saveText(_input: SaveTextAttachment): Promise<TextAttachmentRef> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 
@@ -103,10 +89,6 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
           return Promise.reject(new Error('unknown e2e attachment fixture'))
         }
         return Promise.resolve(fixture)
-      }
-
-      readText(_ref: TextAttachmentRef): Promise<StoredTextAttachment> {
-        return Promise.reject(new Error('e2e attachment fixture carries no text fixture'))
       }
 
       override readImageRequest(ref: ImageAttachmentRef, _policy: ImageRequestPolicy): Promise<RequestImageAttachment> {
@@ -230,7 +212,7 @@ for (const profile of providerCases) {
             createUserMessage({
               content: [{
                 type: 'tool-result',
-                toolCallId: CallId(call!.id),
+                toolCallId: ToolCallId(call!.id),
                 content: [{ type: 'text', text: 'The code blue means ocean.' }],
               }],
               source: { kind: 'plugin', plugin: 'test' },

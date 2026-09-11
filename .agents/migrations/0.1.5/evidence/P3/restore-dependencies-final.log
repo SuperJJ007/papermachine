@@ -1,0 +1,62 @@
+native/system/packages/darwin-x64        | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["darwin"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-arm64       | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/system/packages/linux-x64         | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 297 workspace projects
+[WARN] There are cyclic workspace dependencies: /Users/superjj/ccproj/pm-replant/packages/api/gateway, /Users/superjj/ccproj/pm-replant/packages/client/connection, /Users/superjj/ccproj/pm-replant/packages/api/session-controller, /Users/superjj/ccproj/pm-replant/packages/client/file-upload, /Users/superjj/ccproj/pm-replant/packages/api/remotes, /Users/superjj/ccproj/pm-replant/packages/api/workspace-controller; /Users/superjj/ccproj/pm-replant/packages/api/workspace-files, /Users/superjj/ccproj/pm-replant/packages/client/resources, /Users/superjj/ccproj/pm-replant/packages/test-support/client-runtime, /Users/superjj/ccproj/pm-replant/packages/client/ui-chat, /Users/superjj/ccproj/pm-replant/packages/client/ui-sidebar-textpreview; /Users/superjj/ccproj/pm-replant/packages/client/ui-conversation, /Users/superjj/ccproj/pm-replant/packages/client/ui-workspace; /Users/superjj/ccproj/pm-replant/packages/core/agent-loop, /Users/superjj/ccproj/pm-replant/packages/llm/llm-pi-ai, /Users/superjj/ccproj/pm-replant/packages/llm/llm-deepseek, /Users/superjj/ccproj/pm-replant/packages/session/session-log-deepseek, /Users/superjj/ccproj/pm-replant/packages/feedback/command-feedback, /Users/superjj/ccproj/pm-replant/packages/test-support/agent-loop-testkit; /Users/superjj/ccproj/pm-replant/packages/e2b/e2b, /Users/superjj/ccproj/pm-replant/packages/e2b/fs-e2b; /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-local, /Users/superjj/ccproj/pm-replant/packages/sandbox/sandbox-windows-acl; /Users/superjj/ccproj/pm-replant/packages/subagent/subagent-spawn-in-process, /Users/superjj/ccproj/pm-replant/packages/subagent/tool-subagent; /Users/superjj/ccproj/pm-replant/vendor/cordis, /Users/superjj/ccproj/pm-replant/vendor/include
+✓ Lockfile passes supply-chain policies (verified 15m ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +678
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 678, reused 678, downloaded 0, added 305
+Progress: resolved 678, reused 678, downloaded 0, added 567
+Progress: resolved 678, reused 678, downloaded 0, added 677
+Progress: resolved 678, reused 678, downloaded 0, added 678, done
+.../lefthook@2.1.9/node_modules/lefthook postinstall$ node postinstall.js
+.../lefthook@2.1.9/node_modules/lefthook postinstall: Done
+
+devDependencies:
++ @deepseek-ai/dsh-agent 0.1.5-alpha.1 <- packages/core/agent
++ @deepseek-ai/dsh-package-manifest 0.1.5-alpha.1 <- packages/util/package-manifest
++ @deepseek-ai/dsh-tool-session-query 0.1.5-alpha.1 <- packages/session-query/tool-session-query
++ @deepseek-ai/dsh-web-fetch-http 0.1.5-alpha.1 <- packages/web/web-fetch-http
++ @stylistic/eslint-plugin 5.10.0
++ @testing-library/dom 10.4.1
++ @testing-library/react 16.3.2
++ @types/js-yaml 4.0.9
++ @types/jsdom 28.0.3
++ @types/mdast 4.0.4
++ @types/node 22.20.0
++ @types/spdx-expression-parse 4.0.0
++ @vitest/coverage-v8 4.1.8
++ @yao-pkg/pkg 6.21.0
++ @yarnpkg/cli-dist 4.17.1
++ eslint-plugin-sonarjs 4.1.0
++ execa 10.0.0
++ fast-check 4.8.0
++ istanbul-lib-report 3.0.1
++ js-yaml 4.2.0
++ jscpd 5.0.12
++ jsdom 29.1.1
++ lefthook 2.1.9
++ lightningcss 1.32.0
++ mdast-util-from-markdown 2.0.3
++ mdast-util-gfm 3.1.0
++ mermaid 11.16.0
++ micromark-extension-gfm 3.0.0
++ oxlint 1.76.0
++ oxlint-tsgolint 7.0.2001
++ publint 0.3.21
++ smol-toml 1.7.1
++ spdx-expression-parse 5.0.0
++ tsdown 0.22.2
++ tsx 4.22.4
++ typescript 6.0.3
++ vite-tsconfig-paths 6.1.1
++ vitest 4.1.8
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+. postinstall$ node scripts/install-lefthook.mjs
+. postinstall: Done
+Done in 5.4s using pnpm v11.7.0

@@ -31,6 +31,45 @@ export interface ImageAttachmentRef {
   }
 }
 
+/**
+ * Durable, serializable reference to one verbatim stored file. Files are
+ * stored byte-for-byte with no normalization; `attachmentId` is the sha256
+ * digest of exactly those bytes.
+ */
+export interface FileAttachmentRef {
+  /** Opaque content-addressed storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Sanitized display filename, also the stored object's leaf name. */
+  name: string
+  /** Exact byte length. */
+  bytes: number
+}
+
+/** Base64-encoded file upload accompanying one wire request. */
+export interface EncodedFileAttachment {
+  /** Canonical base64 encoding of the file bytes. */
+  data: string
+  /** Optional display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Request to durably commit one file verbatim. */
+export interface SaveFileAttachment {
+  data: Uint8Array
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Request to durably commit one file from bounded byte chunks. */
+export interface SaveFileStreamAttachment {
+  /** Exact file bytes in order; providers must not retain the complete sequence in memory. */
+  data: AsyncIterable<Uint8Array>
+  /** Optional cancellation for source reads and storage writes. */
+  signal?: AbortSignal
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
 /** Deployment-resolved limits used by upload admission and request buffering. */
 export interface ImageAttachmentLimits {
   maxImageBytes: number
@@ -51,6 +90,32 @@ export interface EncodedImageAttachment {
   /** Optional display name; it is never interpreted as a path. */
   name?: string
 }
+
+/**
+ * Browser-submitted prompt content accepted by Host prompt endpoints; the
+ * accepting Host promotes image parts to durable references through
+ * `ctx.attachments.admitPromptContent()` before any message is created, so a wire caller can
+ * never cite an attachment it did not upload.
+ */
+export type PromptContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+    readonly type: 'image'
+    readonly mediaType: ImageMediaType
+    readonly data: string
+    readonly name?: string
+  }
+
+/** Host prompt content whose file receipts are resolved and whose image bytes await admission. */
+export type AttachmentAdmissionPart =
+  | PromptContentPart
+  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
+
+/** Host-admitted prompt content with every attachment represented by its durable reference. */
+export type AdmittedPromptContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly attachment: ImageAttachmentRef }
+  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
 
 /** Request to validate and durably commit one image. */
 export interface SaveImageAttachment {
@@ -78,51 +143,11 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
-/** Text formats accepted by the version-one text attachment path. */
-export type TextMediaType =
-  | 'text/csv'
-  | 'application/json'
-  | 'text/markdown'
-  | 'text/plain'
-
-/** Durable, serializable metadata for one immutable UTF-8 text object. */
-export interface TextAttachmentRef {
-  /** Opaque storage identifier; never a filesystem path or bearer URL. */
-  attachmentId: AttachmentId
-  /** Caller-declared media type; text formats carry no self-describing byte signature, so admission trusts it unverified. */
-  mediaType: TextMediaType
-  /** Exact encoded UTF-8 byte length. */
-  bytes: number
-  /** Optional display name stripped of local path information. */
-  name?: string
-}
-
-/** Deployment-resolved limits used by text upload admission. */
-export interface TextAttachmentLimits {
-  maxTextBytes: number
-  mediaTypes: readonly TextMediaType[]
-}
-
-/** Request to validate and durably commit one UTF-8 text file. */
-export interface SaveTextAttachment {
-  data: Uint8Array
-  /** Caller-declared media type; not verified against content (see {@link TextAttachmentRef.mediaType}). */
-  mediaType: TextMediaType
-  /** Optional browser/provider display name; it is never interpreted as a path. */
-  name?: string
-}
-
-/** Stored text bytes returned after reference and digest verification. */
-export interface StoredTextAttachment {
-  ref: TextAttachmentRef
-  data: Uint8Array
-}
-
 /** Deterministic request-image policy selected by one exact model route. */
 export interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
-  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
 

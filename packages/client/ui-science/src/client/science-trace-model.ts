@@ -1,6 +1,6 @@
 /** Pure Science process projection over conversation nodes and the browser-safe Science projection. */
 
-import type { ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ScienceArtifactId, ScienceClientArtifactVersion, ScienceClientProjection, ScienceClientRun, ScienceKernelEndReason,
 } from '@deepseek-ai/dsh-science-session/types'
@@ -55,8 +55,9 @@ export type ScienceTraceStepTitle =
 /** One real call, retained separately even when its list row is merged. */
 export interface ScienceTraceStepMember {
   readonly callId: string
-  /** Logged arguments and result; details are mounted only when requested. */
-  readonly argsRaw: string
+  /** Raw arguments from loaded conversation nodes; undefined preserves missing input separately from `{}`. */
+  readonly argsRaw: string | undefined
+  /** A loaded result, including empty content; absence does not establish execution status. */
   readonly result: Extract<ConversationNode, { kind: 'tool-result' }> | undefined
   readonly run: ScienceClientRun | undefined
   readonly title: ScienceTraceStepTitle
@@ -194,7 +195,7 @@ function runDuration(run: ScienceClientRun): number | undefined {
 interface TraceCall {
   readonly callId: string
   readonly name: string
-  readonly argsRaw: string
+  readonly argsRaw: string | undefined
   readonly turn: number
   readonly step: number
   readonly seq: number
@@ -220,6 +221,12 @@ function stepKind(name: string): ScienceTraceStepKind {
 
 function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceTraceStepTitle {
   const fallback = { kind: 'tool', name: call.name } as const
+  if (call.name === 'run_python' || call.name === 'run_r') {
+    return { kind: 'run', language: run?.language ?? (call.name === 'run_r' ? 'r' : 'python') }
+  }
+  if (call.name === 'get_science_state') return { kind: 'state' }
+  if (call.name.startsWith('subagent')) return { kind: 'delegate' }
+  if (call.argsRaw === undefined) return fallback
   let args: unknown
   try { args = JSON.parse(call.argsRaw) }
   catch {
@@ -228,8 +235,6 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
   }
   if (typeof args !== 'object' || args === null || Array.isArray(args)) return fallback
   switch (call.name) {
-    case 'run_python': case 'run_r':
-      return { kind: 'run', language: run?.language ?? (call.name === 'run_r' ? 'r' : 'python') }
     case 'read': case 'read_image':
       return 'file_path' in args && typeof args.file_path === 'string'
         ? { kind: call.name === 'read' ? 'read' : 'read-image', name: basename(args.file_path) } : fallback
@@ -238,7 +243,6 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
       const pattern = args.pattern
       return { kind: call.name, pattern: /^(?:[/\\]|[a-z]:[/\\])/iu.test(pattern) ? basename(pattern) : pattern }
     }
-    case 'get_science_state': return { kind: 'state' }
     case 'annotate_artifact':
       return 'logical_name' in args && typeof args.logical_name === 'string'
         && 'title' in args && typeof args.title === 'string'
@@ -246,7 +250,7 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
           version: 'version' in args && typeof args.version === 'number' ? args.version : undefined, title: shortTitle(args.title) } : fallback
     case 'publish_outcome':
       return 'title' in args && typeof args.title === 'string' ? { kind: 'publish', title: shortTitle(args.title) } : fallback
-    default: return call.name.startsWith('subagent') ? { kind: 'delegate' } : fallback
+    default: return fallback
   }
 }
 
@@ -281,7 +285,7 @@ export function scienceTracePips(group: ScienceTraceGroup): readonly {
 
 /**
  * Build ordered process steps without parsing model prose, source code, or shell text.
- * @param nodes - Assembled conversation nodes.
+ * @param nodes - Loaded conversation nodes; request ownership uses trace log-sequence intervals.
  * @param science - Current browser-safe Science projection.
  * @param turnTimes - Authoritative turn timing map.
  * @param summaries - current library facts (content origin, creation time)
@@ -304,16 +308,20 @@ export function buildScienceTraceModel(
   const dialogues: ScienceTraceDialogue[] = []
   let inferredTurn = 0
   for (const node of nodes) {
-    if (node.kind === 'user') {
+    if (node.kind === 'user' || node.kind === 'steering') {
       const text = textOf(node)
       if (text === '') continue
-      inferredTurn = node.turn ?? inferredTurn + 1
-      dialogues.push({ actor: 'user', turn: inferredTurn, text, seq: node.seq, anchor: `seq:${node.seq}` })
-      continue
-    }
-    if (node.kind === 'steering') {
-      const text = textOf(node)
-      if (text !== '') dialogues.push({ actor: 'user', turn: node.turn ?? Math.max(1, inferredTurn), text, seq: node.seq, anchor: `seq:${node.seq}` })
+      let turn: number
+      if (science.trace.turns.length > 0) {
+        const owner = science.trace.turns.find(candidate => candidate.startSeq <= node.seq
+          && (candidate.endSeq === undefined || node.seq <= candidate.endSeq))
+        if (owner === undefined) continue
+        turn = owner.turn
+      } else {
+        inferredTurn = node.kind === 'user' ? inferredTurn + 1 : Math.max(1, inferredTurn)
+        turn = inferredTurn
+      }
+      dialogues.push({ actor: 'user', turn, text, seq: node.seq, anchor: `seq:${node.seq}` })
       continue
     }
     if (node.kind === 'tool-result') results.set(node.callId, node)
@@ -338,7 +346,7 @@ export function buildScienceTraceModel(
     ? [...loadedCalls.values()]
     : science.trace.calls.map(call => ({
       ...call,
-      argsRaw: loadedCalls.get(call.callId)?.argsRaw ?? '{}',
+      argsRaw: loadedCalls.get(call.callId)?.argsRaw,
     }))
   const callTurns = new Map(authoritativeCalls.map(call => [call.callId, call.turn]))
   const calls = new Map(authoritativeCalls.map(call => [call.callId, call]))

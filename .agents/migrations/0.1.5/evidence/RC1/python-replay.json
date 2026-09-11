@@ -1,0 +1,95 @@
+{
+  "launcherSemantics": "Source Python SDK through dsh_bin wrapper executing Node v24.14.0 and current built apps/cli/lib/bin.js; CLI receives SDK --profile and patch argv unchanged. Not a wheel or single executable acceptance.",
+  "wrapper": "/private/tmp/pm-rc1-acceptance-dsh",
+  "python": "3.12.9",
+  "node": "24.14.0",
+  "PYTHONPATH": "/Users/superjj/ccproj/pm-replant/python/sdk/src:/Users/superjj/ccproj/pm-replant/python/sdk-runtime/src",
+  "checks": [
+    {
+      "scenario": "sdk-snapshot",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-snapshot",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 0,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-snapshot-replay.log"
+    },
+    {
+      "scenario": "sdk-restart",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-restart",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 0,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-restart-replay.log"
+    },
+    {
+      "scenario": "sdk-minimal",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-minimal",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 1,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-minimal-replay.log"
+    },
+    {
+      "scenario": "sdk-minimal-in-history",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-minimal-in-history",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 1,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-minimal-in-history-replay.log"
+    },
+    {
+      "scenario": "sdk-minimal",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-minimal",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 0,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-minimal-replay-host.log"
+    },
+    {
+      "scenario": "sdk-minimal-in-history",
+      "command": [
+        "/opt/miniconda3/bin/python",
+        "/Users/superjj/ccproj/pm-replant/scripts/smoke-python-runtime.py",
+        "--scenario",
+        "sdk-minimal-in-history",
+        "--exe",
+        "/private/tmp/pm-rc1-acceptance-dsh"
+      ],
+      "exitCode": 0,
+      "log": "/private/tmp/pm-rc1-acceptance-sdk-minimal-in-history-replay-host.log"
+    }
+  ],
+  "sandboxRetryReason": "Initial sdk-minimal and sdk-minimal-in-history failed with spawnSync /bin/ps EPERM under host sandbox; identical scenarios passed with host escalation. No expected outputs refreshed.",
+  "finalResults": {
+    "sdk-snapshot": 0,
+    "sdk-restart": 0,
+    "sdk-minimal": 0,
+    "sdk-minimal-in-history": 0
+  },
+  "wrapperContents": "#!/bin/sh\nexec /private/tmp/dsh-rc1-node/bin/node /Users/superjj/ccproj/pm-replant/apps/cli/lib/bin.js \"$@\"\n"
+}

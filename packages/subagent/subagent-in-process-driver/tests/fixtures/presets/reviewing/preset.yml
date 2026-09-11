@@ -1,1 +1,2 @@
-copyable: true
+name: Reviewing
+description: Exposes a distinct review tool for preset switching tests.

@@ -2,7 +2,9 @@
 
 import { isInvalidHandle, isNullPtr, throwLastError } from './ffi.ts'
 import type { Win32Bindings } from './ffi.ts'
-import { STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE } from './win32-abi.ts'
+const STD_INPUT_HANDLE = -10
+const STD_OUTPUT_HANDLE = -11
+const STD_ERROR_HANDLE = -12
 
 /**
  * Give a consoleless runner a hidden console before it creates restricted children.

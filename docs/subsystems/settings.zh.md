@@ -51,7 +51,7 @@ interface SettingsRegisterOptions<T> {
 
 `validate` 在 schema 接纳该值之后运行，因此它看到的默认值和组合 base 与 owner 实际看到的完全一致。`dsh-llm-pi-ai` 用它在写入处拒绝自己无法服务的提供方 profile，而不是先存下来、再让该 namespace 下每条路由失效。
 
-`applies` 是 UI 提示而非机制：`restart` 的 owner 只是从不 watch，其值在构造期读取一次，配置界面可为待生效变更加标。
+`applies` 是 UI 提示而非机制：`restart` 的 owner 从不 watch，其值在构造期读取一次，配置界面可为待生效变更加标。
 
 ```ts type-equiv
 /** When a namespace's changes take effect for its owner. */
@@ -95,11 +95,13 @@ interface SettingsScope<T> {
 
 ## 描述符
 
-`describe()` 为配置界面序列化每个已注册 namespace：schemastery 的 `toJSON()` 封装结构驱动 schema 渲染的表单，解析值填充表单，分离出的 `base`/`user` 层让表单按字段是否出现在 user 层标注「用户已覆盖」。`effective` 是已注册 owner 实际读取的值——对 `applies: 'live'` 的 owner 等于 `value`；对 `applies: 'restart'` 的 owner，一旦之后的一次写入使 `value` 领先于它，`effective` 便冻结在该 owner 在自身注册时读到的值——这正是配置界面区分"已存储的变更"与"owner 已据以行动的值"所依赖的事实。`describe({ redactSecrets: true })`——每个对外传输接口都必须传入——从全部四个承载值的层（`value`、`effective`、`base`、`user`）剥离 `role('secret')` 字段并枚举其 `{path, set}` slot，页面因此能渲染只写输入框而永远收不到机密值。
+`describe()` 为配置界面序列化每个已注册 namespace：schemastery 的 `toJSON()` 封装结构驱动 schema 渲染的表单，解析值填充表单，分离出的 `base`/`user` 层让表单按字段是否出现在 user 层标注「用户已覆盖」。`describe({ redactSecrets: true })`——每个对外传输接口都必须传入——从三层剥离 `role('secret')` 字段并枚举其 `{path, set}` slot，页面因此能渲染只写输入框而永远收不到机密值。
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
 interface SettingsDescriptor {
+  // TODO(settings-namespace-vocabulary): Rename `ns` to `namespace` across the
+  // public API, provider contract, implementations, tests, and consumers.
   /** The registered namespace. */
   ns: SettingsNamespace
   /** Serialized schemastery schema (`schema.toJSON()`). */
@@ -130,6 +132,8 @@ interface SettingsDescriptor {
    * tell "saved" from "in effect" apart for a restart-scoped namespace.
    */
   effective: unknown
+  /** Whether stored values differ from the running owner, computed before secret redaction. */
+  pendingRestart: boolean
   /** Schema-declared secret positions; present only under `redactSecrets`. */
   secrets?: RedactedSecret[]
 }
@@ -171,6 +175,10 @@ interface SettingsDescribeOptions {
 type SettingsUpdateSource = 'update' | 'provider'
 ```
 
+## 原生文档操作
+
+`SettingsDocumentOpenValue` 确认 `settings/openSettingsDocument` 已准备好 provider 持有的文档，并将其交给原生文本编辑器。`AgentPresetDirectoryOpenValue` 报告已完成的原生交接，或在桌面打开不可用时返回解析后的用户 preset 目录。两项操作都不接受由浏览器选择的 Host 路径。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -203,8 +211,22 @@ prepareDocument(): Promise<string | undefined>
  * @param schema - schemastery schema resolving this namespace's value.
  * @param options - composition `base` layer and effect timing.
  * @returns the owner scope for reads, observation, and updates.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptions<T>): SettingsScope<T>
+register<const Namespace extends string, T>( ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, options?: SettingsRegisterOptions<T>, ): SettingsScope<T>
+
+/**
+ * Attach one optional-settings consumer to this provider. The consumer
+ * registers its composition entry as the base layer while this provider is
+ * present, then falls back to that entry if the provider detaches.
+ * @param owner - consumer context whose unload suppresses fallback work.
+ * @param ns - consumer-owned settings namespace.
+ * @param schema - schema resolving the namespace.
+ * @param entry - composition entry used as the base and fallback value.
+ * @param hooks - source sink, change notification, and optional validation.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
+ */
+installSection<const Namespace extends string, T>( owner: Context, ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, entry: T, hooks: SettingsSectionHooks<T>, ): void
 
 /**
  * Describe every registered namespace for configuration surfaces, including
@@ -219,8 +241,9 @@ describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
  * Read one registered namespace's resolved value.
  * @param ns - the namespace to read.
  * @returns the resolved value, or `undefined` while unregistered.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-get(ns: SettingsNamespace): unknown
+get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>): unknown
 
 /**
  * Merge a patch into one registered namespace's user layer, validate the
@@ -232,8 +255,9 @@ get(ns: SettingsNamespace): unknown
  * @param patch - plain-object patch over the user section.
  * @param expectedRevision - the descriptor `revision` the caller read; a
  *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async update(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void>
+async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, ): Promise<void>
 
 /**
  * Replace one registered namespace's user section wholesale, validate,
@@ -244,8 +268,9 @@ async update(ns: SettingsNamespace, patch: object, expectedRevision?: number): P
  * @param section - the complete next user section.
  * @param expectedRevision - the descriptor `revision` the caller read; a
  *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async replace(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void>
+async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, ): Promise<void>
 
 /**
  * Apply path-addressed edits to one registered namespace's user section,
@@ -258,11 +283,85 @@ async replace(ns: SettingsNamespace, section: object, expectedRevision?: number)
  * @param ops - ordered path edits; later ops observe earlier ones.
  * @param expectedRevision - the descriptor `revision` the caller read; a
  *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, ): Promise<void>
 ```
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
+
+<a id="ctxsettingscontroller--settingscontroller"></a>
+
+### `ctx.settingsController` — `SettingsController`
+
+Host service backing the generated `ctx.remote.settings` namespace. Every remote read uses `redactSecrets: true`, so a `role('secret')` field cannot ride a response. Writes expose the settings service's merge, replacement, and path-addressed operations, and classify every provider refusal as `settings/conflict` or `settings/rejected` with the service's message.
+
+```ts cordis-catalog
+/**
+ * Describe every registered namespace for a configuration page: redacted
+ * layered values plus the serialized schema the page renders its form from.
+ * @returns provider writability, local-document presence, and one view per namespace.
+ * @throws RemoteError when no settings provider is mounted.
+ */
+@Remote describe(): SettingsDescribeValue
+
+/**
+ * Report whether this deployment can open an authored Agent preset directory natively.
+ * @returns true when the matching open operation is available.
+ */
+@Remote canOpenAgentPresetDirectory(): boolean
+
+/**
+ * Merge a patch into one namespace's stored user section.
+ * @param ns - namespace key to write.
+ * @param patch - fields to merge into the user section.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Replace one namespace's stored user section wholesale.
+ * @param ns - namespace key to write.
+ * @param section - complete replacement user section.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Apply path-addressed edits to one namespace's user section, resolved against
+ * the section as stored rather than against whatever the caller last read,
+ * then answer with that namespace's new redacted view.
+ * @param ns - namespace key to write.
+ * @param ops - the edits to apply, in order.
+ * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
+ * @returns the namespace's redacted view after the write.
+ * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
+ */
+@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+
+/**
+ * Materialize the provider-owned settings document and open it in a native text editor.
+ * @param signal - caller lifetime; abort terminates preparation or the native command.
+ * @returns confirmation after the native opener accepts the document.
+ * @throws RemoteError when no document exists, preparation fails, or opening fails.
+ */
+@Remote async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>
+
+/**
+ * Open one user-authored Agent preset directory or return its path when no native opener exists.
+ * @param agentPreset - preset id resolved against Host-owned roots.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns an opened confirmation or the resolved directory for text display.
+ * @throws RemoteError when the preset is missing, read-only, invalid, or cannot be opened.
+ */
+@Remote async openAgentPresetDirectory( agentPreset: string, signal: AbortSignal, ): Promise<AgentPresetDirectoryOpenValue>
+```
+
+Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)
 
 <a id="settings-events"></a>
 

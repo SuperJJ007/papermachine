@@ -1,0 +1,51 @@
+# Agent Note: Present declares workspace source files
+
+Status: implemented
+
+English | [中文](2026-09-08-present-workspace-source-files.zh.md)
+
+## Problem
+
+Users need to open and edit the files produced in their workspace, including shell-created files that have no editor mutation records. Preserving an independent delivered version adds content storage, copy verification, temporary-file retention, and a second editing destination to this workflow.
+
+## Decision
+
+The [present tool](../../../../packages/fs/tool-present/README.md) declares existing regular source files under the [Session filesystem access policy](2026-09-09-present-filesystem-access.md). It records paths and optional descriptions without reading or copying contents. The [deliverables plugin](../../../../packages/client/ui-deliverables/README.md) opens current workspace sources in the Host's default application. Edits are visible on the next open; deletion or movement makes the declaration unavailable. File-content preservation and copy-on-write storage are deferred until a persistence design owns them.
+
+The tool description requires `present` after writing a file the user asked to receive and before the final response, including files created through Bash or code execution. A prose path reference does not replace the call. The recorded [SVG delivery scenario](../../../../snapshots/web/present-svg/snapshot.yml) uses a user request that does not name `present`, and checks the resulting file, delivery event, and card. Its UI snapshot covers the expanded Chat transcript; navigation and composer controls belong to their own scenarios, so unrelated chrome changes cannot invalidate file-delivery expectations.
+
+The tool remains an ordinary package with shared filesystem and tool error classes. Its pure type entry owns the delivery event without importing Host code into the browser. The `standard`, `ptc`, and `cordis` presets mount it; `minimal` retains its two tools. Each plugin instance correlates its executions with successful final `tools/result` notifications before appending `deliverables/presented`. Native and nested calls share this rule. A later enclosing program failure does not revoke a completed nested declaration; blocked results publish none, and same-name scoped replacements cannot publish another instance's results.
+
+An authenticated POST selects a declaration by viewed Session, event sequence, and original file index. The event carries no owning Session ID; relative paths in inherited history resolve against the viewed Session's workspace. The Host verifies regular-file existence and Host-path mapping before native opening. Route disposal cancels and awaits pending commands. The “Files changed” row lists successful file-tool mutations and retains its separate text-preview behavior. Its Chinese label is “本轮文件改动”; neither label implies final delivery.
+
+File cards use the same split-control pattern as the Session header. The card and the left Open segment preview the source in the right Sidebar; the chevron opens the standard menu for default-app and file-manager actions. The Host selects the file in Finder or Explorer, or opens its containing folder through the default Linux file manager. Both native actions resolve the same saved declaration and verify the Session filesystem and Host path; neither accepts a browser-supplied replacement path. Host-derived desktop metadata keeps remote-browser labels and availability honest, and the route enforces the configured availability on each native gesture. One delivery spans the row; multiple deliveries use at most two columns, retain every declaration, and use the Chat deployment count to collapse excess cards, defaulting to four visible cards with reversible expansion. Desktop metadata is invalidated with the connection generation so an old Host cannot keep native actions disabled or supply the wrong file-manager labels. Old metadata requests are cancelled and cannot replace the new generation’s response.
+
+`FileDeliveryCard` and `FileDeliveryGroup` have two concrete consumers: explicit workspace deliveries and Science Turn-end artifacts. Shared code owns only card layout, buttons, menu focus, and group expansion; the workspace adapter retains current source paths and Host actions, while the Science adapter retains logical artifact identity, exact versions, and authorized thumbnails. Equal titles do not imply equal identity; current workspace contents and saved Science versions cannot be merged by name. Successful mutations retain the separate `ProducedFiles` meaning and its responsive summary of up to six chips.
+
+Chat uses an ordered list for `conversation.chat.turnTail`, so `workspace-files` (`10`) and `science-artifacts` (`20`) both render independently of mount order. Empty domains return `null`. A first-match chain for this slot hides the other output category; an additional parallel slot duplicates the same presentation location. Global chain semantics remain independent.
+
+## Alternatives considered
+
+**Immutable attachment snapshots and editable temporary copies** preserve delivered versions after source edits or deletion, but make desktop edits diverge from workspace files and introduce retention work without a current product requirement. This decision supersedes the [snapshot-delivery design](../../archived/feature/2026-09-08-web-explicit-file-delivery.md). Neither a download endpoint nor a fallback copy remains; both require an explicit future product decision.
+
+**Opening attachment-store files directly** lets editors mutate immutable objects. A future persistent delivery system needs an owned editing and retention policy, such as copy-on-write, before exposing saved versions to applications.
+
+**Generic artifact fields or a Host tool subpath inside the UI package** broaden unrelated APIs or couple preset installation to browser packaging. A tool-owned event and ordinary package preserve existing extension points and publication rules.
+
+**Tool text as the durable index** cannot survive post-processing or result spill reliably. Execution identity and final successful results retain declaration ownership independently of displayed tool text.
+
+**Descriptor-bound filesystem extensions** would change every provider without making an external desktop application's later path lookup atomic. Current checks verify file metadata and path mapping; concurrent swap-and-restore remains outside the path API's guarantees.
+
+## Consequences
+
+The Session log persists declarations but no attachment references or file contents from `present`. Session ZIP exports contain these declarations; transferring the log does not transfer workspace files. The event remains required-on-read because silently losing delivery declarations would alter reconstructed or forked history. Released Session format generations remain unchanged.
+
+The removed file-size cap has no role in a metadata-only declaration; the configurable file-count limit still bounds result size. Cards show file names and descriptions, falling back to file types, without stale byte-size metadata. No artifact service or speculative storage fallback is introduced.
+
+Focused tests cover content-free declarations, invalid inputs, blocked results, source-path identity, current bytes after edits, missing files, external paths and unavailable Host mappings, fork-relative paths, retry, cancellation, and disposal. The recorded Web scenario covers nested completion followed by enclosing failure, source edits, reload, deletion errors, card and prose opens without browser downloads, and content-free Session export.
+
+Composition verification requires real Chat, Deliverables, and Science registrations in both mount orders, each alone, and after disposal/re-registration, retaining every applicable output. Group verification requires empty, single, threshold-adjacent, repeated expansion/collapse, and keyboard-focus cases. The mixed recorded scenario uses a test-only composition of Science, file mutation, and `present` to exercise all three outputs within one closed Turn without broadening shipped preset tool sets. This recording supplements domain scenarios; it does not replace current-source-content, exact-artifact-version, narrow-layout, or localized-copy verification. Actual execution records supply test results.
+
+Turn-tail delivery groups remain independent of native Turn Process Folding. Mixed replay verification toggles the persisted Normal/Compact preference, expands and collapses the process, and reloads the browser while retaining the final answer and both delivery groups. Physical Session logs and the selected recording must remain byte-for-byte unchanged; transcript presentation writes only its owning settings and view state.
+
+Workspace and Science Markdown previews share MarkdownText; Science and conversation attachment images share ImageLightbox. Their loaders remain separate: ordinary Markdown accumulates pages until EOF and ordinary images own complete-byte Blob lifetimes, while Science images use authorized immutable-version URLs directly and can display unsaved chart overrides. A generic preview owner would retain both loading policies behind additional adapters. Image errors belong to the actual source URL, and toolbar forms/errors belong to Session plus version; these identities prevent late work for a replaced preview from changing the selected one while preserving already requested downloads.

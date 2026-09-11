@@ -3,7 +3,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ensureRunnerConsole } from '../src/console.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
-import { STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE } from '../src/win32-abi.ts'
+const STD_INPUT_HANDLE = -10
+const STD_OUTPUT_HANDLE = -11
+const STD_ERROR_HANDLE = -12
 
 function consoleApi() {
   const window = 100n as NativePtr

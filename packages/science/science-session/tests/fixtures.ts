@@ -1,4 +1,4 @@
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   ScienceArtifactId,
@@ -32,9 +32,9 @@ export const VERSION_ID = ScienceVersionId('version-1')
 const AUTO_VERSION_ID = ScienceVersionId('version-2')
 export const ARTIFACT_SHA = 'e'.repeat(64)
 const AUTO_ARTIFACT_SHA = '0'.repeat(64)
-export const RUN_CALL_ID = CallId('call-run')
-export const ARTIFACT_CALL_ID = CallId('call-chart')
-export const OUTCOME_CALL_ID = CallId('call-outcome')
+export const RUN_CALL_ID = ToolCallId('call-run')
+export const ARTIFACT_CALL_ID = ToolCallId('call-chart')
+export const OUTCOME_CALL_ID = ToolCallId('call-outcome')
 
 export const interpreter = (
   overrides: Partial<ScienceInterpreterAvailableBinding> = {},
@@ -200,7 +200,7 @@ export function event(type: string, seq: number, time: number, data: unknown): S
 export function toolResult(
   seq: number,
   time: number,
-  callId: ReturnType<typeof CallId>,
+  callId: ReturnType<typeof ToolCallId>,
 ): SessionEvent {
   return event('tool/result', seq, time, {
     turn: 1,
@@ -216,7 +216,7 @@ export function toolResult(
 export function toolCall(
   seq: number,
   time: number,
-  callId: ReturnType<typeof CallId>,
+  callId: ReturnType<typeof ToolCallId>,
   name: string,
   coordinates: { readonly turn: number; readonly step: number } = { turn: 1, step: 1 },
 ): SessionEvent {

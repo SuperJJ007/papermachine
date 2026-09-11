@@ -1,18 +1,12 @@
-/**
- * SessionAttachmentIndex service: registration effect discipline (duplicate
- * rejection, policy-conflict rejection, disposal), extract() dispatch across
- * every policy bucket, and the two convenience reads consumed by
- * dsh-host-apiproxy (live authorization and Session export media
- * collection).
- */
+/** Attachment authorization, extractor disposal, and strict text preview decoding. */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, TextAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { KNOWN_SESSION_EVENT_TYPES } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import SessionAttachmentIndex, { SessionAttachmentIndexError } from '../src/index.ts'
+import SessionAttachmentIndex, { decodeReferencedText, SessionAttachmentIndexError } from '../src/index.ts'
 
 // The extractor-required paths fire only for a KNOWN event type outside the
 // static policy lists. No production domain registers an extractor today, so
@@ -40,8 +34,8 @@ function ref(id: string): ImageAttachmentRef {
   return { attachmentId: AttachmentId(id), mediaType: 'image/png', bytes: 10, width: 1, height: 1 }
 }
 
-function textRef(id: string): TextAttachmentRef {
-  return { attachmentId: AttachmentId(id), mediaType: 'text/plain', bytes: 10 }
+function fileRef(id: string): FileAttachmentRef {
+  return { attachmentId: AttachmentId(id), name: 'report.txt', bytes: 10 }
 }
 
 function image(id: string): { type: 'image'; attachment: ImageAttachmentRef } {
@@ -179,22 +173,22 @@ describe('SessionAttachmentIndex', () => {
     expect([...collected.keys()].sort()).toEqual(['sha256:a', 'sha256:b'])
   })
 
-  it('finds and collects text references, filtering out image references extracted from the same event stream', async () => {
+  it('finds and collects file references, filtering out image references extracted from the same event stream', async () => {
     const ctx = await harness()
     ctx.sessionAttachments.register('test/media-saved', (event) => {
       const id = (event.data as { id?: string }).id
       if (id === undefined) throw new Error('malformed mixed-media event')
-      return [ref(`sha256:image-${id}`), textRef(`sha256:text-${id}`)]
+      return [ref(`sha256:image-${id}`), fileRef(`sha256:text-${id}`)]
     })
     const mixedEvent = (id: string): SessionEvent =>
       ({ type: 'test/media-saved', seq: 2, time: 1, data: { id } } as unknown as SessionEvent)
     const events = [mixedEvent('a'), mixedEvent('b'), mixedEvent('a')]
 
-    expect(ctx.sessionAttachments.findReferencedText(events, 'sha256:text-b')?.mediaType).toBe('text/plain')
-    expect(ctx.sessionAttachments.findReferencedText(events, 'sha256:image-a')).toBeUndefined()
+    expect(ctx.sessionAttachments.findReferencedFile(events, 'sha256:text-b')?.name).toBe('report.txt')
+    expect(ctx.sessionAttachments.findReferencedFile(events, 'sha256:image-a')).toBeUndefined()
     expect(ctx.sessionAttachments.findReferencedImage(events, 'sha256:text-a')).toBeUndefined()
 
-    const collectedTexts = ctx.sessionAttachments.collectReferencedTexts(events)
+    const collectedTexts = ctx.sessionAttachments.collectReferencedFiles(events)
     expect([...collectedTexts.keys()].sort()).toEqual(['sha256:text-a', 'sha256:text-b'])
     const collectedImages = ctx.sessionAttachments.collectReferencedImages(events)
     expect([...collectedImages.keys()].sort()).toEqual(['sha256:image-a', 'sha256:image-b'])
@@ -203,13 +197,31 @@ describe('SessionAttachmentIndex', () => {
   it('removes a text-returning registration when its owning fiber is disposed (HMR safety)', async () => {
     const ctx = await harness()
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      inner.sessionAttachments.register('test/media-saved', () => [textRef('sha256:d')])
+      inner.sessionAttachments.register('test/media-saved', () => [fileRef('sha256:d')])
     }, { inject: ['sessionAttachments'] }))
-    expect(ctx.sessionAttachments.findReferencedText(
+    expect(ctx.sessionAttachments.findReferencedFile(
       [{ type: 'test/media-saved', seq: 2, time: 1, data: {} } as unknown as SessionEvent],
       'sha256:d',
-    )?.mediaType).toBe('text/plain')
+    )?.name).toBe('report.txt')
     await fiber.dispose()
     expect(() => ctx.sessionAttachments.extract(mediaSavedEvent('sha256:c'))).toThrow(SessionAttachmentIndexError)
+  })
+})
+
+describe('referenced text preview', () => {
+  it.each(['report.csv', 'data.json', 'notes.md', 'notes.markdown', 'RESULT.TXT'])('decodes complete UTF-8 from %s', (name) => {
+    const text = '结果,μ\n一,1\n'
+    const bytes = new TextEncoder().encode(text)
+    expect(decodeReferencedText({ ...fileRef('sha256:text'), name, bytes: bytes.length }, bytes)).toBe(text)
+  })
+
+  it('rejects files outside the text preview policy', () => {
+    expect(() => decodeReferencedText({ ...fileRef('sha256:pdf'), name: 'report.pdf' }, new Uint8Array()))
+      .toThrow('Referenced file media type does not support text preview')
+  })
+
+  it('rejects truncated UTF-8 rather than returning replacement characters', () => {
+    expect(() => decodeReferencedText(fileRef('sha256:invalid'), new Uint8Array([0xe4, 0xb8])))
+      .toThrow()
   })
 })

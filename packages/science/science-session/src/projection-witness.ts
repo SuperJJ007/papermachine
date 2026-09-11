@@ -1,7 +1,8 @@
 /** Canonical sparse witness used to verify persisted Science checkpoints. */
 
-import { isJsonValue } from '@deepseek-ai/dsh-session'
-import type { JsonValue, SessionEvent } from '@deepseek-ai/dsh-session'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { emptyScienceFoldState } from './fold-state.ts'
 import type { ScienceFoldState } from './fold-state.ts'
 import type { ScienceProjectionWitnessEvent } from './projection-private.ts'
@@ -96,6 +97,7 @@ export function preventsScienceModeBinding(event: Pick<ScienceProjectionWitnessE
 export function scienceEventRelevantBeforeMode(event: SessionEvent): boolean {
   return event.type.startsWith('science/')
     || event.type === 'turn/start'
+    || event.type === 'turn/end'
     || preventsScienceModeBinding(event)
     || event.type === 'user/message'
     || event.type === 'assistant/message'

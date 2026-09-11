@@ -25,3 +25,7 @@ Reset classification may wait for the existing descendant-exit grace. No extra t
 ## Verification
 
 Kernel tests cover resets followed by process exit and resets from a process that remains alive. TCP lifecycle tests retain their commanded/crash expectations, and pending chart extraction during shutdown rejects with process-exit evidence.
+
+## Related
+
+Related owners: [win32-kernel-response-transport](../feature/2026-09-05-win32-kernel-response-transport.md).

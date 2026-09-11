@@ -1,0 +1,84 @@
+$ tsx scripts/run-gates.ts hygiene
+run-gates: hygiene running 16 gate(s) with 4 worker(s) from 10 available CPU(s), hygiene cap 4.
+run-gates: start vendor rescope
+run-gates: start publint
+run-gates: start constraints
+run-gates: start package dependencies
+run-gates: PASS constraints (1.87s)
+run-gates: start application entrypoints
+run-gates: PASS package dependencies (2.76s)
+run-gates: start DSH package licenses
+run-gates: PASS application entrypoints (1.96s)
+run-gates: start package invariants
+run-gates: PASS DSH package licenses (1.18s)
+run-gates: start built package invariants
+run-gates: PASS built package invariants (1.25s)
+run-gates: start node-next types
+run-gates: PASS publint (5.89s)
+run-gates: start optional dependency imports
+
+== FAILED package invariants (2.14s) ==
+command: pnpm run verify-package-invariants
+outcome: exit 1
+$ tsx scripts/verify-package-invariants.ts
+verify-package-invariants: violations found:
+  packages/bundle/science-app/README.md: omitted companion requires a README "No ... companion is published" reason sentence
+  packages/client/ui-brand-papermachine/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/client/ui-science/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/science/science-artifact-store/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/science/science-runtime/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/science/tool-science/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/session/session-attachment-index/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+  packages/util/byte-size/src/invariant.ts: empty install function is unnecessary; omit the companion and its publication wiring
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start client packages
+run-gates: PASS vendor rescope (6.37s)
+run-gates: start client UI i18n
+
+== FAILED client UI i18n (2.67s) ==
+command: pnpm run verify-client-ui-i18n
+outcome: exit 1
+$ tsx scripts/verify-client-ui-i18n.ts
+verify-client-ui-i18n: 13 hard-coded UI string(s):
+  packages/client/ui-brand-papermachine/src/client/Brand.tsx:31:35 JSX text: "Paper"
+  packages/client/ui-brand-papermachine/src/client/Brand.tsx:32:37 JSX text: "Machine"
+  packages/client/ui-science/src/client/ArtifactFileTile.tsx:22:29 artifactExtensionLabel return value: "CSV"
+  packages/client/ui-science/src/client/ArtifactFileTile.tsx:23:37 artifactExtensionLabel return value: "JSON"
+  packages/client/ui-science/src/client/ArtifactFileTile.tsx:24:34 artifactExtensionLabel return value: "MD"
+  packages/client/ui-science/src/client/ArtifactFileTile.tsx:25:31 artifactExtensionLabel return value: "TXT"
+  packages/client/ui-science/src/client/ScienceComposerChips.tsx:48:10 targetLabel return value: "v ·"
+  packages/client/ui-science/src/client/ScienceDetailsView.tsx:640:21 JSX text: "v"
+  packages/client/ui-science/src/client/ScienceToolCell.tsx:50:101 JSX text: "Inspect"
+  packages/client/ui-science/src/client/ScienceTraceView.tsx:126:115 title attribute: "v"
+  packages/client/ui-science/src/client/ScienceTraceView.tsx:128:62 JSX text: "v"
+  packages/client/ui-science/src/client/ScienceTurnArtifacts.tsx:65:63 aria-label attribute: "v"
+  packages/client/ui-science/src/client/run-output.ts:13:24 EMPTY_SENTINEL value: "(empty)"
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: start proxy-aware dispatchers
+run-gates: PASS proxy-aware dispatchers (2.11s)
+run-gates: start Cordis config
+run-gates: PASS node-next types (7.45s)
+run-gates: start runtime closure
+run-gates: PASS runtime closure (1.27s)
+run-gates: start vendored links
+run-gates: PASS Cordis config (3.24s)
+run-gates: PASS vendored links (0.95s)
+
+== FAILED client packages (12.04s) ==
+command: pnpm run verify-client-packages
+outcome: exit 1
+$ tsx scripts/verify-client-packages.ts
+verify-client-packages: 1 violation(s):
+  packages/client/ui-science/package.json: client feature package requests runtime external "@deepseek-ai/dsh-client-ui-attachment/client"; import shared types only or call an injected Cordis service
+[ELIFECYCLE] Command failed with exit code 1.
+run-gates: PASS optional dependency imports (18.74s)
+
+run-gates: 13 passed, 3 failed, 0 skipped in 24.64s.
+run-gates: unsuccessful gates:
+  - FAILED package invariants (2.14s, exit 1)
+    pnpm run verify-package-invariants
+  - FAILED client packages (12.04s, exit 1)
+    pnpm run verify-client-packages
+  - FAILED client UI i18n (2.67s, exit 1)
+    pnpm run verify-client-ui-i18n
+[ELIFECYCLE] Command failed with exit code 1.

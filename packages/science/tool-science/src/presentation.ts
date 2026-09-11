@@ -5,7 +5,7 @@
  * importable without this package's host-only runtime.
  */
 
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ScienceArtifactPresentation, ScienceArtifactPresentationItem } from './types.ts'
 
 export type {

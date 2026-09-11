@@ -1024,13 +1024,13 @@ function extractConstArrayLiteral(source: string, constantName: string): readonl
 const provisioningSource = readFileSync(fileURLToPath(new URL('../src/provisioning.ts', import.meta.url)), 'utf8')
 
 describe('WIN32_AMBIENT_ENVIRONMENT_KEYS matches science-runtime source text', () => {
-  it('names the exact same keys as kernel-process.ts\'s WIN32_AMBIENT_ENVIRONMENT_KEYS', () => {
-    const kernelProcessSource = readFileSync(
-      fileURLToPath(new URL('../../../packages/science/science-runtime/src/kernel-process.ts', import.meta.url)),
+  it('names the exact same keys as execution.ts\'s WIN32_AMBIENT_ENVIRONMENT_KEYS', () => {
+    const executionSource = readFileSync(
+      fileURLToPath(new URL('../../../packages/science/science-runtime/src/execution.ts', import.meta.url)),
       'utf8',
     )
     expect(extractConstArrayLiteral(provisioningSource, 'WIN32_AMBIENT_ENVIRONMENT_KEYS'))
-      .toEqual(extractConstArrayLiteral(kernelProcessSource, 'WIN32_AMBIENT_ENVIRONMENT_KEYS'))
+      .toEqual(extractConstArrayLiteral(executionSource, 'WIN32_AMBIENT_ENVIRONMENT_KEYS'))
   })
 })
 

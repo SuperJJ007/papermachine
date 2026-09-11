@@ -41,6 +41,8 @@ const fsFault = vi.hoisted(() => ({
   mkdir: '', mkdirError: undefined as unknown, lstat: '', lstatError: undefined as unknown,
   lstatRemaining: Number.POSITIVE_INFINITY, rm: '', rmError: undefined as unknown,
   ownerOpen: '', ownerOpenCalls: 0, ownerOpenError: undefined as unknown,
+  ownerWriteReady: undefined as undefined | { readonly promise: Promise<undefined>; resolve(value: undefined): void },
+  ownerWriteRelease: undefined as undefined | { readonly promise: Promise<undefined>; resolve(value: undefined): void },
   ownerOpenReady: undefined as undefined | { readonly promise: Promise<undefined>; resolve(value: undefined): void },
 }))
 
@@ -82,13 +84,27 @@ vi.mock('node:fs/promises', async (importOriginal) => {
           close: async () => { fsFault.directoryCloses += 1 },
         } as unknown as Awaited<ReturnType<typeof original.open>>
       }
-      if (path === fsFault.ownerOpen && fsFault.ownerOpenError !== undefined) throw fsFault.ownerOpenError
-      if (path === fsFault.ownerOpen && flags === 'wx') {
+      const ownerPath = typeof path === 'string' && fsFault.ownerOpen !== ''
+        && (path === fsFault.ownerOpen || path.startsWith(`${fsFault.ownerOpen}.`))
+      if (ownerPath && fsFault.ownerOpenError !== undefined) throw fsFault.ownerOpenError
+      if (ownerPath && flags === 'wx') {
         fsFault.ownerOpenCalls += 1
         if (fsFault.ownerOpenCalls === 2) fsFault.ownerOpenReady?.resolve(undefined)
         await fsFault.ownerOpenReady?.promise
       }
-      return original.open(path, flags, mode)
+      const handle = await original.open(path, flags, mode)
+      if (ownerPath && fsFault.ownerWriteReady !== undefined) {
+        const ready = fsFault.ownerWriteReady
+        const release = fsFault.ownerWriteRelease
+        fsFault.ownerWriteReady = undefined
+        const write = handle.writeFile.bind(handle)
+        handle.writeFile = async (data, options) => {
+          ready.resolve(undefined)
+          await release?.promise
+          await write(data, options)
+        }
+      }
+      return handle
     },
   }
 })
@@ -113,6 +129,8 @@ afterEach(async () => {
   fsFault.ownerOpenCalls = 0
   fsFault.ownerOpenError = undefined
   fsFault.ownerOpenReady = undefined
+  fsFault.ownerWriteReady = undefined
+  fsFault.ownerWriteRelease = undefined
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -278,6 +296,32 @@ describe('Science Runtime private scratch', () => {
     expect(existsSync(marker)).toBe(false)
     expect(existsSync(owner.scratch.root)).toBe(false)
     await expect(rollbackSessionScratch(owner)).resolves.toBeUndefined()
+  })
+
+  it('publishes only complete owner bytes while a competing writer is paused', async () => {
+    const root = mkdtempSync(join(process.cwd(), '.science-runtime-owner-publication-'))
+    roots.push(root)
+    const dshHome = join(root, 'dsh-home')
+    const firstSession = await sessionWithId('science-owner-publication')
+    const secondSession = await sessionWithId('science-owner-publication')
+    const marker = join(dshHome, 'science', 'v1', 'owners', `${sessionScratchKey(firstSession)}.json`)
+    fsFault.ownerOpen = marker
+    const ready = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    fsFault.ownerWriteReady = ready
+    fsFault.ownerWriteRelease = release
+    const first = materializeSessionScratch(dshHome, firstSession)
+    try {
+      await ready.promise
+      expect(existsSync(marker)).toBe(false)
+      const second = await materializeSessionScratch(dshHome, secondSession)
+      expect(second.created).toBe(true)
+      expect(readFileSync(marker, 'utf8')).toBe(second.owner)
+    } finally {
+      release.resolve(undefined)
+      await first
+    }
+    expect((await first).created).toBe(false)
   })
 
   it('preserves non-collision marker creation errors and rejects a raced mismatched marker', async () => {

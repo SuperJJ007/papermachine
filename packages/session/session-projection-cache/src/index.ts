@@ -96,6 +96,7 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  private readonly writes = new Map<SessionId, Promise<void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -104,7 +105,10 @@ export class SessionProjectionCache extends Service {
   /** Open the domain and install the write-behind listeners. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'sessionProjectionCache.domainClose')
+    this.ctx.effect(() => async () => {
+      await Promise.all(this.writes.values())
+      await domain.close()
+    }, 'sessionProjectionCache.domainClose')
     this.table = domain.table('sessions')
     this.installWritePath()
   }
@@ -238,7 +242,8 @@ export class SessionProjectionCache extends Service {
    * Durably checkpoint one live session NOW (all mandatory points call
    * this; tests and carriers may too). The registry cut is snapshotted at
    * this boundary (states are live references), then the session's record is
-   * replaced on the domain's write chain. NOT fail-soft — callers on the
+   * queued in call order with its durability barrier before domain replacement.
+   * NOT fail-soft — callers on the
    * fail-soft paths contain it.
    * @param session - the live session to checkpoint.
    * @returns resolution after durability and event emission.
@@ -253,11 +258,14 @@ export class SessionProjectionCache extends Service {
     // from events no stored log contains). At detach the store entry is
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
-    if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
+    const durable = () => this.ctx.sessions.get(session.id) === session
+      ? this.ctx.sessions.flush(session)
+      : Promise.resolve(false)
     await this.put(
       session.id,
       identityOf(session.header, session.inheritedEventCount),
       rows,
+      durable,
     )
   }
 
@@ -340,7 +348,7 @@ export class SessionProjectionCache extends Service {
 
     // With the plugin (their sessions outlive the cache): clear pending
     // timers and stop accepting new work. The domain-close effect registered
-    // in init runs after this disposer and drains already-queued writes, so
+    // in init runs after this disposer and joins checkpoint barriers and queued writes, so
     // a late flush can never land after disposal (it rejects `closed` into
     // flushSoft's warning instead).
     this.ctx.effect(() => () => {
@@ -375,13 +383,25 @@ export class SessionProjectionCache extends Service {
     }
   }
 
-  /** Replace one session's stored record with its log identity and a detached snapshot of `rows`. */
-  private async put(id: SessionId, identity: CheckpointIdentity, rows: ProjectionCheckpoint): Promise<void> {
+  /** Queue one immutable checkpoint and its durability barrier in per-session call order. */
+  private async put(
+    id: SessionId, identity: CheckpointIdentity, rows: ProjectionCheckpoint, durable: () => Promise<unknown> = () => Promise.resolve(),
+  ): Promise<void> {
     const detached = snapshotJsonValue(rows)
     if (detached === undefined) {
       throw new TypeError('projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)')
     }
-    await this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] })
+    const previous = this.writes.get(id) ?? Promise.resolve()
+    const write = Promise.all([previous, durable()]).then(
+      () => this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] }),
+      async (error: unknown) => { await previous; throw error },
+    )
+    // Callers observe write failure; the ordering tail lets subsequent checkpoints repair it.
+    const tail = write.catch(() => {}).finally(() => {
+      if (this.writes.get(id) === tail) this.writes.delete(id)
+    })
+    this.writes.set(id, tail)
+    await write
   }
 
   private requireTable(): KvTable<SessionId, CheckpointRecord> {

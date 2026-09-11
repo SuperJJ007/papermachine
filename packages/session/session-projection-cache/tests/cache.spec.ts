@@ -217,6 +217,63 @@ describe('SessionProjectionCache write policy', () => {
     }, { timeout: 5_000 })
   })
 
+  it('keeps newer checkpoints after an earlier durability barrier is delayed', async () => {
+    const { ctx, root, cache } = await harness()
+    const session = ctx.sessions.create(SessionId('ordered'))
+    await cache.write(session)
+    const held = Promise.withResolvers<boolean>()
+    const flush = vi.spyOn(ctx.sessions, 'flush').mockImplementationOnce(() => held.promise)
+    mark(session, ['earlier'])
+    const earlier = cache.write(session)
+    mark(session, ['latest'])
+    const latest = cache.write(session)
+    try {
+      await vi.waitFor(() => { expect(flush).toHaveBeenCalledTimes(2) })
+    } finally {
+      held.resolve(true)
+    }
+    await Promise.all([earlier, latest])
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['latest'] })
+  })
+
+  it('holds queue order when a later log flush fails before the previous write finishes', async () => {
+    const { ctx, root, cache } = await harness()
+    const session = ctx.sessions.create(SessionId('ordered-failure'))
+    await cache.write(session)
+    const held = Promise.withResolvers<boolean>()
+    const failure = new Error('log flush failed')
+    vi.spyOn(ctx.sessions, 'flush').mockImplementationOnce(() => held.promise)
+      .mockRejectedValueOnce(failure)
+    mark(session, ['earlier'])
+    const earlier = cache.write(session)
+    const rejected = expect(cache.write(session)).rejects.toBe(failure)
+    mark(session, ['latest'])
+    const latest = cache.write(session)
+    held.resolve(true)
+    await Promise.all([earlier, rejected, latest])
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['latest'] })
+  })
+
+  it('drains a checkpoint waiting for log durability before closing the cache', async () => {
+    const { ctx, root, cache, fiber } = await harness()
+    const session = ctx.sessions.create(SessionId('drain'))
+    await cache.write(session)
+    const held = Promise.withResolvers<boolean>()
+    vi.spyOn(ctx.sessions, 'flush').mockImplementationOnce(() => held.promise)
+    mark(session, ['final'])
+    const write = cache.write(session)
+    let disposed = false
+    const disposing = fiber.dispose().then(() => { disposed = true })
+    try {
+      await new Promise(resolve => setImmediate(resolve))
+      expect(disposed).toBe(false)
+    } finally {
+      held.resolve(true)
+    }
+    await Promise.all([write, disposing])
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['final'] })
+  })
+
   it('writes at session disposal (detach, the live-to-cold moment)', async () => {
     const { ctx, root } = await harness()
     // Sessions dispose with their owning fiber: create in a child plugin.

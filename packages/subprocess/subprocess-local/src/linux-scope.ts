@@ -289,10 +289,15 @@ class SystemdScopeOwner implements BoundProcessOwner {
           `systemctl returned unknown state for ${this.unit}: ${JSON.stringify({ loadState, activeState })}`,
         )
       }
-      this.establishment = 'established'
-      if (activeState === 'inactive' || activeState === 'failed') return false
-      if (!['active', 'activating', 'reloading', 'deactivating'].includes(activeState)) {
-        throw new Error(`systemctl returned unknown ActiveState for ${this.unit}: ${JSON.stringify(activeState)}`)
+      if (activeState === 'inactive' || activeState === 'failed') {
+        // Loaded metadata can precede scope activation. A live launcher with
+        // an unconsumed request can still start a target after this query.
+        if (this.establishment !== 'pending' || !this.direct.running()) return false
+      } else {
+        this.establishment = 'established'
+        if (!['active', 'activating', 'reloading', 'deactivating'].includes(activeState)) {
+          throw new Error(`systemctl returned unknown ActiveState for ${this.unit}: ${JSON.stringify(activeState)}`)
+        }
       }
       if (this.killFailure !== undefined) throw this.killFailure
       return true

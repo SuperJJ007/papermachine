@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-11-atomic-science-owner-publication.md
+2026-09-11-atomic-science-owner-publication.md: 56d2fd5fb2c0f4aca055aac7c6a26af02e781def
+2026-09-11-atomic-science-owner-publication.zh.md: c302fb2720d6f3f8f289c2fcd979fd06f4d4c84f

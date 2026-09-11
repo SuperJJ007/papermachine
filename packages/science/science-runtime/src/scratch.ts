@@ -5,6 +5,7 @@ import { constants } from 'node:fs'
 import {
   chmod,
   lstat,
+  link,
   mkdir,
   open,
   readFile,
@@ -225,6 +226,19 @@ async function writePrivateFile(path: string, data: Uint8Array | string): Promis
   await syncDirectory(dirname(path))
 }
 
+/** Publish a complete private marker exclusively, so competing readers never see partial bytes. */
+async function publishOwnerFile(marker: string, expected: string): Promise<void> {
+  const temporary = `${marker}.${randomUUID()}.tmp`
+  try {
+    await writePrivateFile(temporary, expected)
+    // Hard-link publication is atomic and refuses to replace another owner's marker.
+    await link(temporary, marker)
+    await syncDirectory(dirname(marker))
+  } finally {
+    await rm(temporary, { force: true })
+  }
+}
+
 /** Derive and reject a Session root that would fall under a generic sandbox temp grant. */
 async function rootForSession(dshHome: string | undefined, session: Session): Promise<{
   readonly home: string
@@ -308,7 +322,7 @@ async function ensureOwner(marker: string, root: string, key: string, session: S
   }
   await createPrivateTree(dirname(dirname(dirname(dirname(marker)))), ['science', 'v1', 'owners'])
   try {
-    await writePrivateFile(marker, expected)
+    await publishOwnerFile(marker, expected)
     return true
   } catch (error: unknown) {
     if (typeof error !== 'object' || error === null || (error as { readonly code?: unknown }).code !== 'EEXIST') throw error

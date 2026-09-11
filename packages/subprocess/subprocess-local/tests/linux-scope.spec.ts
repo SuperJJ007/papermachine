@@ -315,20 +315,47 @@ describe('Linux scope establishment and quiescence', () => {
     launched.result.owner.cleanup?.()
   })
 
-  it('uses manager-observed unit existence as establishment proof', async () => {
+  it('retains a live launcher when its loaded scope has not started yet', async () => {
+    const polling = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const { child, result, requestPath } = launch(async () => activeUnit('inactive'), {
+      sleep: async () => { polling.resolve(undefined); await release.promise },
+    })
+    const waiting = result.owner.waitForExit()
+    try {
+      await Promise.race([
+        polling.promise,
+        waiting.then(() => { throw new Error('inactive metadata prematurely proved launcher exit') }),
+      ])
+      expect(existsSync(requestPath)).toBe(true)
+      result.owner.signal('SIGTERM')
+      expect(child.kills).toEqual(['SIGTERM'])
+    } finally {
+      child.exit(null, 'SIGTERM')
+      release.resolve(undefined)
+      await waiting
+      await result.direct
+      result.owner.cleanup?.()
+    }
+  })
+
+  it('accepts inactive metadata once the launcher has exited before target start', async () => {
     const { child, result } = launch(async () => activeUnit('inactive'))
-    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     child.exit(1, null)
     await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     result.owner.cleanup?.()
   })
 
   it('keeps waiting while the unit is absent and the direct launcher is still running', async () => {
     const states = [missingUnit(), activeUnit('inactive')]
-    const { child, result } = launch(async () => states.shift() ?? activeUnit('inactive'))
+    const state: { child?: FakeChild } = {}
+    const { child, result } = launch(async () => states.shift() ?? activeUnit('inactive'), {
+      sleep: async () => { state.child?.exit(null, 'SIGTERM') },
+    })
+    state.child = child
     await expect(result.owner.waitForExit()).resolves.toBeUndefined()
-    child.exit(1, null)
-    await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     result.owner.cleanup?.()
   })
 
@@ -461,6 +488,8 @@ describe('Linux scope establishment and quiescence', () => {
       return new EventEmitter()
     })
     const stopped = launch(undefined)
+    stopped.child.exit(null, 'SIGTERM')
+    await stopped.result.direct
     await expect(stopped.result.owner.waitForExit()).resolves.toBeUndefined()
     stopped.result.owner.cleanup?.()
 

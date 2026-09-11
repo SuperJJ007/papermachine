@@ -21,7 +21,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { Deliverables, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
+import { Deliverables, DeliverablesEntry, selectDeliverables, type DeliverablesInjected } from '../src/client/Deliverables.tsx'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import { ProducedFiles } from '../src/client/ProducedFiles.tsx'
 import {
@@ -596,7 +596,11 @@ describe('presented files', () => {
     expect(first).toMatchObject([{ path: 'report.docx', seq: 2, index: 1, description: 'Final report' }])
     expect(presentedForClosing(tailOwner(deliverablesOf(value), 4)))
       .toMatchObject([{ path: 'report.docx', seq: 3, description: 'Updated report' }])
-    expect(selectDeliverables(tailOwner(deliverablesOf(value, 2), 9))).toBeNull()
+    const empty = tailOwner(deliverablesOf(value, 2), 9)
+    expect(selectDeliverables(empty)).toBeNull()
+    const props = { ...empty, ...openProps(), t: makeTranslate(en) } as Parameters<typeof DeliverablesEntry>[0]
+    const view = render(<DeliverablesEntry {...props} />)
+    expect(view.container.childElementCount).toBe(0)
   })
 
   it('uses the viewed fork Session in every open action and expands all delivered files', () => {

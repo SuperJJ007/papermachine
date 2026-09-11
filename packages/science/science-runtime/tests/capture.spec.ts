@@ -169,15 +169,15 @@ describe('Science auto-capture', () => {
     expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(2)
   })
 
-  // Windows rejects the ADS-like name before a regular file can reach capture.
-  it.skipIf(process.platform === 'win32')('rejects the complete capture batch before saving any legal candidate when another name is unsafe', async () => {
+  // C1 control characters are valid filesystem names on Windows but invalid artifact identities.
+  it('rejects the complete capture batch before saving any legal candidate when another name is unsafe', async () => {
     const root = tmp('.science-invalid-logical-name-')
     const prefix = createFakePythonPrefix(root)
     const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
     contexts.push(harness.ctx)
     const session = createScienceSession(harness.ctx, 'science-invalid-logical-name')
     const create = vi.spyOn(harness.ctx.scienceArtifactStore, 'createArtifact')
-    const { result } = await runWithFiles(harness, root, session, { 'a.csv': 'legal', 'z:stream.csv': 'unsafe' })
+    const { result } = await runWithFiles(harness, root, session, { 'a.csv': 'legal', 'z\u0085stream.csv': 'unsafe' })
     expect(result.terminal.status).toBe('success')
     expect(result.captureFailure).toBe('invalid-logical-name')
     expect(create).not.toHaveBeenCalled()

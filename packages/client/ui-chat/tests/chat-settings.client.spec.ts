@@ -1,3 +1,5 @@
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import { TURN_OUTPUT_COUNT_GLOBAL } from '../src/turn-output-config.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -19,6 +21,9 @@ describe('ui-chat Host settings', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply, Config }, { turnOutputCollapsedCount: 4 })
     await fiber.await()
+    const rows: IndexInjection[] = []
+    ctx.emit('webserver/index-inject', rows)
+    expect(rows).toContainEqual({ kind: 'global', name: TURN_OUTPUT_COUNT_GLOBAL, value: 4 })
     const ns = CHAT_SETTINGS_NAMESPACE
 
     expect(ctx.settings.get(ns)).toEqual({ transcriptView: DEFAULT_TRANSCRIPT_VIEW_MODE })
@@ -27,6 +32,9 @@ describe('ui-chat Host settings', () => {
     await expect(ctx.settings.update(ns, { transcriptView: 'dense' })).rejects.toThrow()
 
     await fiber.dispose()
+    const disposedRows: IndexInjection[] = []
+    ctx.emit('webserver/index-inject', disposedRows)
+    expect(disposedRows).toEqual([])
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
   })
 

@@ -341,6 +341,12 @@ describe('Science process model', () => {
     expect(model.groups.find(group => group.turn === 2)?.artifacts).toMatchObject([{ version: 4 }])
   })
 
+  it('keeps the tool name when a cold trace has no loaded arguments', () => {
+    const model = build([], { trace: { turns: [{ turn: 1, startSeq: 1, startTime: 1 }],
+      calls: [{ seq: 2, time: 2, callId: ToolCallId('cold-read'), turn: 1, step: 1, name: 'read' }] } })
+    expect(model.groups[0]?.steps[0]?.title).toEqual({ kind: 'tool', name: 'read' })
+  })
+
   it.each(tools)('classifies %s from structured arguments', (name, argsRaw, kind, title) => {
     expect(build([step(1, 1, [{ name, argsRaw }])]).groups[0]?.steps[0]).toMatchObject({ kind, title })
   })

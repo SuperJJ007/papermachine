@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { ScienceTurnArtifacts } from '../src/client/ScienceTurnArtifacts.tsx'
+import { ScienceTurnArtifacts, ScienceTurnArtifactsEntry } from '../src/client/ScienceTurnArtifacts.tsx'
 import { scienceTurnArtifactsDefinition, selectScienceTurnArtifacts } from '../src/client/science-turn-artifacts.ts'
 import type { ScienceTurnArtifactsProps } from '../src/client/ScienceTurnArtifacts.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -111,6 +111,9 @@ describe('selectScienceTurnArtifacts', () => {
   it('declines a Turn with no published data or an empty artifact list', () => {
     const dataStore = { get: () => undefined }
     expect(selectScienceTurnArtifacts({ turn: { data: dataStore } } as never)).toBeNull()
+    const props = { turn: { data: dataStore } } as Parameters<typeof ScienceTurnArtifactsEntry>[0]
+    const view = render(<ScienceTurnArtifactsEntry {...props} />)
+    expect(view.container.childElementCount).toBe(0)
     const emptyStore = { get: () => ({ artifacts: [] }) }
     expect(selectScienceTurnArtifacts({ turn: { data: emptyStore } } as never)).toBeNull()
   })

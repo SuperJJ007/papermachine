@@ -58,7 +58,9 @@ describe('Science mixed recorded outcomes', () => {
   name: '@deepseek-ai/dsh-tool-present'
 `)
     const overlay = join(scratch, 'runtime.patch.yml')
-    await writeFile(overlay, `- id: science-runtime\n  config:\n    profiles:\n      science:\n        pythonPrefix: ${JSON.stringify(prefix)}\n- id: science-agent-presets\n  config:\n    default: science\n    includeUserRoot: false\n    roots:\n      - path: ${JSON.stringify(presetRoot)}\n        trust: system\n`)
+    // Native file actions are part of this golden; their OS execution has separate Host tests.
+    const nativeOpen = await readFile(new URL('./produced-files.overlay.yml', import.meta.url), 'utf8')
+    await writeFile(overlay, `${nativeOpen}\n- id: science-runtime\n  config:\n    profiles:\n      science:\n        pythonPrefix: ${JSON.stringify(prefix)}\n- id: science-agent-presets\n  config:\n    default: science\n    includeUserRoot: false\n    roots:\n      - path: ${JSON.stringify(presetRoot)}\n        trust: system\n`)
     scaffold = await launchWebScaffold({ ...(mode === 'record' ? {} : { replayFixture: fixture }), extraOverlayPath: overlay,
       harnessHome: join(scratch, '.dsh'), compareReplaySession: true,
       replayProviders: [{ id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash',

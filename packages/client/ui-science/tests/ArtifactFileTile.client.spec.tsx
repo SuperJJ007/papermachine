@@ -38,6 +38,8 @@ describe('ArtifactFileTile', () => {
     ['text/csv', 'table', 'CSV'],
     ['application/json', 'json', 'JSON'],
     ['text/markdown', 'document', 'MD'],
+    ['text/plain', 'document', 'TXT'],
+    ['image/png', 'document', 'PNG'],
   ])('renders the %s icon and stays hidden from the accessibility tree', (mediaType, kind, label) => {
     const view = render(<ArtifactFileTile mediaType={mediaType} t={t} />)
     expect(view.container.textContent).toBe(label)

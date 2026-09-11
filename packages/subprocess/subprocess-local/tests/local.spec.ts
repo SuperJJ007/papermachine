@@ -394,6 +394,7 @@ describe('LocalSubprocessRuntime', () => {
       const ctx = new Context()
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
+      service.internals = { platform: 'darwin' }
       const handle = await ctx.subprocess.spawnTerminal({
         argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
       })
@@ -601,7 +602,9 @@ describe('LocalSubprocessRuntime', () => {
       ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
       const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
       const alive = new Set([124])
-      ;(ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>).terminalInspector = {
+      const service = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
+      service.internals = { platform: 'darwin' }
+      service.terminalInspector = {
         foregroundPgid: () => 123,
         isStdinWaiting: () => false,
         snapshot: () => ({
@@ -875,11 +878,17 @@ describe('LocalSubprocessRuntime', () => {
   it('disposal contains a spawn-failure rejection that races teardown', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
-    // Dispose before the rejection continuation removes the handle from the
-    // live set, so teardown itself must swallow the rejected done.
-    const handle = ctx.subprocess.spawn(spec('true', { cwd: '/nonexistent-dir-dsh-subprocess-test' }))
+    const failure = new Error('spawn failed during disposal')
+    const done = Promise.withResolvers<never>()
+    const terminate = vi.fn(() => { done.reject(failure) })
+    const live = (ctx.subprocess as unknown as {
+      live: Set<{ done: Promise<never>; terminate(): void; waitForExit(): Promise<boolean> }>
+    }).live
+    live.add({ done: done.promise, terminate, waitForExit: () => Promise.resolve(true) })
     await fiber.dispose()
-    await expect(handle.done).rejects.toThrow()
+    await expect(done.promise).rejects.toBe(failure)
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(live.size).toBe(0)
   })
 
   it('loading a second implementation throws (one processes service per context — cordis standard)', async () => {

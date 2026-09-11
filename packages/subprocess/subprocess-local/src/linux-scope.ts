@@ -443,7 +443,7 @@ export function prepareLinuxTerminalScope(
     resolveOutcome: (outcome) => {
       const startup = readLinuxStartupError(files.startupErrorPath)
       if (startup !== undefined) throw deserializeRunnerError(startup.error)
-      if (existsSync(files.requestPath)) {
+      if (outcome.signal === null && existsSync(files.requestPath)) {
         throw new Error('terminal scope exited before its bootstrap consumed the launch request')
       }
       return outcome

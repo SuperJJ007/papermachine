@@ -616,6 +616,15 @@ describe('Linux PTY bootstrap reuse', () => {
     scope.cleanup()
   })
 
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves PTY %s before bootstrap consumption', (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
+    try {
+      expect(scope.resolveOutcome({ exitCode: null, signal })).toEqual({ exitCode: null, signal })
+    } finally {
+      scope.cleanup()
+    }
+  })
+
   it('uses default owner dependencies and rejects an unconsumed request', () => {
     const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' })
     const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]

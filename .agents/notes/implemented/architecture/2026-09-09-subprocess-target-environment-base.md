@@ -10,7 +10,7 @@ Science interpreter discovery and kernel startup require an environment built fr
 
 ## Decision
 
-Every ordinary subprocess request chooses `scrubbed-parent` or `empty`. Both local launch paths and E2B apply the choice before explicit overrides and tombstones. Empty targets receive no automatic local proxy injection; callers can deliberately provide proxies. Terminal requests retain their existing ambient policy.
+Every ordinary subprocess request chooses `scrubbed-parent` or `empty`. Local launch paths and E2B apply the choice before explicit overrides and tombstones. Windows empty targets require the native Win32 Job runner; the Node fallback rejects them before launch because libuv restores absent parent variables such as PATH and TEMP. Empty targets receive no automatic local proxy injection; callers can deliberately provide proxies. Terminal requests retain their existing ambient policy.
 
 The [native containment](2026-08-28-subprocess-native-containment.md) and [proxy policy](2026-08-27-outbound-proxy-policy.md) decisions remain active: runner transport state stays separate, and scrubbed local targets keep upstream proxy normalization. Process identities remain provider-private.
 
@@ -22,7 +22,7 @@ The [native containment](2026-08-28-subprocess-native-containment.md) and [proxy
 
 ## Consequences
 
-Existing consumers explicitly retain scrubbed inheritance. Tests cover real local spawning, managed target serialization, E2B target/control separation, proxy overrides, tombstones, and Windows case folding. OS-added process variables remain outside the provider's environment construction.
+Existing consumers explicitly retain scrubbed inheritance. Tests keep strict absence assertions on real native Windows targets and prove fallback rejection before process creation. They also cover real local spawning, managed target serialization, E2B target/control separation, proxy overrides, tombstones, and Windows case folding. OS-added process variables remain outside the provider's environment construction.
 
 The fork patch affects subprocess request types, local spawn and runner target preparation, E2B environment serialization and its caller, plus consumer request declarations. Upstream has proxy normalization and control/target separation but no empty target choice. This implements the migration audit's subprocess RE-APPLY item; no upstream report is submitted with this commit.
 

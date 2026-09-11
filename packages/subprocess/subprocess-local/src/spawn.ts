@@ -653,11 +653,16 @@ export function bindManagedProcess(
  * Spawn one detached PGID/taskkill fallback and bind the common lifecycle.
  * @param spec - fully resolved argv, cwd, stdio, grace, cancellation, environment.
  * @param internals - test-only spill-directory, platform, and taskkill overrides.
+ * @throws When an empty Windows environment cannot be preserved by the Node fallback.
  * @returns live subprocess handle.
  */
 export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInternals = {}): LocalSubprocessHandle {
-  const binding = prepareManagedProcessBinding(internals)
   const platform = internals.platform ?? process.platform
+  if (platform === 'win32' && spec.environmentBase === 'empty') {
+    // libuv restores required parent variables when Windows env entries are absent.
+    throw new Error('subprocess-local: an empty Windows environment requires the native Win32 Job runner')
+  }
+  const binding = prepareManagedProcessBinding(internals)
   const [program, ...args] = spec.argv
   const child = (internals.spawn ?? spawn)(program as string, args, {
     cwd: spec.cwd,

@@ -10,7 +10,7 @@ Science 解释器探测与内核启动需要从所选运行环境构造变量，
 
 ## Decision
 
-每个普通 subprocess 请求选择 `scrubbed-parent` 或 `empty`。本地两条启动路径和 E2B 都在应用显式覆盖及删除标记之前执行该选择。空目标不自动注入本地代理，调用方可以显式提供代理。终端请求保留现有环境策略。
+每个普通 subprocess 请求选择 `scrubbed-parent` 或 `empty`。本地启动路径和 E2B 都在应用显式覆盖及删除标记之前执行该选择。Windows 空目标要求原生 Win32 Job runner；Node 回退路径在启动前拒绝此类请求，因为 libuv 会恢复缺失的 PATH、TEMP 等父进程变量。空目标不自动注入本地代理，调用方可以显式提供代理。终端请求保留现有环境策略。
 
 [原生进程收容](2026-08-28-subprocess-native-containment.zh.md)与[代理策略](2026-08-27-outbound-proxy-policy.zh.md)决定继续有效：runner 传输状态保持独立，清理后的本地目标环境保留上游代理归一化。进程标识仍由 provider 私有持有。
 
@@ -22,7 +22,7 @@ Science 解释器探测与内核启动需要从所选运行环境构造变量，
 
 ## Consequences
 
-现有消费者显式保留清理后的继承环境。测试覆盖真实本地启动、managed 目标序列化、E2B 目标与控制分离、代理覆盖、删除标记及 Windows 大小写折叠。操作系统自行加入的进程变量不属于 provider 的环境构造。
+现有消费者显式保留清理后的继承环境。测试对真实原生 Windows 目标保留严格的变量缺失断言，并证明回退路径在创建进程前拒绝请求。测试还覆盖真实本地启动、managed 目标序列化、E2B 目标与控制分离、代理覆盖、删除标记及 Windows 大小写折叠。操作系统自行加入的进程变量不属于 provider 的环境构造。
 
 fork 补丁涉及 subprocess 请求类型、本地 spawn 与 runner 目标准备、E2B 环境序列化及其调用方，以及消费者请求声明。上游已有代理归一化和控制与目标分离，但没有空目标选项。这实现迁移审计中 subprocess 的 RE-APPLY 项；本提交尚未向上游提交报告。
 

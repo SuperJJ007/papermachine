@@ -13,7 +13,7 @@ Mount `dsh-subprocess-local` in any composition that runs child processes on the
 
 ## Target process observations
 
-Ordinary spawn requests require `environmentBase`: `scrubbed-parent` retains scrubbed ambient entries and the local provider's normalized proxy policy; `empty` supplies only explicit `env` entries. Explicit proxies remain allowed. This choice applies to the target process; managed runners and E2B control commands retain their separate bootstrap environments. The OS or target executable may add its own variables after launch.
+Ordinary spawn requests require `environmentBase`: `scrubbed-parent` retains scrubbed ambient entries and the local provider's normalized proxy policy; `empty` supplies only explicit `env` entries. Explicit proxies remain allowed. This choice applies to the target process; managed runners and E2B control commands retain their separate bootstrap environments. The OS or target executable may add its own variables after launch. On Windows, `empty` requires the native Win32 Job runner; the Node fallback rejects the request before launch because libuv restores absent parent variables.
 
 Providers declare `executionWorld` as `host-local` or `remote`. Each collected read reports `utf8Validity` for exactly its returned byte slice before replacement decoding. Local and E2B readers retain original bytes and report `valid` or `invalid`; a cut through a multibyte character is invalid even when a later complete read is valid. `unknown` is reserved for providers without recoverable original bytes.
 

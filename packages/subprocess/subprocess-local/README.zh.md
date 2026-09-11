@@ -13,7 +13,7 @@ kind: "package-reference"
 
 ## 目标进程观测
 
-普通进程请求必须指定 `environmentBase`：`scrubbed-parent` 保留清理后的环境变量及本地 provider 归一化后的代理设置；`empty` 只传入显式 `env` 条目，也允许显式代理变量。该选择仅作用于目标进程，managed runner 和 E2B 控制命令保留各自的启动环境。操作系统或目标程序可能在启动后自行添加变量。
+普通进程请求必须指定 `environmentBase`：`scrubbed-parent` 保留清理后的环境变量及本地 provider 归一化后的代理设置；`empty` 只传入显式 `env` 条目，也允许显式代理变量。该选择仅作用于目标进程，managed runner 和 E2B 控制命令保留各自的启动环境。操作系统或目标程序可能在启动后自行添加变量。在 Windows 上，`empty` 要求原生 Win32 Job runner；Node 回退路径在启动前拒绝请求，因为 libuv 会恢复缺失的父进程变量。
 
 provider 将 `executionWorld` 声明为 `host-local` 或 `remote`。每次收集读取通过 `utf8Validity` 报告返回字节片段在替换解码之前的有效性。本地与 E2B 读取器保留原始字节，报告 `valid` 或 `invalid`；即使后续完整读取有效，截断多字节字符的片段仍然无效。`unknown` 仅用于无法恢复原始字节的 provider。
 

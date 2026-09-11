@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-subprocess-target-environment-base.md
-2026-09-09-subprocess-target-environment-base.md: 6065025fb50afc782c77642077116579fa821eb6
-2026-09-09-subprocess-target-environment-base.zh.md: 4ebe79c96315a5208b90e0b03c1571d132067eca
+2026-09-09-subprocess-target-environment-base.md: 2322f3bd95e98f1caee0b87f0c00eb24488ff433
+2026-09-09-subprocess-target-environment-base.zh.md: 05cd9d73fd6ba55703671326ae879c8bacceecdb

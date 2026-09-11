@@ -1,5 +1,6 @@
 /** Strict decoders for the durable Science event vocabulary. */
 
+import { isScienceLogicalName } from '@deepseek-ai/dsh-science-artifact-store/logical-name'
 import { Buffer } from 'node:buffer'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isJsonValue } from '@deepseek-ai/dsh-util-values'
@@ -73,24 +74,14 @@ const SAFE_ID = z.string()
   .min(1)
   .max(MAX_ID_LENGTH)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-/**
- * An artifact's stable logical name: the file's forward-slash path relative
- * to its run's artifact directory (auto-capture), or a flat name (curation).
- * Each segment uses the same safe grammar as {@link SAFE_ID}.
- */
-const SAFE_LOGICAL_NAME = z.string()
-  .min(1)
-  .max(MAX_PATH_LENGTH)
-  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
-    message: 'logicalName must be forward-slash segments each matching the safe artifact-name grammar',
-  })
+/** Historical logical names and run paths retain their unchanged relative identities. */
+const SAFE_LOGICAL_NAME = z.string().refine(isScienceLogicalName, {
+  message: 'logicalName must be a forward-slash relative artifact path',
+})
 
-const RUN_INPUT_PATH = z.string()
-  .min(1)
-  .max(MAX_PATH_LENGTH)
-  .refine(value => value.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)), {
-    message: 'run input path must be forward-slash segments each matching the safe artifact-name grammar',
-  })
+const RUN_INPUT_PATH = z.string().refine(isScienceLogicalName, {
+  message: 'run input path must be a forward-slash relative artifact path',
+})
 
 const artifactVersionRefSchema = z.object({
   artifactId: SAFE_ID.transform(value => ScienceArtifactId(value)),

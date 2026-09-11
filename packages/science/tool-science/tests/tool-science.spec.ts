@@ -292,7 +292,7 @@ beforeEach(async () => {
   // Science Runtime scratch roots must not overlap a generic sandbox temp
   // grant (os.tmpdir()/`/tmp`), so this uses a repo-relative hidden dir —
   // the same convention science-runtime's own tests use.
-  root = await mkdtemp(join(process.cwd(), '.tool-science-test-'))
+  root = await mkdtemp(join(process.env['DSH_SCIENCE_TEST_SCRATCH_PARENT'] ?? process.cwd(), '.tool-science-test-'))
 })
 afterEach(async () => {
   await Promise.allSettled(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -775,6 +775,30 @@ describe('runValueFromResult / formatRunResult', () => {
       stderrTruncated: false,
     }
   }
+
+  it('reports capture failure independently of successful Python execution', async () => {
+    const value = await runValueFromResult({
+      terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false },
+      stderr: { text: '', bytes: 0, truncated: false }, captureFailure: 'invalid-logical-name',
+    }, resolverFor([]))
+    expect(value.status).toBe('success')
+    expect(value.captureFailure).toBe('invalid-logical-name')
+    expect(value.capturedArtifacts).toBeUndefined()
+    expect(formatRunResult(value, 'python')).toContain('status: success\nartifact capture failed: invalid-logical-name')
+  })
+
+  it.each(['filesystem', 'capture-failed', 'session-detached', 'event-append-failed'] as const)(
+    'reports %s without blaming valid file names', async (captureFailure) => {
+      const value = await runValueFromResult({
+        terminal: successTerminal(), stdout: { text: '', bytes: 0, truncated: false },
+        stderr: { text: '', bytes: 0, truncated: false }, captureFailure,
+      }, resolverFor([]))
+      const text = formatRunResult(value, 'python')
+      expect(text).toContain('Some artifacts may already be saved')
+      expect(text).not.toContain('Windows-reserved punctuation')
+      expect(value.status).toBe('success')
+    },
+  )
 
   it('appends a plural captured-artifacts receipt mixing image and non-image entries, and both skip/truncation flags', async () => {
     const image = artifactVersionFixture({

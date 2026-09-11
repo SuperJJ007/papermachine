@@ -9,6 +9,7 @@ export type ProjectArtifactStoreErrorCode =
   | 'VERSION_NOT_FOUND'
   | 'NOTE_NOT_FOUND'
   | 'LOGICAL_NAME_CONFLICT'
+  | 'LOGICAL_NAME_INVALID'
   | 'BLOB_NOT_FOUND'
   | 'BLOB_CORRUPT'
   | 'RECONCILE_ORDINAL_CONFLICT'

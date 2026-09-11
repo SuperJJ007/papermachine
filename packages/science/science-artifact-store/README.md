@@ -63,6 +63,8 @@ Every other method takes a `projectId` directly and is self-sufficient — it op
 <a id="package-section-3"></a>
 ## Artifact, Version, and side-table records
 
+Logical names preserve Unicode, spaces, underscores, and nested forward-slash paths without normalization. The pure `@deepseek-ai/dsh-science-artifact-store/logical-name` export owns identity validation: 1–4096 UTF-16 code units, well-formed Unicode, no empty/dot/parent segments, backslashes, controls, or Windows-reserved punctuation. Historical device names and trailing dots remain readable identities; the separate materialization predicate rejects device names and trailing dots/spaces before writing input destinations. `createArtifact` and `reconstructVersion` reject invalid identities before opening a database or admitting bytes. See the [path-validation decision](../../../.agents/notes/implemented/bug-fix/2026-09-11-science-logical-name-validation.md).
+
 An **Artifact** row (`artifact_id` PRIMARY KEY, `UNIQUE(owningProjectId, logicalName)`): `owningProjectId`, `originSessionId` (the session that created it), `logicalName`, `kind` (`'figure' | 'dataset' | 'document' | 'job-output'`), `latestVersionId`, `createdAt`.
 
 A **Version** row (`version_id` PRIMARY KEY, `UNIQUE(artifact_id, ordinal)`) is immutable except for one pointer column:

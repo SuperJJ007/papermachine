@@ -17,6 +17,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { StartScienceRunRequest } from '../src/types.ts'
 import { planSessionScratch, runArtifactDirectory } from '../src/scratch.ts'
+import { prepareRunArtifacts } from '../src/inputs.ts'
 import { KernelProcess } from '../src/kernel-process.ts'
 import {
   authorizePythonRun,
@@ -41,7 +42,7 @@ afterEach(async () => {
 })
 
 function tmp(prefix: string): string {
-  const root = mkdtempSync(join(process.cwd(), prefix))
+  const root = mkdtempSync(join(process.env['DSH_SCIENCE_TEST_SCRATCH_PARENT'] ?? process.cwd(), prefix))
   roots.push(root)
   return root
 }
@@ -154,6 +155,36 @@ function pngWithMetadata(): Uint8Array {
 vi.setConfig({ testTimeout: 30_000 })
 
 describe('Science auto-capture', () => {
+  it('captures Unicode, spaces, and underscore paths without changing their identities', async () => {
+    const root = tmp('.science-logical-names-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-logical-names')
+    const files = { '_probe/p.csv': 'x\n1\n', '中文 数据/结果.csv': 'x\n2\n' }
+    const { result } = await runWithFiles(harness, root, session, files)
+    expect(result.terminal.status).toBe('success')
+    expect(result.captureFailure).toBeUndefined()
+    expect(result.capture?.captured.map(artifact => artifact.logicalName).sort()).toEqual(Object.keys(files).sort())
+    expect(replayScience(session.snapshotEvents())?.artifacts).toHaveLength(2)
+  })
+
+  // Windows rejects the ADS-like name before a regular file can reach capture.
+  it.skipIf(process.platform === 'win32')('rejects the complete capture batch before saving any legal candidate when another name is unsafe', async () => {
+    const root = tmp('.science-invalid-logical-name-')
+    const prefix = createFakePythonPrefix(root)
+    const harness = await createKernelRuntimeHarness(root, { fake: { pythonPrefix: prefix } })
+    contexts.push(harness.ctx)
+    const session = createScienceSession(harness.ctx, 'science-invalid-logical-name')
+    const create = vi.spyOn(harness.ctx.scienceArtifactStore, 'createArtifact')
+    const { result } = await runWithFiles(harness, root, session, { 'a.csv': 'legal', 'z:stream.csv': 'unsafe' })
+    expect(result.terminal.status).toBe('success')
+    expect(result.captureFailure).toBe('invalid-logical-name')
+    expect(create).not.toHaveBeenCalled()
+    expect(session.snapshotEvents().filter(event => event.type === 'science/artifact-saved')).toEqual([])
+    expect(replayScience(session.snapshotEvents())?.artifacts).toEqual([])
+  })
+
   it('materializes verified artifact inputs byte-exactly and records the complete mapping', async () => {
     const root = tmp('.science-input-materialization-')
     const prefix = createFakePythonPrefix(root)
@@ -166,6 +197,14 @@ describe('Science auto-capture', () => {
     const first = await runWithFiles(harness, root, session, { 'source.csv': source })
     const version = first.result.capture?.captured.at(0)
     if (version === undefined) throw new Error('input test: expected one captured version')
+
+    const projection = replayScience(session.snapshotEvents())
+    if (projection === null) throw new Error('input test: expected Science projection')
+    const historical = await prepareRunArtifacts(projection, harness.ctx.scienceArtifactStore, version.projectId,
+      [], { 'CON.txt': { artifactId: version.artifactId, version: 1 } }, ['CON.png', 'trailing.'],
+      10, 1024, new AbortController().signal)
+    expect(historical.editBaselines.has('CON.txt')).toBe(true)
+    expect([...historical.rasterArtifacts]).toEqual(['CON.png', 'trailing.'])
 
     const handle = await startHeldRun(harness, root, session, 'ok', true, {
       artifactInputs: [{ artifactId: version.artifactId, version: version.version, path: 'data/source.csv' }],
@@ -180,6 +219,13 @@ describe('Science auto-capture', () => {
       inputs: [{ artifactId: version.artifactId, version: 1, path: 'data/source.csv' }],
     } })
 
+    for (const [index, path] of ['CON.txt', 'trailing.', 'dir/file.txt:stream', 'nested/LPT1.csv'].entries()) {
+      await expect(harness.runtime.startRun({
+        session, language: 'python', code: kernelAction({ status: 'ok' }),
+        artifactInputs: [{ artifactId: version.artifactId, version: 1, path }],
+        ...authorizePythonRun(session, `science-input-windows-${String(index)}`), signal: new AbortController().signal,
+      })).rejects.toMatchObject({ code: 'INPUT_PATH_INVALID' })
+    }
     await expect(harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),
       artifactInputs: [
@@ -199,6 +245,14 @@ describe('Science auto-capture', () => {
     const first = await runWithFiles(harness, root, session, { 'source.csv': 'x\n' })
     const version = first.result.capture?.captured.at(0)
     if (version === undefined) throw new Error('input test: expected one captured version')
+
+    const projection = replayScience(session.snapshotEvents())
+    if (projection === null) throw new Error('input test: expected Science projection')
+    const historical = await prepareRunArtifacts(projection, harness.ctx.scienceArtifactStore, version.projectId,
+      [], { 'CON.txt': { artifactId: version.artifactId, version: 1 } }, ['CON.png', 'trailing.'],
+      10, 1024, new AbortController().signal)
+    expect(historical.editBaselines.has('CON.txt')).toBe(true)
+    expect([...historical.rasterArtifacts]).toEqual(['CON.png', 'trailing.'])
 
     await expect(harness.runtime.startRun({
       session, language: 'python', code: kernelAction({ status: 'ok' }),

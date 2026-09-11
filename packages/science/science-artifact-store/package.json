@@ -23,7 +23,11 @@
       "default": "./lib/types/ids.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./logical-name": {
+      "types": "./lib/types/logical-name.d.ts",
+      "default": "./lib/types/logical-name.js"
+    }
   },
   "files": [
     "lib/index.js",

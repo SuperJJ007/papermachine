@@ -60,6 +60,8 @@ kind: "package-reference"
 <a id="package-section-3"></a>
 ## 工具
 
+运行结果可以同时报告 `status: success` 和 `captureFailure`：解释器执行成功，但成果捕获没有完成。持久化的工具结果携带安全的失败分类与恢复提示，不暴露内部文件系统错误，也不改变 Science 终态事实。
+
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `get_science_state` | 无 | 返回该 session durable Science projection 的 sanitized、bounded view：mode、model-safe environment facts、最近的 run 与 artifact-version 历史、有界的 PNG 直接编辑摘要、遗漏计数与总量 metrics。如果 Science mode 尚未绑定则拒绝。 |

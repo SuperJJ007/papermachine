@@ -158,6 +158,8 @@ export interface ScienceRunResult {
    * discoverable through `get_science_state`.
    */
   readonly capture?: CaptureRunArtifactsResult
+  /** Capture outcome independent of interpreter status; safe for persisted tool output. */
+  readonly captureFailure?: 'invalid-logical-name' | 'filesystem' | 'capture-failed' | 'session-detached' | 'event-append-failed'
 }
 
 /** Inputs for installing packages into this session's applied environment for one language. */

@@ -1,6 +1,6 @@
 /** Exact Python-operation fixture behind the production kernel protocol. */
-import { openSync, readFileSync, writeFileSync, writeSync, closeSync, copyFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { openSync, readFileSync, writeFileSync, writeSync, closeSync, copyFileSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createConnection } from 'node:net'
 
@@ -28,13 +28,27 @@ if (args.includes('--version')) {
       case 'RUN': {
         const source = readFileSync(parts[2], 'utf8')
         const expected = readFileSync(new URL('./snapshot-operation.py', import.meta.url), 'utf8')
-        if (source.trim() !== expected.trim()) {
+        const logical = readFileSync(new URL('./logical-name-operation.py', import.meta.url), 'utf8')
+        const invalid = readFileSync(new URL('./logical-name-invalid-operation.py', import.meta.url), 'utf8')
+        if (source.trim() === expected.trim()) {
+          writeFileSync(parts[4], 'SCIENCE_SNAPSHOT_RUN_OK\n')
+          copyFileSync(new URL('./snapshot-plot.png', import.meta.url), join(parts[6], 'plot.png'))
+        } else if (source.trim() === logical.trim()) {
+          for (const name of ['_probe/p.csv', '中文 数据/结果.csv']) {
+            const target = join(parts[6], name)
+            mkdirSync(dirname(target), { recursive: true })
+            writeFileSync(target, 'x,y\n1,2\n')
+          }
+          writeFileSync(parts[4], 'SCIENCE_LOGICAL_NAMES_OK\n')
+        } else if (source.trim() === invalid.trim()) {
+          writeFileSync(join(parts[6], 'a.csv'), 'valid candidate\n')
+          writeFileSync(join(parts[6], 'z:stream.csv'), 'invalid candidate\n')
+          writeFileSync(parts[4], 'SCIENCE_PYTHON_SUCCEEDED_CAPTURE_INVALID\n')
+        } else {
           send(`DONE\t${parts[1]}\terror\tUnexpectedSnapshotSource\t`)
           return
         }
-        writeFileSync(parts[4], 'SCIENCE_SNAPSHOT_RUN_OK\n')
         writeFileSync(parts[5], '')
-        copyFileSync(new URL('./snapshot-plot.png', import.meta.url), join(parts[6], 'plot.png'))
         send(`DONE\t${parts[1]}\tok\t\t`)
         break
       }

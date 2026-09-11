@@ -1,0 +1,132 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Run exactly this Python source" [disabled]
+  - button "More actions":
+    - img
+  - button "Artifact library"
+  - button "Open right sidebar":
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+    - tab "Process"
+- navigation "Turn navigation":
+  - button "Jump to turn 1"
+  - button "Jump to turn 2"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: "Run exactly this Python source once with run_python. Do not run any additional tools or retry. Report interpreter status and artifact capture status separately. Finish with SCIENCE_NAMES_DONE. ```python import os from pathlib import Path root = Path(os.environ[\"SCIENCE_ARTIFACT_DIR\"]) for name in [\"_probe/p.csv\", \"中文 数据/结果.csv\"]: target = root / name target.parent.mkdir(parents=True, exist_ok=True) target.write_text(\"x,y\\n1,2\\n\", encoding=\"utf-8\") print(\"SCIENCE_LOGICAL_NAMES_OK\") ``` {{clock}}"
+- button "Copy":
+  - img
+- button "1 tool call":
+  - text: 1 tool call
+  - img
+- paragraph: Ran the source exactly once.
+- paragraph:
+  - strong: "Interpreter status:"
+  - code: success
+  - text: — Python kernel executed normally, no restart reported. stdout printed
+  - code: SCIENCE_LOGICAL_NAMES_OK
+  - text: ; stderr was empty (no exception or error condition).
+- paragraph:
+  - strong: "Artifact capture status:"
+  - text: "2 artifacts captured, both v1 text/csv at 8 B each:"
+- list:
+  - listitem:
+    - code: _probe/p.csv
+    - text: — artifactId
+    - code: "{{id:1}}"
+  - listitem:
+    - code: 中文 数据/结果.csv
+    - text: — artifactId
+    - code: "{{id:4}}"
+- paragraph: Both nested paths (including the leading-underscore directory and the Chinese/space-containing path) were accepted and captured. No PNGs were produced, so no raster declaration was needed.
+- paragraph: SCIENCE_NAMES_DONE
+- paragraph: "Artifacts produced this turn: 2"
+- list:
+  - listitem:
+    - button "p.csv v1"
+    - text: p.csv v1
+    - button "Preview p.csv version 1": Preview
+  - listitem:
+    - button "结果.csv v1"
+    - text: 结果.csv v1
+    - button "Preview 结果.csv version 1": Preview
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Usage 14.8K tok":
+  - img
+  - text: Usage 14.8K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: "{{clock}} Run exactly this Python source once with run_python. Do not run any additional tools or retry. Report interpreter status and artifact capture status separately. Finish with SCIENCE_CAPTURE_FAILURE_DONE. ```python import os from pathlib import Path root = Path(os.environ[\"SCIENCE_ARTIFACT_DIR\"]) (root / \"a.csv\").write_text(\"valid candidate\\n\", encoding=\"utf-8\") (root / \"z:stream.csv\").write_text(\"invalid candidate\\n\", encoding=\"utf-8\") print(\"SCIENCE_PYTHON_SUCCEEDED_CAPTURE_INVALID\") ``` {{clock}}"
+- button "Copy":
+  - img
+- button "1 tool call":
+  - text: 1 tool call
+  - img
+- paragraph: Ran the source exactly once.
+- paragraph:
+  - strong: "Interpreter status:"
+  - code: success
+  - text: — the Python kernel executed the code normally; stdout printed
+  - code: SCIENCE_PYTHON_SUCCEEDED_CAPTURE_INVALID
+  - text: and stderr was empty. No interpreter error or restart was reported.
+- paragraph:
+  - strong: "Artifact capture status:"
+  - text: failed with
+  - code: invalid-logical-name
+  - text: . The capture pipeline rejected the batch because
+  - code: z:stream.csv
+  - text: is not a valid logical name (the
+  - code: ":"
+  - text: is Windows-reserved punctuation), and the failure is reported as an artifact-capture failure only — the run's interpreter status is explicitly stated to be unchanged. No capture receipts were printed for this run, so neither output file (not
+  - code: a.csv
+  - text: ", not"
+  - code: z:stream.csv
+  - text: ) was committed as an artifact. I did not call
+  - code: get_science_state
+  - text: ", per the instruction to run no additional tools."
+- paragraph: SCIENCE_CAPTURE_FAILURE_DONE
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Usage 15.9K tok":
+  - img
+  - text: Usage 15.9K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "6% of context used"
+- button "Send message" [disabled]
+- button "2 turns 4 steps · {{throughput}} tok/s":
+  - img
+  - text: 2 turns 4 steps{{throughput}} tok/s
+- button "30.8K tok · Cache hit 75%":
+  - img
+  - text: 30.8K tokCache hit 75%
+- text: Latest kernel records python · epoch 1 · started

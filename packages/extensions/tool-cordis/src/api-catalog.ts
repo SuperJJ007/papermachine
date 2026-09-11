@@ -5588,7 +5588,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScienceRunResult',
-    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n    readonly capture?: CaptureRunArtifactsResult;\n}',
+    declaration: 'export interface ScienceRunResult {\n    readonly terminal: ScienceRunTerminal;\n    readonly stdout: ScienceRunOutput;\n    readonly stderr: ScienceRunOutput;\n    readonly capture?: CaptureRunArtifactsResult;\n    readonly captureFailure?: \'invalid-logical-name\' | \'filesystem\' | \'capture-failed\' | \'session-detached\' | \'event-append-failed\';\n}',
   },
   {
     name: 'ScienceRunStarted',

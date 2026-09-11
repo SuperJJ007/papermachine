@@ -63,6 +63,8 @@ Project 级 Science artifact 注册表与内容寻址版本存储。Session 只�
 <a id="package-section-3"></a>
 ## Artifact、Version 与侧表记录
 
+逻辑名称原样保留 Unicode、空格、下划线和正斜杠嵌套路径，不做规范化。纯导出 `@deepseek-ai/dsh-science-artifact-store/logical-name` 负责身份校验：1–4096 个 UTF-16 代码单元、良构 Unicode，不允许空段、点段、父目录段、反斜杠、控制字符或 Windows 保留标点。历史设备名和末尾点仍可作为身份读取；独立的物化判断会在写入输入目标之前拒绝设备名和末尾点/空格。`createArtifact` 与 `reconstructVersion` 在打开数据库或接收字节之前拒绝无效身份。参见[路径校验决策](../../../.agents/notes/implemented/bug-fix/2026-09-11-science-logical-name-validation.zh.md)。
+
 一条 **Artifact** 记录(主键 `artifact_id`,`UNIQUE(owningProjectId, logicalName)`):`owningProjectId`、`originSessionId`(创建它的 Session)、`logicalName`、`kind`(`'figure' | 'dataset' | 'document' | 'job-output'`)、`latestVersionId`、`createdAt`。
 
 一条 **Version** 记录(主键 `version_id`,`UNIQUE(artifact_id, ordinal)`)除一列指针外全部不可变:

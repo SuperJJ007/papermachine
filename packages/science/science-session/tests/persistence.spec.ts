@@ -35,6 +35,29 @@ afterEach(async () => {
 })
 
 describe.each(['none', 'zstd'] as const)('Science session storage (%s)', (compression) => {
+  it('reopens captured underscore and Unicode identities without rewriting historical events', async () => {
+    await ctx.plugin(JsonlSessionPersistence, { root, compression })
+    const id = SessionId('science-logical-name-roundtrip')
+    const header: SessionHeader = { id, version: 3, createdAt: 1000, isSeeded: false, agentPreset: 'science' }
+    const original = Session.create(id, [], header)
+    appendFixtureEvents(original)
+    const events = original.snapshotEvents().map(event => event.type === 'science/artifact-saved'
+      ? { ...event, data: { ...event.data, artifact: { ...event.data.artifact,
+        logicalName: event.data.artifact.artifactId === ARTIFACT_ID ? '_probe/p.csv' : '中文 数据/结果.csv' } } }
+      : event)
+    const writer = await ctx.sessionPersistence.create(header)
+    await writer.append(events)
+    await writer.close()
+    const reader = await ctx.sessionPersistence.open(id, 'read')
+    try {
+      const restored = await reader.read()
+      expect(restored.events).toEqual(events)
+      expect(replayScience(restored.events)?.artifacts.map(artifact => artifact.logicalName)).toContain('_probe/p.csv')
+    } finally {
+      await reader.close()
+    }
+  })
+
   it('reopens all nine required V3 events and retains both projections and sequence references', async () => {
     await ctx.plugin(JsonlSessionPersistence, { root, compression })
     const id = SessionId('science-v3-roundtrip')

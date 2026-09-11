@@ -26,6 +26,7 @@ const snapshotAdapters = [
   'apps/web/tests/message-feedback-protocol.snapshot.ts',
   'apps/web/tests/minimal-preset.snapshot.ts',
   'apps/web/tests/preset-migration.snapshot.ts',
+  'apps/web/tests/science-logical-name.snapshot.ts',
   'apps/web/tests/science-mixed.snapshot.ts',
   'apps/web/tests/science-preset.snapshot.ts',
   'snapshots/acp/acp.snapshot.ts',

@@ -34,6 +34,7 @@
       "@deepseek-ai/dsh-client-ui-science": ["./packages/client/ui-science/src"],
       "@deepseek-ai/dsh-client-ui-brand-papermachine": ["./packages/client/ui-brand-papermachine/src"],
       "@deepseek-ai/dsh-science-artifact-store/ids": ["./packages/science/science-artifact-store/src/ids.ts"],
+      "@deepseek-ai/dsh-science-artifact-store/logical-name": ["./packages/science/science-artifact-store/src/logical-name.ts"],
       "@deepseek-ai/dsh-science-session/types": ["./packages/science/science-session/src/types.ts"],
       "@deepseek-ai/dsh-science-runtime/types": ["./packages/science/science-runtime/src/types.ts"],
       "@deepseek-ai/dsh-science-runtime/with-settings": ["./packages/science/science-runtime/src/with-settings.ts"],

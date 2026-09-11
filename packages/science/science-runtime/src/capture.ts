@@ -7,6 +7,7 @@
  * its two `science/run-finished` append sites.
  */
 
+import { isScienceLogicalName } from '@deepseek-ai/dsh-science-artifact-store/logical-name'
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
@@ -208,6 +209,9 @@ export async function captureRunArtifacts(request: CaptureRunArtifactsRequest): 
     return !isRasterCaptureAllowed(relativePath, mediaType, request.rasterCapture, request.rasterArtifacts)
   })
   const eligible = walked.filter(relativePath => !skippedRasterPaths.includes(relativePath))
+  if (eligible.some(relativePath => !isScienceLogicalName(relativePath))) {
+    throw new ProjectArtifactStoreError('Science capture contains an invalid logical name', 'LOGICAL_NAME_INVALID')
+  }
   const truncatedPerRun = eligible.length > request.captureMaxFilesPerRun
   const files = eligible.slice(0, request.captureMaxFilesPerRun)
 

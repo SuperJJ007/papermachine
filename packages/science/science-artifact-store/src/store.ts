@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { admitBlob, blobByteCount, readBlob as readBlobBytes } from './blobs.ts'
+import { isScienceLogicalName } from './logical-name.ts'
 import { ProjectArtifactStoreError } from './errors.ts'
 import { AnnotationId, ArtifactId, NoteId, ProjectId, VersionId } from './ids.ts'
 import { reconcileProject as runReconciliation } from './reconcile.ts'
@@ -379,9 +380,13 @@ export class ProjectArtifactStoreEngine {
    * @param input - the first version's bytes, kind, provenance, and optional explicit baseline.
    * @returns the created artifact and its first version.
    * @throws {@link ProjectArtifactStoreError} with code `LOGICAL_NAME_CONFLICT`
-   * when the project already has an artifact with this `logicalName`.
+   * when the project already has an artifact with this `logicalName`; `LOGICAL_NAME_INVALID`
+   * rejects an unsafe relative identity before database or blob writes.
    */
   async createArtifact(projectId: ProjectId, input: CreateArtifactInput): Promise<{ artifact: ArtifactRecord; version: VersionRecord }> {
+    if (!isScienceLogicalName(input.logicalName)) {
+      throw new ProjectArtifactStoreError('logicalName must be a forward-slash relative artifact path', 'LOGICAL_NAME_INVALID')
+    }
     const db = await this.connectionFor(projectId)
     const root = await this.rootFor(projectId)
     const { sha256, byteCount } = await admitBlob(root, input.data)
@@ -698,9 +703,13 @@ export class ProjectArtifactStoreEngine {
    * @param input - the exact ids, ordinal, content address, and best-available provenance to reconstruct.
    * @returns the reconstructed (or, if idempotent, the pre-existing) version row.
    * @throws {@link ProjectArtifactStoreError} with code `RECONCILE_ORDINAL_CONFLICT`
-   * when the artifact already has a DIFFERENT version committed at this ordinal.
+   * when the artifact already has a DIFFERENT version committed at this ordinal;
+   * `LOGICAL_NAME_INVALID` rejects an unsafe identity before database writes.
    */
   async reconstructVersion(projectId: ProjectId, input: ReconstructVersionInput): Promise<VersionRecord> {
+    if (!isScienceLogicalName(input.logicalName)) {
+      throw new ProjectArtifactStoreError('logicalName must be a forward-slash relative artifact path', 'LOGICAL_NAME_INVALID')
+    }
     const db = await this.connectionFor(projectId)
     runWriteTransaction(db, () => {
       const existingVersion = db.prepare('SELECT 1 FROM versions WHERE version_id = ?').get(input.versionId)

@@ -60,6 +60,8 @@ After binding, this package re-renders the `science:environment` context from th
 <a id="package-section-3"></a>
 ## Tools
 
+A run result can report `status: success` together with `captureFailure`: interpreter execution succeeded while artifact capture did not complete. The persisted tool result carries the safe failure category and recovery guidance; it does not expose internal filesystem errors or change the Science terminal fact.
+
 | Tool | Arguments | Behavior |
 |---|---|---|
 | `get_science_state` | none | Returns a sanitized, bounded view of the session's durable Science projection: mode, model-safe environment facts, recent run and artifact-version histories, bounded PNG direct-edit summaries, omitted counts and total metrics. Rejects if Science mode is not yet bound. |

@@ -323,7 +323,7 @@ describe('coverage partition coordinator', () => {
         '--coverage.reportOnFailure',
         '--maxWorkers=1',
         '--reporter=default',
-        '--reporter=blob',
+        '--reporter=./scripts/coverage-blob-reporter.ts',
         '--reporter=json',
         '--testTimeout=30000',
       ]))

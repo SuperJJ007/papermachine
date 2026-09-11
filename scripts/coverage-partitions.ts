@@ -559,7 +559,7 @@ export class CoveragePartitionCoordinator {
       '--maxWorkers=1',
       `--config=${this.relativePath(configPath)}`,
       '--reporter=default',
-      '--reporter=blob',
+      '--reporter=./scripts/coverage-blob-reporter.ts',
       '--reporter=json',
       `--outputFile.blob=${this.relativePath(blobPath)}`,
       `--outputFile.json=${this.relativePath(jsonReportPath)}`,

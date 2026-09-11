@@ -7,7 +7,8 @@ import { capTextForDisplay, MAX_ARTIFACT_TEXT_CHARACTERS, type RenderTruncation 
 import { firstLine, splitRunResultSections } from './run-output.ts'
 import css from './ScienceTraceView.module.css'
 
-function argumentsOf(member: ScienceTraceStepMember): { code?: { text: string; language: string }; input: string } {
+function argumentsOf(member: ScienceTraceStepMember): { code?: { text: string; language: string }; input: string | undefined } {
+  if (member.argsRaw === undefined) return { input: undefined }
   let args: unknown
   try { args = JSON.parse(member.argsRaw) }
   catch {
@@ -66,8 +67,9 @@ function CallDetails({ member, label, t }: { member: ScienceTraceStepMember; lab
       {'failureCode' in run && <> · {run.failureCode}</>}
     </p>}
     {args.code !== undefined && <LoggedCode code={args.code} t={t} />}
-    {(args.code === undefined || args.input !== '{}') && <LoggedText label={t('trace.detail.input')} text={args.input} t={t} />}
-    {member.result === undefined ? <p role="status">{t('trace.detail.pending')}</p> : <>
+    {args.input === undefined ? <p role="status">{t('trace.detail.inputUnavailable')}</p>
+      : (args.code === undefined || args.input !== '{}') && <LoggedText label={t('trace.detail.input')} text={args.input} t={t} />}
+    {member.result === undefined ? <p role="status">{t('trace.detail.resultUnavailable')}</p> : <>
       {sections === null
         ? <LoggedText label={t('trace.detail.output')} text={text} t={t} />
         : <>

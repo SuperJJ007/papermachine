@@ -135,6 +135,26 @@ describe('Science preset recorded session', () => {
         await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd), mode)
       await page.reload({ waitUntil: 'load' })
       await page.getByText('SCIENCE_SNAPSHOT_DONE', { exact: true }).waitFor()
+      await page.getByRole('tab', { name: 'Process', exact: true }).click()
+      const process = page.getByRole('region', { name: 'Science process view' })
+      await process.getByRole('button', { name: /Expand steps/u }).click()
+      const steps = process.getByRole('list', { name: 'Turn steps' })
+      await steps.getByRole('button', { name: 'Read session state', exact: true }).first().click()
+      const state = steps.getByRole('region', { name: 'Read session state', exact: true })
+      expect(await state.getByRole('region', { name: 'Input arguments', exact: true }).innerText()).toContain('{}')
+      await steps.getByRole('button', { name: 'Python run', exact: true }).click()
+      const run = steps.getByRole('region', { name: 'Python run', exact: true })
+      expect(await run.getByRole('region', { name: 'Code', exact: true }).innerText()).toContain('print("SCIENCE_SNAPSHOT_RUN_OK")')
+      expect(await run.getByRole('region', { name: 'Input arguments', exact: true }).innerText()).toContain('raster_artifacts')
+      expect(await run.getByRole('region', { name: 'Standard output', exact: true }).innerText()).toContain('SCIENCE_SNAPSHOT_RUN_OK')
+      expect(await process.getByText('Input arguments unavailable in loaded history', { exact: true }).count()).toBe(0)
+      expect(await process.getByText('Result unavailable in loaded history', { exact: true }).count()).toBe(0)
+      const emptyInput = await captureStableAria(page,
+        '[data-call-id][aria-label="Read session state"] [aria-label="Input arguments"]', scaffold!.workspaceCwd)
+      const runDetails = await captureStableAria(page, '[data-call-id][aria-label="Python run"]', scaffold!.workspaceCwd)
+      await compareOrRefreshGolden(join(directory, 'process.expected.md'),
+        `## Empty arguments\n\n${emptyInput}\n\n## Run details\n\n${runDetails}`, mode)
+      expect(await page.getByRole('tab', { name: 'Process', exact: true }).getAttribute('aria-selected')).toBe('true')
       expect(console.pageErrors).toEqual([])
       expect(console.warnings).toEqual([])
     } finally {
@@ -143,6 +163,6 @@ describe('Science preset recorded session', () => {
   })
 
   it.skipIf(mode !== 'replay')('keeps the selected generation and sidecar ownership closed', async () => {
-    await assertFixtureInventory(directory, ['session.v3.jsonl', 'system-prompt.expected.md', 'tool-schemas.expected.json', 'ui.expected.md'])
+    await assertFixtureInventory(directory, ['session.v3.jsonl', 'system-prompt.expected.md', 'tool-schemas.expected.json', 'ui.expected.md', 'process.expected.md'])
   })
 })

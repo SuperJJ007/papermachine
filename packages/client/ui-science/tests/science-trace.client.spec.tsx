@@ -9,7 +9,8 @@ import { ScienceArtifactId, ScienceRunId } from '@deepseek-ai/dsh-science-sessio
 import type { ScienceClientProjection, ScienceClientRun } from '@deepseek-ai/dsh-science-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { testScienceSelectionStore } from './selection-store-test-helpers.client.ts'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
+import { ScienceTraceStepDetails, scienceTraceCodePreview } from '../src/client/ScienceTraceStepDetails.tsx'
 import {
   formatScienceTraceDuration, scienceTraceStepTitle, scienceTraceStepStatus, ScienceTraceView, type ScienceTraceViewProps,
 } from '../src/client/ScienceTraceView.tsx'
@@ -65,13 +66,14 @@ function assistant(turn: number, seq: number, calls: readonly string[], text = '
 function run(
   callId: string,
   index: number,
-  status: 'running' | 'success' | 'failed' | 'timed-out' | 'cancelled' = 'success',
+  status: 'running' | 'success' | 'failed' | 'timed-out' | 'cancelled' | 'interrupted' = 'success',
 ): ScienceClientRun {
   const base = {
     runId: ScienceRunId(`run-${String(index)}`), language: 'python' as const, toolCallId: callId as never,
     requestHeaderSeq: index, environmentRevision: 1, environmentFingerprintPreview: 'abc',
     startedAt: index * 1_000, codeSha256: 'a'.repeat(64), kernelEpoch: 1,
   }
+  if (status === 'interrupted') return { ...base, status, finishedAt: index * 1_000 + 500, interruptedAtSeq: 10 }
   return status === 'running' ? { ...base, status } : {
     ...base, status, finishedAt: index * 1_000 + 500, stdoutBytes: 0, stderrBytes: 0,
     stdoutTruncated: false, stderrTruncated: false,
@@ -236,6 +238,82 @@ describe('Science process model', () => {
     expect(model.unassigned).toEqual({ runs: [], artifacts: [] })
   })
 
+  it('restores raw input and results independently without changing projected call or artifact ownership', () => {
+    const artifact = { ...fixture().science.artifacts[0]!, turn: 3, step: 2 }
+    const science = projection({ artifacts: [artifact], runs: [{ ...run('early', 1), turn: 3, step: 2 }], trace: {
+      turns: [{ turn: 3, startSeq: 10, startTime: 1, endSeq: 20, endTime: 10 }],
+      calls: [{ seq: 12, time: 2, callId: ToolCallId('early'), turn: 3, step: 2, name: 'run_python' }],
+    } })
+    const make = (nodes: readonly ConversationNode[]) => buildScienceTraceModel(nodes, science, new Map(),
+      summariesFor(science.artifacts as unknown as Record<string, unknown>[])).groups[0]!
+    const missing = make([])
+    expect(missing.steps[0]!.members[0]).toMatchObject({ argsRaw: undefined, result: undefined,
+      title: { kind: 'run', language: 'python' }, callId: 'early', anchor: 'call:early' })
+    const view = (nodes: readonly ConversationNode[]) => <ScienceTraceStepDetails
+      step={make(nodes).steps[0]!} titleOf={scienceTraceStepTitle} t={t} />
+    const rendered = render(view([]))
+    expect(screen.getByText('Input arguments unavailable in loaded history')).toBeTruthy()
+    expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Input arguments' })).toBeNull()
+    expect(scienceTraceCodePreview(missing.steps[0]!.members[0])).toBeUndefined()
+
+    rendered.rerender(view([result('early', false)]))
+    expect(screen.getByText('Input arguments unavailable in loaded history')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('(empty)')
+    expect(screen.queryByText('Result unavailable in loaded history')).toBeNull()
+
+    for (const argsRaw of ['{}', '']) {
+      rendered.rerender(view([step(11, 9, [{ name: 'run_python', callId: 'early', argsRaw }], 8)]))
+      expect(screen.queryByText('Input arguments unavailable in loaded history')).toBeNull()
+      expect(screen.getByRole('region', { name: 'Input arguments' }).querySelector('pre')?.textContent).toBe(argsRaw || '(empty)')
+      expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
+    }
+    const restored = [step(11, 9, [{ name: 'run_python', callId: 'early', argsRaw: '{"code":"print(42)","timeout":30}' }], 8), result('early', false)]
+    rendered.rerender(view(restored))
+    expect(screen.getByRole('region', { name: 'Code' }).textContent).toContain('print(42)')
+    expect(screen.getByRole('region', { name: 'Input arguments' }).textContent).toContain('"timeout": 30')
+    expect(screen.queryByText('Input arguments unavailable in loaded history')).toBeNull()
+    const loaded = make(restored)
+    expect(loaded.turn).toBe(3)
+    expect(loaded.steps[0]).toMatchObject({ step: 2, anchor: 'call:early' })
+    expect(loaded.steps[0]!.artifacts).toEqual(missing.steps[0]!.artifacts)
+    expect(loaded.steps[0]!.artifacts).toMatchObject([{ artifactId: artifact.artifactId, version: artifact.version }])
+  })
+
+  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled', 'interrupted'] as const)(
+    'retains the recorded %s status independently of unavailable results', (status) => {
+      const model = build([], { runs: [run('early', 1, status)], trace: { turns: [], calls: [
+        { seq: 1, time: 1, callId: ToolCallId('early'), turn: 1, step: 1, name: 'run_r' },
+      ] } })
+      const row = model.groups[0]!.steps[0]!
+      expect(row.runStatus).toBe(status)
+      expect(row.members[0].result).toBeUndefined()
+      expect(row.title).toEqual({ kind: 'run', language: 'python' })
+    },
+  )
+  it.each([['en', en], ['zh', zh]] as const)('localizes missing payloads independently from loaded empty values in %s', (_locale, dictionary) => {
+    const localT = ((key: keyof typeof en) => dictionary[key]) as TranslateNS<'science'>
+    const model = build([], { trace: { turns: [], calls: [
+      { seq: 1, time: 1, callId: ToolCallId('missing'), turn: 1, step: 1, name: 'run_python' },
+    ] } })
+    const row = model.groups[0]!.steps[0]!
+    const rendered = render(<ScienceTraceStepDetails step={row} titleOf={scienceTraceStepTitle} t={localT} />)
+    expect(screen.getByText(dictionary['trace.detail.inputUnavailable'])).toBeTruthy()
+    expect(screen.getByText(dictionary['trace.detail.resultUnavailable'])).toBeTruthy()
+    const loaded = build([step(1, 1, [{ name: 'run_python', argsRaw: '{}', callId: 'empty' }]), result('empty', false)])
+    rendered.rerender(<ScienceTraceStepDetails step={loaded.groups[0]!.steps[0]!} titleOf={scienceTraceStepTitle} t={localT} />)
+    expect(screen.queryByText(dictionary['trace.detail.inputUnavailable'])).toBeNull()
+    expect(screen.queryByText(dictionary['trace.detail.resultUnavailable'])).toBeNull()
+    expect(screen.getByRole('region', { name: dictionary['trace.detail.input'] }).textContent).toContain('{}')
+    expect(screen.getByRole('region', { name: dictionary['trace.detail.output'] }).textContent).toContain(dictionary['trace.detail.empty'])
+  })
+
+  it('keeps an unloaded R call recognizable before a run record exists', () => {
+    expect(build([], { trace: { turns: [], calls: [
+      { seq: 1, time: 1, callId: ToolCallId('r'), turn: 1, step: 1, name: 'run_r' },
+    ] } }).groups[0]!.steps[0]!.title).toEqual({ kind: 'run', language: 'r' })
+  })
+
   it('places a run-auto artifact version without an owning call by its store time instead of leaving it unassigned', () => {
     // `saveArtifactAs` ("Save a copy") commits a run-auto version between
     // turns, when no run_python/run_r/annotate_artifact call is open: the
@@ -312,7 +390,7 @@ describe('Science process model', () => {
     expect(scienceTracePips(group)[1]?.title).toEqual({ kind: 'read', name: 'b' })
     expect(model.groups[1]?.steps).toHaveLength(1)
   })
-  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled'] as const)('uses authoritative run %s over the result error flag', (status) => {
+  it.each(['running', 'success', 'failed', 'timed-out', 'cancelled', 'interrupted'] as const)('uses authoritative run %s over the result error flag', (status) => {
     const model = build([step(1, 1, [{ name: 'run_python', callId: 'r' }]), result('r', true)], { runs: [run('r', 1, status)] })
     expect(model.groups[0]?.steps[0]).toMatchObject({ runStatus: status, failed: status !== 'running' && status !== 'success',
       durationMs: status === 'running' ? undefined : 500 })
@@ -520,7 +598,7 @@ describe('Science process presentation', () => {
     mount([step(1, 1, [{ name, argsRaw }])])
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: label }))
-    expect(screen.getByText('Result not yet recorded')).toBeTruthy()
+    expect(screen.getByText('Result unavailable in loaded history')).toBeTruthy()
     const code = screen.queryByRole('region', { name: 'Code' })
     if (argsRaw.includes('"code":"')) {
       expect(code).toBeTruthy()
@@ -543,12 +621,12 @@ describe('Science process presentation', () => {
     expect(screen.getByText('1 non-text result blocks (image)')).toBeTruthy()
     expect(screen.queryByText(/PRIVATE_IMAGE_REF/u)).toBeNull()
   })
-  it('shows an empty recorded output distinctly from a result that has not arrived', () => {
+  it('shows an empty recorded output distinctly from an unavailable result', () => {
     mount([step(1, 1, [{ name: 'run_python', callId: 'empty', argsRaw: '{"code":"pass"}' }]), result('empty', false)])
     fireEvent.click(screen.getByRole('button', { name: /Expand steps/u }))
     fireEvent.click(within(screen.getByRole('list')).getByRole('button', { name: 'Python run' }))
     expect(screen.getByRole('region', { name: 'Tool result' }).textContent).toContain('(empty)')
-    expect(screen.queryByText('Result not yet recorded')).toBeNull()
+    expect(screen.queryByText('Result unavailable in loaded history')).toBeNull()
   })
 
   it('toggles the whole card while preserving independent controls and text selection', async () => {
@@ -646,7 +724,7 @@ describe('Science process presentation', () => {
     expect(inspectCall).not.toHaveBeenCalled()
     expect(screen.getByRole('region', { name: 'Read file a' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Read file b' })).toBeTruthy()
-    expect(screen.getAllByText('Result not yet recorded')).toHaveLength(2)
+    expect(screen.getAllByText('Result unavailable in loaded history')).toHaveLength(2)
     expect(selectDetailed).not.toHaveBeenCalled()
     expect(screen.getByText('No artifacts')).toBeTruthy()
     expect(screen.getByText('Request unavailable for this turn')).toBeTruthy()

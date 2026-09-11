@@ -55,8 +55,9 @@ export type ScienceTraceStepTitle =
 /** One real call, retained separately even when its list row is merged. */
 export interface ScienceTraceStepMember {
   readonly callId: string
-  /** Logged arguments and result; details are mounted only when requested. */
-  readonly argsRaw: string
+  /** Raw arguments from loaded conversation nodes; undefined preserves missing input separately from `{}`. */
+  readonly argsRaw: string | undefined
+  /** A loaded result, including empty content; absence does not establish execution status. */
   readonly result: Extract<ConversationNode, { kind: 'tool-result' }> | undefined
   readonly run: ScienceClientRun | undefined
   readonly title: ScienceTraceStepTitle
@@ -194,7 +195,7 @@ function runDuration(run: ScienceClientRun): number | undefined {
 interface TraceCall {
   readonly callId: string
   readonly name: string
-  readonly argsRaw: string
+  readonly argsRaw: string | undefined
   readonly turn: number
   readonly step: number
   readonly seq: number
@@ -220,6 +221,12 @@ function stepKind(name: string): ScienceTraceStepKind {
 
 function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceTraceStepTitle {
   const fallback = { kind: 'tool', name: call.name } as const
+  if (call.name === 'run_python' || call.name === 'run_r') {
+    return { kind: 'run', language: run?.language ?? (call.name === 'run_r' ? 'r' : 'python') }
+  }
+  if (call.name === 'get_science_state') return { kind: 'state' }
+  if (call.name.startsWith('subagent')) return { kind: 'delegate' }
+  if (call.argsRaw === undefined) return fallback
   let args: unknown
   try { args = JSON.parse(call.argsRaw) }
   catch {
@@ -228,8 +235,6 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
   }
   if (typeof args !== 'object' || args === null || Array.isArray(args)) return fallback
   switch (call.name) {
-    case 'run_python': case 'run_r':
-      return { kind: 'run', language: run?.language ?? (call.name === 'run_r' ? 'r' : 'python') }
     case 'read': case 'read_image':
       return 'file_path' in args && typeof args.file_path === 'string'
         ? { kind: call.name === 'read' ? 'read' : 'read-image', name: basename(args.file_path) } : fallback
@@ -238,7 +243,6 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
       const pattern = args.pattern
       return { kind: call.name, pattern: /^(?:[/\\]|[a-z]:[/\\])/iu.test(pattern) ? basename(pattern) : pattern }
     }
-    case 'get_science_state': return { kind: 'state' }
     case 'annotate_artifact':
       return 'logical_name' in args && typeof args.logical_name === 'string'
         && 'title' in args && typeof args.title === 'string'
@@ -246,7 +250,7 @@ function stepTitle(call: TraceCall, run: ScienceClientRun | undefined): ScienceT
           version: 'version' in args && typeof args.version === 'number' ? args.version : undefined, title: shortTitle(args.title) } : fallback
     case 'publish_outcome':
       return 'title' in args && typeof args.title === 'string' ? { kind: 'publish', title: shortTitle(args.title) } : fallback
-    default: return call.name.startsWith('subagent') ? { kind: 'delegate' } : fallback
+    default: return fallback
   }
 }
 
@@ -342,7 +346,7 @@ export function buildScienceTraceModel(
     ? [...loadedCalls.values()]
     : science.trace.calls.map(call => ({
       ...call,
-      argsRaw: loadedCalls.get(call.callId)?.argsRaw ?? '{}',
+      argsRaw: loadedCalls.get(call.callId)?.argsRaw,
     }))
   const callTurns = new Map(authoritativeCalls.map(call => [call.callId, call.turn]))
   const calls = new Map(authoritativeCalls.map(call => [call.callId, call]))

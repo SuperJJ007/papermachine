@@ -1,6 +1,8 @@
 import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 /** Cold restore keeps complete Science trajectory ownership beyond the first history page. */
 import { Buffer } from 'node:buffer'
+import { mkdir } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -190,6 +192,31 @@ describe('web e2e: cold Science trajectory restore', () => {
     expect(await firstTurn.innerText()).toContain('Request unavailable for this turn')
     expect(await firstTurn.innerText()).toContain('Runs 3')
     expect(await process.locator('article[data-anchor="turn:4"]').innerText()).toContain('Runs 2')
+    await firstTurn.getByRole('button', { name: /Expand steps/u }).click()
+    const firstRun = firstTurn.locator('li[data-anchor="call:cold-restore-call-1-2"]')
+    await firstRun.getByRole('button', { name: 'Python run', exact: true }).click()
+    const details = firstTurn.locator('[data-call-id="cold-restore-call-1-2"]')
+    expect(await details.innerText()).toContain('Input arguments unavailable in loaded history')
+    expect(await details.innerText()).toContain('Result unavailable in loaded history')
+    expect(await details.getByRole('region', { name: 'Input arguments' }).count()).toBe(0)
+    expect(await details.getByRole('region', { name: 'Code' }).count()).toBe(0)
+    expect(await firstRun.innerText()).toContain('Success')
+    expect(await firstRun.getByRole('button', { name: 'result-1.png v1', exact: true }).count()).toBe(1)
+    const evidenceDir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+    await mkdir(evidenceDir, { recursive: true })
+    await page.screenshot({ path: `${evidenceDir}/science-process-unavailable.png`, fullPage: true })
+    expect(await page.getByRole('tab', { name: 'Process', exact: true }).getAttribute('aria-selected')).toBe('true')
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click()
+    await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+    await page.getByRole('tab', { name: 'Process', exact: true }).click()
+    await expect.poll(() => details.innerText()).toContain('value_1_2 = 3')
+    expect(await details.innerText()).toContain('status: success')
+    expect(await details.innerText()).not.toContain('unavailable in loaded history')
+    expect(await firstTurn.innerText()).toContain('Redacted request 1.')
+    expect(await firstRun.getByRole('button', { name: 'result-1.png v1', exact: true }).count()).toBe(1)
+    expect(await process.getByRole('region', { name: 'Unassigned history' }).count()).toBe(0)
+    expect(await process.innerText()).toContain('Turns 12 · Steps 29 · Runs 19 · Artifacts 4')
+    await page.screenshot({ path: `${evidenceDir}/science-process-restored.png`, fullPage: true })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

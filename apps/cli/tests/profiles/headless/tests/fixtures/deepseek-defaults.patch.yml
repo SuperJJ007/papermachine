@@ -10,7 +10,7 @@
     baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
     thinking: enabled
     reasoningEffort: low
-    streamIdleTimeoutMs: 150
+    # Adapter fake-clock tests own idle deadlines; this subprocess uses the deployment default.
 
 - id: agent-loop
   config:

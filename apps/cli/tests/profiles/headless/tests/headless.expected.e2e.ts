@@ -444,8 +444,8 @@ describe('headless stream-json snapshots', () => {
     `)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('keeps provider comments alive and sends DeepSeek defaults through the one-shot app', async () => {
-    const server = await deepseekDefaultsServer()
+  it('sends DeepSeek defaults through an SSE comment stream in the one-shot app', async () => {
+    const server = await deepseekDefaultsServer({ waitForTitleRequest: true })
     try {
       const result = await runLoaderSmoke({
         label: 'DeepSeek adapter defaults headless stream-json snapshot',

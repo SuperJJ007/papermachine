@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-science-artifact-store",
   "description": "Project-owned Science artifact registry and content-addressed version store",
-  "version": "0.1.5-rc.1",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },

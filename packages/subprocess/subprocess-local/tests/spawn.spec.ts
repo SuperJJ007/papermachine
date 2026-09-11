@@ -137,7 +137,8 @@ async function waitGone(pid: number, timeoutMs = 5_000): Promise<void> {
         const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3)
         if (state === 'Z' || state === 'X') return
       } catch (error: unknown) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+        // The task can vanish between the liveness probe and the /proc read.
+        if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return
         throw error
       }
     }

@@ -31,6 +31,7 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
+  openScienceSeed,
   seedSession,
   watchConsole,
   webSnapshotMode,
@@ -522,43 +523,11 @@ describe('web e2e: Science chart and Outcome replay', () => {
     await scaffold?.close()
   })
 
-  /**
-   * Center-column content uniquely identifies which of the two seeded
-   * Sessions is current (a freshly seeded row's sidebar label falls back to
-   * the shared workspace basename until opened once, and selecting a row
-   * also promotes it to most-recently-used — reordering the list — so
-   * neither the label nor the row's position is a stable selector).
-   */
-  async function currentSeedIdentity(): Promise<'science' | 'standard' | 'unknown'> {
-    if (await page.getByText('Replay the accepted Science result.', { exact: true }).count() > 0) return 'science'
-    if (await page.getByText('DONE', { exact: true }).count() > 0) return 'standard'
-    return 'unknown'
-  }
-
-  /**
-   * Select the Session named `title` (one of {@link SEED_TITLE},
-   * {@link STANDARD_SEED_TITLE}) — the only two rows this scaffold ever
-   * seeds — by content rather than position: while the wrong one is current,
-   * click whichever sibling row is not `aria-selected` to reach the other.
-   */
+  /** Open either seed by its recorded request after the workspace catalog is ready. */
   async function openSessionByTitle(title: string): Promise<void> {
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    if (await page.locator('[role="treeitem"][aria-selected]').count() === 0) await groupRow.click()
-    const want = title === SEED_TITLE ? 'science' : 'standard'
-    await expect.poll(async () => {
-      if (await currentSeedIdentity() === want) return true
-      const rows = page.locator('[role="treeitem"]')
-      const rowCount = await rows.count()
-      for (let index = 1; index < rowCount; index += 1) {
-        const row = rows.nth(index)
-        if (await row.getAttribute('aria-selected') !== 'true') {
-          await row.click()
-          break
-        }
-      }
-      return false
-    }, { timeout: 20_000, interval: 500 }).toBe(true)
+    await openScienceSeed(page, title === SEED_TITLE
+      ? 'Replay the accepted Science result.'
+      : 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.')
   }
 
   async function expandProcessGroups(): Promise<void> {

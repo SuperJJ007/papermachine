@@ -87,12 +87,23 @@ export function parseCoveragePartitionCount(raw: string | undefined): number | u
  * @returns the Vitest arguments applying that budget, empty when unset.
  */
 export function coverageTestTimeoutArgs(raw: string | undefined): string[] {
-  if (raw === undefined || raw === '') return []
+  const config = coverageTestTimeoutConfig(raw)
+  if (config.testTimeout === undefined) return []
+  return [`--testTimeout=${raw}`, `--expect.poll.timeout=${raw}`, `--hookTimeout=${raw}`]
+}
+
+/** Apply the lane budget directly to projects; Vitest 4 does not forward CLI hook/poll overrides to them. */
+export function coverageTestTimeoutConfig(raw: string | undefined): {
+  testTimeout?: number
+  hookTimeout?: number
+  expect?: { poll: { timeout: number } }
+} {
+  if (raw === undefined || raw === '') return {}
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== raw) {
     throw new Error(`${COVERAGE_TEST_TIMEOUT_ENV} must be a positive integer, got ${JSON.stringify(raw)}.`)
   }
-  return [`--testTimeout=${raw}`, `--expect.poll.timeout=${raw}`, `--hookTimeout=${raw}`]
+  return { testTimeout: parsed, hookTimeout: parsed, expect: { poll: { timeout: parsed } } }
 }
 
 /** Remove pnpm's package-script separator before forwarding Vitest arguments. */

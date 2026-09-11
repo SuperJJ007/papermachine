@@ -188,19 +188,22 @@ afterEach(async () => {
 
 describe('SessionProjectionCache write policy', () => {
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
-    const { ctx, root } = await harness()
+    const { ctx, root, cache } = await harness()
+    const write = vi.spyOn(cache, 'write')
     const session = ctx.sessions.create(SessionId('turn-end'))
     mark(session, ['a'])
-    // Creation already wrote the init cut; the mark is throttled, so the
-    // stored row is still the creation-time cut (no marks folded).
-    await vi.waitFor(async () => {
-      expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
-    }, { timeout: 5_000 })
+    // Join the automatic creation write before observing the throttled cut.
+    expect(write).toHaveBeenCalledTimes(1)
+    await write.mock.results[0]!.value
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    write.mockClear()
     const end = endTurn(session)
-    await vi.waitFor(async () => {
-      expect((await storedRows(root, session.id))?.['cache-test/marks'])
-        .toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
-    }, { timeout: 5_000 })
+    // Await the mandatory-point write itself, including log flush and durable
+    // replacement, without issuing a manual write that could hide a missing trigger.
+    expect(write).toHaveBeenCalledExactlyOnceWith(session)
+    await write.mock.results[0]!.value
+    expect((await storedRows(root, session.id))?.['cache-test/marks'])
+      .toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
   })
 
   it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {

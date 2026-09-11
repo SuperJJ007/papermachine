@@ -42,7 +42,8 @@ function processCanExecute(pid: number): boolean {
     const state = stat.slice(stat.lastIndexOf(')') + 2).split(/\s+/, 1)[0]
     return !/^[ZXx]$/.test(state ?? '')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    // The task can vanish between the liveness probe and the /proc read.
+    if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return false
     throw error
   }
 }

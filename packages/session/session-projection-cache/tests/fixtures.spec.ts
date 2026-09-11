@@ -123,20 +123,23 @@ async function placeDoc(root: string, id: string, name: string): Promise<Fixture
  * format stamps, lineage, and the freshly folded title.
  */
 async function assertRewrite(ctx: Context, root: string, id: SessionId): Promise<void> {
+  const write = vi.spyOn(ctx.sessionProjectionCache, 'write')
   const session = ctx.sessions.create(id)
   session.append('fixtures-test/set-title', { title: '重写标题' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   const path = join(root, projectionCacheDomainSpec.name, 'sessions', `${id}.json`)
-  await vi.waitFor(async () => {
-    const doc = JSON.parse(await readFile(path, 'utf8')) as FixtureDoc
-    expect(doc.version).toBe(projectionCacheDomainSpec.version)
-    expect(doc.record.identity).toMatchObject({
-      formatVersion: SESSION_FORMAT_VERSION,
-      isSeeded: false,
-      inheritedEventCount: 0,
-    })
-    expect(doc.record.rows['title']?.val).toBe('重写标题')
-  }, { timeout: 5_000 })
+  // Creation and turn/end each enqueue a write. Join the final automatic
+  // write's durability promise instead of racing Windows file replacement.
+  expect(write).toHaveBeenCalledTimes(2)
+  await write.mock.results[1]!.value
+  const doc = JSON.parse(await readFile(path, 'utf8')) as FixtureDoc
+  expect(doc.version).toBe(projectionCacheDomainSpec.version)
+  expect(doc.record.identity).toMatchObject({
+    formatVersion: SESSION_FORMAT_VERSION,
+    isSeeded: false,
+    inheritedEventCount: 0,
+  })
+  expect(doc.record.rows['title']?.val).toBe('重写标题')
 }
 
 afterEach(async () => {

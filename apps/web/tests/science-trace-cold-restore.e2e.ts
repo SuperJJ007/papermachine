@@ -13,7 +13,7 @@ import {
 } from '@deepseek-ai/dsh-science-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
-  launchWebScaffold, seedSession, watchConsole, type WebScaffold,
+  launchWebScaffold, openScienceSeed, seedSession, watchConsole, type WebScaffold,
 } from './science-scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
@@ -175,8 +175,7 @@ describe('web e2e: cold Science trajectory restore', () => {
     page = await newEnglishPage(browser, 1280)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await page.getByRole('treeitem').first().click()
-    await page.locator('[role="treeitem"][aria-selected]').filter({ hasNotText: 'New Session' }).first().click()
+    await openScienceSeed(page, 'Redacted request 12.')
     await page.getByText('Redacted request 12.', { exact: true }).waitFor()
     await page.getByRole('tab', { name: 'Process', exact: true }).click()
   }, 120_000)

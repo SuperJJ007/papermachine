@@ -1,0 +1,42 @@
+{
+  "candidate": "0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+  "baseline": "7545be293debb9623e439e2257383bf4b39cf3da",
+  "rc1": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+  "rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+  "p1_commits": [
+    "0888810bd4 release(dsh): align owned package versions to 0.1.5-rc.2",
+    "80a3e788bf Merge tag 'dsh-v0.1.5-rc.2' into codex/replant-0.1.5-rc2",
+    "fb2c4b9e69 Merge pull request #3978 from deepseek-harness/worktree/release-dsh-0.1.5-rc.2",
+    "a305303422 release(dsh): 0.1.5-rc.2",
+    "2107e4697e Merge pull request #3973 from deepseek-harness/worktree/release-0.1.5-backport-feedback-deliverables",
+    "060323d8e2 feat(web): backport feedback and file refinements to 0.1.5"
+  ],
+  "merge_forward_command": "git merge --no-ff --no-edit dsh-v0.1.5-rc.2",
+  "merge_conflicts_with_pairing_driver": [],
+  "merge_conflicts_without_pairing_driver": [
+    "packages/client/ui-chat/README.i18n.yaml",
+    "packages/client/ui-primitives/README.i18n.yaml"
+  ],
+  "merge_source_files_changed": 334,
+  "p1_delta_shortstat": "343 files changed, 1059 insertions(+), 1059 deletions(-)",
+  "current_range": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e..0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+  "current_range_shortstat": "1830 files changed, 130922 insertions(+), 3642 deletions(-)",
+  "current_range_file_count": 1830,
+  "current_range_commit_count": 55,
+  "version_alignment": {
+    "packages": 9,
+    "from": "0.1.5-rc.1",
+    "to": "0.1.5-rc.2",
+    "reason": "dsh release members must share one version (scripts/release/families.ts verifyVersions)",
+    "tool": "scripts/release/bump.ts writeVersion rule"
+  },
+  "retained_private_patch_rows": 52,
+  "ledger_historical_total": [
+    2560,
+    737
+  ],
+  "ledger_current_total": [
+    5003,
+    764
+  ]
+}

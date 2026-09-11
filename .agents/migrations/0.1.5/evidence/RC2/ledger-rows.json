@@ -1,0 +1,667 @@
+{
+ "candidate": "0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+ "rows": [
+  {
+   "path": "packages/api/remotes",
+   "hist": [
+    6,
+    3
+   ],
+   "current": [
+    6,
+    3
+   ],
+   "changed": false
+  },
+  {
+   "path": "packages/api/settings-controller",
+   "hist": [
+    1,
+    0
+   ],
+   "current": [
+    7,
+    5
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/attachment/attachment",
+   "hist": [
+    17,
+    2
+   ],
+   "current": [
+    18,
+    3
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/attachment/attachment-local",
+   "hist": [
+    71,
+    4
+   ],
+   "current": [
+    72,
+    5
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/boot/app-boot",
+   "hist": [
+    4,
+    0
+   ],
+   "current": [
+    9,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/bundle/headless",
+   "hist": [
+    19,
+    10
+   ],
+   "current": [
+    62,
+    11
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/connection",
+   "hist": [
+    2,
+    0
+   ],
+   "current": [
+    4,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/locale",
+   "hist": [
+    2,
+    1
+   ],
+   "current": [
+    3,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-agent-preset",
+   "hist": [
+    49,
+    45
+   ],
+   "current": [
+    67,
+    46
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-permission-presets",
+   "hist": [
+    2,
+    0
+   ],
+   "current": [
+    3,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-settings",
+   "hist": [
+    13,
+    5
+   ],
+   "current": [
+    24,
+    8
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-settings-models",
+   "hist": [
+    36,
+    30
+   ],
+   "current": [
+    37,
+    31
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-settings-plugins",
+   "hist": [
+    3,
+    3
+   ],
+   "current": [
+    4,
+    4
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/client/ui-theme",
+   "hist": [
+    1,
+    0
+   ],
+   "current": [
+    2,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/compaction/compaction-tool-result-pruner",
+   "hist": [
+    98,
+    7
+   ],
+   "current": [
+    99,
+    8
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/core/agent-loop",
+   "hist": [
+    35,
+    2
+   ],
+   "current": [
+    36,
+    3
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/e2b/e2b",
+   "hist": [
+    4,
+    0
+   ],
+   "current": [
+    5,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/e2b/subprocess-e2b",
+   "hist": [
+    109,
+    17
+   ],
+   "current": [
+    171,
+    18
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/experimental/webworker-runtime",
+   "hist": [
+    3,
+    0
+   ],
+   "current": [
+    39,
+    17
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/extensions/tool-cordis",
+   "hist": [
+    90,
+    27
+   ],
+   "current": [
+    673,
+    13
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/fs/tool-fs",
+   "hist": [
+    435,
+    47
+   ],
+   "current": [
+    436,
+    48
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/fs/tool-fs-search",
+   "hist": [
+    5,
+    1
+   ],
+   "current": [
+    6,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/llm/plugin-package-inventory-deepseek",
+   "hist": [
+    1,
+    1
+   ],
+   "current": [
+    2,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/lsp/lsp-stdio",
+   "hist": [
+    1,
+    0
+   ],
+   "current": [
+    2,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/mcp/mcp-client",
+   "hist": [
+    411,
+    47
+   ],
+   "current": [
+    443,
+    48
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/preset/agent-presets",
+   "hist": [
+    178,
+    68
+   ],
+   "current": [
+    220,
+    68
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/sandbox/sandbox",
+   "hist": [
+    231,
+    2
+   ],
+   "current": [
+    232,
+    3
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/sandbox/sandbox-local",
+   "hist": [
+    13,
+    7
+   ],
+   "current": [
+    14,
+    8
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/sandbox/sandbox-windows-acl",
+   "hist": [
+    179,
+    3
+   ],
+   "current": [
+    180,
+    4
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/session/session-attachment-index",
+   "hist": [
+    50,
+    34
+   ],
+   "current": [
+    1087,
+    0
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/session/session-projection",
+   "hist": [
+    34,
+    11
+   ],
+   "current": [
+    89,
+    12
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/settings/settings",
+   "hist": [
+    89,
+    3
+   ],
+   "current": [
+    99,
+    5
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/bash-local",
+   "hist": [
+    6,
+    5
+   ],
+   "current": [
+    7,
+    6
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/bash-sandbox",
+   "hist": [
+    31,
+    155
+   ],
+   "current": [
+    32,
+    156
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/pwsh-local",
+   "hist": [
+    6,
+    3
+   ],
+   "current": [
+    7,
+    4
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/pwsh-sandbox",
+   "hist": [
+    17,
+    136
+   ],
+   "current": [
+    18,
+    137
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/tool-bash-persistent",
+   "hist": [
+    1,
+    1
+   ],
+   "current": [
+    2,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/shell/tool-pwsh-persistent",
+   "hist": [
+    1,
+    1
+   ],
+   "current": [
+    2,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/subagent/subagent-acp",
+   "hist": [
+    14,
+    10
+   ],
+   "current": [
+    15,
+    11
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/subagent/subagent-claude-code",
+   "hist": [
+    3,
+    1
+   ],
+   "current": [
+    4,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/subagent/subagent-codex",
+   "hist": [
+    3,
+    1
+   ],
+   "current": [
+    4,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/subprocess/subprocess",
+   "hist": [
+    59,
+    7
+   ],
+   "current": [
+    60,
+    8
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/subprocess/subprocess-local",
+   "hist": [
+    159,
+    24
+   ],
+   "current": [
+    218,
+    26
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/terminal/terminal-bash",
+   "hist": [
+    17,
+    10
+   ],
+   "current": [
+    18,
+    11
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/terminal/tool-terminal",
+   "hist": [
+    1,
+    1
+   ],
+   "current": [
+    2,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/test-support/client-runtime",
+   "hist": [
+    2,
+    0
+   ],
+   "current": [
+    4,
+    1
+   ],
+   "changed": true
+  },
+  {
+   "path": "packages/test-support/session-snapshot",
+   "hist": [
+    2,
+    2
+   ],
+   "current": [
+    331,
+    9
+   ],
+   "changed": true
+  },
+  {
+   "path": "scripts/check-workspace-constraints.spec.ts",
+   "hist": [
+    21,
+    0
+   ],
+   "current": [
+    45,
+    0
+   ],
+   "changed": true
+  },
+  {
+   "path": "scripts/check-workspace-constraints.ts",
+   "hist": [
+    5,
+    0
+   ],
+   "current": [
+    16,
+    2
+   ],
+   "changed": true
+  },
+  {
+   "path": "scripts/gen-cordis-catalog.ts",
+   "hist": [
+    6,
+    0
+   ],
+   "current": [
+    53,
+    0
+   ],
+   "changed": true
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.spec.ts",
+   "hist": [
+    10,
+    0
+   ],
+   "current": [
+    10,
+    0
+   ],
+   "changed": false
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.ts",
+   "hist": [
+    4,
+    0
+   ],
+   "current": [
+    4,
+    0
+   ],
+   "changed": false
+  }
+ ],
+ "unchanged": [
+  {
+   "path": "packages/api/remotes",
+   "hist": [
+    6,
+    3
+   ],
+   "current": [
+    6,
+    3
+   ],
+   "changed": false
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.spec.ts",
+   "hist": [
+    10,
+    0
+   ],
+   "current": [
+    10,
+    0
+   ],
+   "changed": false
+  },
+  {
+   "path": "scripts/verify-application-entrypoints.ts",
+   "hist": [
+    4,
+    0
+   ],
+   "current": [
+    4,
+    0
+   ],
+   "changed": false
+  }
+ ]
+}

@@ -1,8 +1,8 @@
 {
  "base": "rc.2",
  "upstream_rc2": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
- "candidate": "42727936501003d214001ef74013a511878c35ae",
- "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..42727936501003d214001ef74013a511878c35ae",
+ "candidate": "0888810bd4c41e6b80495df8bbf1eb0c2de50865",
+ "range": "fb2c4b9e698e30edb738bca4cf0618587db7d203..0888810bd4c41e6b80495df8bbf1eb0c2de50865",
  "historical_range": "ce76a86204..6528088e9f8c579024124add2642cde5a062ff16",
  "row_count": 52,
  "rows_matching_historical": 31,
@@ -640,5 +640,6 @@
    ],
    "drifted": false
   }
- ]
+ ],
+ "note_delivery_sha": "the carrying delivery commit is reported in the handoff write-up; the measured basis here is the immutable code candidate"
 }

@@ -15,6 +15,8 @@ Science 录制会话场景默认在仓库下创建隔离的 harness 主目录。
 
 `science-mixed.snapshot.ts` 通过包含 Science、文件系统和 `present` 工具的私有测试预设录制一个真实模型回合。Science runtime 保留其沙箱规则，并使用与 `science-preset.snapshot.ts` 共用的精确操作内核 fixture；文件系统与交付工具正常执行。回放会先检查持久化 PNG 字节、完整工作区预期结果、推理和显式交付，再比较浏览器对话记录。出货 Science 预设保留独立的受限工具断言。
 
+混合回放还验证原生已完成回合的过程展开、持久化的 Normal/Compact 设置以及浏览器重载。测试断言最终回答和两类交付组保持可见，同时物理 Session 日志、持久化事件和选定录制的字节内容不变。`ui-chat` 负责流式、取消和不完整历史的策略测试；`ui-science` 负责 Python/R 单元格详情及仅含推理的组合场景。单元格输出展开控件不替代原生回合级开关。
+
 ## 完成状态观察
 
 依赖状态的用例使用 Workspace、接纳、附件和模型流屏障，区分可见中间状态与已完成操作。详情关闭等待框架过渡结束；归档验证为 seed Session 设置显式标题，并跨重载跟踪该身份。参见 [CI fixture 同步决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。

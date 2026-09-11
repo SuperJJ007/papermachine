@@ -16,6 +16,8 @@ The Science recorded-session scenarios create their isolated harness homes benea
 
 `science-mixed.snapshot.ts` records one real model turn through a private test preset containing Science, filesystem, and `present` tools. The Science runtime retains its sandbox rules and uses the exact-operation kernel fixture shared with `science-preset.snapshot.ts`; the filesystem and delivery tools execute normally. Replay checks persisted PNG bytes, the complete workspace oracle, reasoning, and explicit delivery before comparing the browser transcript. The shipped Science preset keeps its independent restricted-tool assertions.
 
+The mixed replay also exercises native completed-turn process expansion, the persisted Normal/Compact setting, and browser reload. It asserts that the final answer and both delivery groups remain visible, while physical Session logs, persisted events, and the selected recording remain byte-for-byte unchanged. `ui-chat` owns the streaming, cancellation and partial-history policy tests; `ui-science` owns Python/R cell details and reasoning-only composition cases. Cell output disclosures do not replace the native turn-level control.
+
 ## Completion observations
 
 State-sensitive cases use Workspace, admission, attachment, and model-stream barriers to separate visible intermediate states from completed operations. Details close waits for frame transitions; archive verification assigns an explicit title to the seeded Session and follows that identity across reload. See the [CI fixture synchronization decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).

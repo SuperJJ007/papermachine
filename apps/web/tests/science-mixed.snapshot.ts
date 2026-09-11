@@ -1,6 +1,6 @@
 /** Real Science and filesystem tools producing mixed outcomes in one recorded turn. */
 import { createHash } from 'node:crypto'
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -18,6 +18,7 @@ import {
   type WebScaffold,
 } from './science-scaffold.ts'
 import { newEnglishPage } from './support.ts'
+import { readPersistedEvents } from './scaffold.ts'
 
 const directory = fileURLToPath(new URL('../../../snapshots/web/science-mixed', import.meta.url))
 const fixture = join(directory, 'session.v3.jsonl')
@@ -129,6 +130,7 @@ describe('Science mixed recorded outcomes', () => {
       await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).waitFor()
       const tail = page.locator('[data-turn-tail]').filter({ has: page.locator('[data-science-turn-artifacts]') })
       const assertMixedTail = async (): Promise<void> => {
+        expect(await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).isVisible()).toBe(true)
         expect(await tail.count()).toBe(1)
         expect(await tail.locator('[data-science-turn-artifacts]').isVisible()).toBe(true)
         expect(await tail.locator('[data-presented-files-row]').isVisible()).toBe(true)
@@ -161,6 +163,51 @@ describe('Science mixed recorded outcomes', () => {
         expect(await action.evaluate(element => element === document.activeElement)).toBe(true)
       }
       await page.screenshot({ path: join(evidence, 'science-mixed-keyboard.png'), fullPage: true })
+      const logBytes = async (): Promise<readonly [string, string][]> => {
+        const paths = (await readdir(scaffold!.persistenceRoot, { recursive: true }))
+          .filter(path => path.endsWith('.jsonl') || path.endsWith('.jsonl.zstd')).sort()
+        expect(paths.length).toBeGreaterThan(0)
+        return Promise.all(paths.map(async path => [path, (await readFile(join(scaffold!.persistenceRoot, path))).toString('base64')] as [string, string]))
+      }
+      const logsBefore = await logBytes()
+      const persistedBefore = JSON.stringify(await readPersistedEvents(scaffold!, handle!.agent.session.id))
+      const fixtureBefore = await readFile(fixture)
+      const process = page.locator('[data-turn-process]')
+      expect(await process.count()).toBe(1)
+      expect(await process.getAttribute('aria-expanded')).toBe('false')
+      expect(await page.locator('[data-turn-process-member][data-turn-process-hidden="true"]').count()).toBeGreaterThan(0)
+      await process.click()
+      await expect.poll(() => process.getAttribute('aria-expanded')).toBe('true')
+      expect(await page.locator('[data-turn-process-member][data-turn-process-hidden="true"]').count()).toBe(0)
+      await assertMixedTail()
+      await page.screenshot({ path: join(evidence, 'science-process-expanded.png'), fullPage: true })
+      await process.click()
+      await assertMixedTail()
+      await page.setViewportSize({ width: 1680, height: 1400 })
+      await tail.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(evidence, 'science-process-collapsed.png'), fullPage: true })
+      const setTranscript = async (from: string, to: string): Promise<void> => {
+        await page.getByRole('button', { name: 'Settings', exact: true }).click()
+        await page.getByRole('dialog').getByRole('button', { name: from, exact: true }).click()
+        await page.getByRole('menuitem', { name: to, exact: true }).click()
+        await page.keyboard.press('Escape')
+      }
+      await setTranscript('Compact', 'Normal')
+      await expect.poll(() => process.count()).toBe(0)
+      expect(await page.locator('[data-turn-process-member][data-turn-process-hidden="true"]').count()).toBe(0)
+      await assertMixedTail()
+      await page.reload({ waitUntil: 'load' })
+      await page.getByText('SCIENCE_MIXED_DONE', { exact: true }).waitFor()
+      expect(await process.count()).toBe(0)
+      await assertMixedTail()
+      await page.screenshot({ path: join(evidence, 'science-process-normal-restored.png'), fullPage: true })
+      await setTranscript('Normal', 'Compact')
+      await expect.poll(() => process.getAttribute('aria-expanded')).toBe('false')
+      await assertMixedTail()
+      expect(JSON.stringify(await readPersistedEvents(scaffold!, handle!.agent.session.id))).toBe(persistedBefore)
+      expect(await readFile(fixture)).toEqual(fixtureBefore)
+      expect(await logBytes()).toEqual(logsBefore)
+
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
       const dark = page.getByRole('dialog').getByRole('button', { name: 'Dark', exact: true })
       await dark.click()

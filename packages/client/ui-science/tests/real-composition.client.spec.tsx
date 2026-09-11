@@ -179,3 +179,26 @@ it.each(['ordinary', 'science', 'ordinary-first', 'science-first'] as const)('ke
     expect(entries()).toEqual(expected)
   }
 })
+
+it.each(['running', 'completed', 'cancelled', 'interrupted'] as const)('keeps reasoning-only Science content accessible for a %s turn', async (status) => {
+  const b = await bench()
+  const append = async (seq: number, type: string, data: unknown) => b.runtime.sessions.appendEvent(SESSION,
+    { type: 'event', event: { type, seq, time: seq, data, ...(type === 'assistant/message' ? { surfaceOp: 'append' } : {}) } as SessionEvent })
+  await append(1, 'turn/start', { turn: 1 })
+  await append(2, 'step/start', { turn: 1, step: 1 })
+  await append(3, 'assistant/message', { turn: 1, step: 1, message: {
+    role: 'assistant', content: [{ type: 'reasoning', text: 'Reasoning without a final answer' }],
+    source: { kind: 'model', provider: 'fixture', model: 'fixture' },
+  } })
+  if (status !== 'running') {
+    await append(4, 'step/end', { turn: 1, step: 1 })
+    await append(5, 'turn/end', { turn: 1, reason: { kind: status } })
+  }
+  const conversation = b.runtime.renderSlot('main', {}, { entryKey: 'conversation' })
+  const query = within(conversation.container)
+  expect(await query.findByText('Reasoning without a final answer')).toBeTruthy()
+  expect(conversation.container.querySelector('[data-turn-process]')).toBeNull()
+  expect(conversation.container.querySelector('[data-turn-process-member][data-turn-process-hidden]')).toBeNull()
+  fireEvent.click(query.getByRole('button', { name: /Think/ }))
+  expect(conversation.container.querySelector('[data-variant="think"]')?.getAttribute('data-expanded')).toBe('true')
+})

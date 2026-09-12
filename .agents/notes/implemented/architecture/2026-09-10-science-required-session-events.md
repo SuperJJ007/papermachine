@@ -24,6 +24,6 @@ The generated current event catalog recognizes all nine types. Native V3 persist
 
 ## Consequences
 
-PaperMachine 0.1.0 Science sessions are unreadable in the replant. Their files remain intact, and new sessions use V3. The [release note](../../../../docs/user/papermachine-0.1.3-release-notes.md) states this limitation. Header-only listing is not proof that the body can be opened. Generic upstream V0 sessions without Science events retain upstream migration support; this decision adds no blanket V0 ban.
+PaperMachine 0.1.0 Science sessions are unreadable in the replant. Their files remain intact, and new sessions use V3. The [release note](../../../../docs/user/papermachine-0.1.2-release-notes.md) states this limitation. Header-only listing is not proof that the body can be opened. Generic upstream V0 sessions without Science events retain upstream migration support; this decision adds no blanket V0 ban.
 
 The [storage regressions](../../../../packages/science/science-session/tests/persistence.spec.ts) exercise all nine types in plain and Zstandard V3 read/write round trips and reject each legacy type on read and write while preserving bytes and file identity. Note Remote tests verify required envelopes without an agent follow-up. [P3 acceptance](../../../migrations/0.1.5/P3.md) records real V0 evidence and both SDK projection refreshes. No upstream runtime package is patched for P3; persistence catalog output derives from owned Science JSDoc.

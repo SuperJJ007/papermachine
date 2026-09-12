@@ -12,7 +12,7 @@ function renderer(locale = 'en') {
   let publish: ((message: string) => void) | undefined
   const bridge = {
     state: async () => ({
-      locale: resolveDesktopLocale(locale), home: '/tmp/product-home', version: '0.1.3',
+      locale: resolveDesktopLocale(locale), home: '/tmp/product-home', version: '0.1.2',
       status: { kind: 'unbound' }, defaultSource: 'official',
       declaration: { packages: ['python', 'r-base'], estimatedDownloadBytes: 850000000, sources: [{ id: 'official', name: '<unsafe-name>' }] },
     }),
@@ -31,7 +31,7 @@ describe('onboarding renderer', () => {
     expect(window.document.querySelector('#summary')?.textContent).toBe('2 个软件包 · 下载 850 MB')
     expect(window.document.querySelector('option')?.textContent).toBe('<unsafe-name>')
     expect(window.document.querySelector('unsafe-name')).toBeNull()
-    expect(window.document.querySelector('#version')?.textContent).toBe('0.1.3')
+    expect(window.document.querySelector('#version')?.textContent).toBe('0.1.2')
   })
   it('blocks overlapping controls, presents progress, and restores retry after failure', async () => {
     const { window, bridge, progress } = renderer()

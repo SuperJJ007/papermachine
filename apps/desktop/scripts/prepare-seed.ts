@@ -31,6 +31,7 @@ import {
   verifyMacOSSeedStore,
 } from './macos-seed-store.ts'
 import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { isLocalAcceptance, signLocalSeedCode, verifyLocalCode } from './local-acceptance.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
@@ -162,14 +163,18 @@ async function main(): Promise<void> {
     rmSync(PNPM_BUILD_STATE, { recursive: true, force: true })
     await verifyOfflineInstallation(release)
     const targetPlatform = process.env.DSH_DESKTOP_TARGET_PLATFORM ?? process.platform
+    const localAcceptance = isLocalAcceptance(process.env, targetPlatform)
     let signedMachOFiles: number | undefined
     let macOSSigning: ReturnType<typeof resolveMacOSSigningEnvironment> | undefined
     if (targetPlatform === 'darwin') {
-      macOSSigning = resolveMacOSSigningEnvironment(process.env)
+      macOSSigning = localAcceptance
+        ? { signingIdentity: '-', teamId: '' }
+        : resolveMacOSSigningEnvironment(process.env)
       const signing = await signMacOSSeedStore(
         STORE_ROOT,
         resolveDesktopAppId(process.env),
         macOSSigning,
+        localAcceptance ? { signer: signLocalSeedCode } : {},
       )
       signedMachOFiles = signing.signedFiles
       process.stdout.write(
@@ -182,8 +187,8 @@ async function main(): Promise<void> {
     if (macOSSigning !== undefined && signedMachOFiles !== undefined) {
       const extractedStore = mkdtempSync(join(tmpdir(), 'dsh-desktop-seed-verification-'))
       try {
-        extractPnpmStoreArchives(SEED_ROOT, extractedStore)
-        const verified = verifyMacOSSeedStore(extractedStore, macOSSigning)
+        await extractPnpmStoreArchives(SEED_ROOT, extractedStore)
+        const verified = verifyMacOSSeedStore(extractedStore, macOSSigning, localAcceptance ? verifyLocalCode : undefined)
         if (verified !== signedMachOFiles) {
           throw new Error(`desktop seed: archived store contains ${verified} signed Mach-O files; expected ${signedMachOFiles}`)
         }

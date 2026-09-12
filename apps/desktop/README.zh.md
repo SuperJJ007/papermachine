@@ -23,6 +23,8 @@
 
 PaperMachine 依次使用 `PAPERMACHINE_HOME`、`~/.papermachine-home` 中保存的绝对路径或 `~/.papermachine` 作为数据根目录。它忽略继承的 `DSH_HOME`，并拒绝与官方 `~/.dsh` 重叠的路径（包括符号链接别名）。Electron 在获取单实例锁或发出 `ready` 事件前，将 `userData` 和 `sessionData` 均设为 `<home>/desktop/electron-user-data`。活动及暂存 Host 均通过 `PAPERMACHINE_HOME` 和 `DSH_HOME` 接收同一已解析根目录；后者是下文使用的 Harness 内部路径。内置 profile 包含本地第一方包集合中的 `science-app`。
 
+桌面应用为 Science 探测、内核和包安装在 Windows 上默认选择 `partial`，在 macOS 上默认选择 `full`，无需确认弹窗。`PAPERMACHINE_SCIENCE_MINIMUM_ENFORCEMENT` 可将此策略覆盖为 `full` 或 `partial`。无效值会拒绝 Host 准备。在启动 Electron 进程时设置此变量；暂存和活动 profile 接收相同策略。Windows ACL 后端报告 `partial`，具有[已记录的写入限制](../../packages/sandbox/sandbox-windows-acl/README.zh.md)；接受它不会改变后端，也不提供完整隔离。
+
 Electron 拥有保留 profile `$DSH_HOME/profiles/desktop`。其 manifest 通过 `dsh.profile.bundles` 列出内置与已安装插件 bundle，`node_modules` 则同时包含精确版本的 `@deepseek-ai/dsh`、与之匹配的私有 `@deepseek-ai/dsh-desktop-host` 和所有桌面插件。把 Electron 专用进程入口与 overlay 放入私有应用包，可以避免 Desktop 实现成为公共 CLI 包的一部分。CLI 不能启动或修改该 profile。Electron 始终调用自身内置的 Node.js 与 pnpm，并把 store 固定在 `$DSH_HOME/desktop/pnpm/store`；它绝不使用系统 pnpm 或调用方的 npm/pnpm 配置。
 
 dsh 主渲染进程只获得桌面协议标记。独立插件窗口获得结构化的列出、安装、移除、更新和更新检查操作；两个渲染进程都拿不到文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
@@ -36,7 +38,7 @@ Electron 根据应用 locale 选择类型化的中英文字典，并以英文作
 | Seed 内容 | 可写目标或用途 |
 |---|---|
 | `integrity.json` 与 `desktop-packages.json` | 在修改包状态前验证清单记录的每个 seed 文件、本地 tarball 哈希以及绑定的 dsh 与 Desktop Host 版本。 |
-| `store-archives.json` 与 `store-archives/*.tar` | 验证确定性的未压缩分片，把它们解包到唯一的 Desktop staging 目录，替换匹配的不可变 store 文件，并以事务方式把 pnpm 的版本化 SQLite 包索引合并进 `$DSH_HOME/desktop/pnpm/store`，且不移除已经为 Desktop 插件下载的包。 |
+| `store-archives.json` 与 `store-archives/*.tar` | 验证确定性的未压缩分片，异步解包到唯一的 Desktop staging 目录并复制匹配的不可变 store 文件，并以事务方式把 pnpm 的版本化 SQLite 包索引合并进 `$DSH_HOME/desktop/pnpm/store`，且不移除已经为 Desktop 插件下载的包。 |
 | 项目元数据与 `desktop-packages/` | 复制到唯一的 `$DSH_HOME/desktop/staging/<transaction-id>/profile` 项目。 |
 | 锁文件与本地包映射 | 驱动内置 pnpm 完成安装，且不会从 npm 解析已打包的核心包名。 |
 
@@ -88,6 +90,10 @@ pnpm run start:desktop
 Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop Host 包，并禁用桌面包修改；只有该模式明确链接的一次性 profile 可以从自身目录外解析 bundle。需要验证内置 Node.js、内置 pnpm、发布 seed、插件安装、staging 和 rollback 时，应运行未封装安装器的应用目录。
 
 ## 打包
+
+Mac 本地安装包实机验收使用 `DSH_DESKTOP_LOCAL_ACCEPTANCE=1 pnpm run package:desktop:mac:arm64`（兼容主机也可使用 `mac:x64` 命令）。此模式为应用和 seed 可执行文件添加 ad-hoc 临时签名并验证签名，保留 seed 离线安装和 Host 健康检查，不需要 Developer ID、公证凭据或更新地址。资源和带 `-local-` 的安装包位于 `.desktop-build/local-acceptance/<target>/`；不生成更新配置或发布完成记录，上传命令拒绝此模式。生产更新配置和不支持的平台均会被拒绝。本地验收验证已安装应用的行为，不替代 Gatekeeper 分发或签名更新验证；正式发布仍遵循下述要求。
+
+Windows 本地验收设置 `DSH_DESKTOP_LOCAL_ACCEPTANCE=1`，并将 `DSH_DESKTOP_LOCAL_WINDOWS_CERT_THUMBPRINT` 设为 `LocalMachine\\My` 中现有 Code Signing 证书的 40 字符指纹；证书须有私钥，然后运行 `pnpm run package:desktop:win:x64`。本地签名对应用、安装器和临时 NSIS 引导程序使用 SHA-256 Authenticode，并保留生成 PE 文件的证书表修复。自签名测试证书即可；打包不会更改证书信任或导出私钥，允许签名有效但证书不受信任的情况。Windows 执行策略与应用控制仍然适用。资源、安装包和禁止上传规则与 macOS 使用同样的本地隔离，不需要 SafeNet 发布凭据。
 
 正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标默认使用现有 PaperMachine 应用 ID `com.papermachine.desktop`；可通过 `PAPERMACHINE_DESKTOP_APP_ID` 显式指定反向域名形式的覆盖值。升级时应保持同一 ID。应用名称为 `PaperMachine`，安装包名称以 `papermachine-` 开头。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据。App Store Connect API Key 方式使用以下变量：
 
@@ -188,7 +194,7 @@ Electron-builder 始终为 `DSH_DESKTOP_AUTO_UPDATE_ENV` 选择的部署生成 g
 
 ## 产品资源准备
 
-`src/product-version.json` 是 `PAPER_MACHINE_VERSION` 与 electron-builder 安装包名的共同来源：`papermachine-0.1.3-${os}-${arch}.${ext}`。更新元数据与 seed 校验保持内部包版本。`extraResources` 在 `product/` 下包含产品环境声明、内置技能、Host 与遥测配置，以及准备好的可执行文件。遥测配置已存在，但桌面主进程目前不发送遥测。
+`src/product-version.json` 是 `PAPER_MACHINE_VERSION` 与 electron-builder 安装包名的共同来源：`papermachine-0.1.2-${os}-${arch}.${ext}`。更新元数据与 seed 校验保持内部包版本。`extraResources` 在 `product/` 下包含产品环境声明、内置技能、Host 与遥测配置，以及准备好的可执行文件。遥测配置已存在，但桌面主进程目前不发送遥测。
 
 开发启动器和目标打包入口都会先准备 micromamba。资源准备脚本根据 `resources/micromamba.json` 校验缓存字节，从其中既有的官方发布 URL 下载缺失或摘要不符的资源，并且只在 SHA-256 校验成功后发布文件。Windows 资源准备还会提取固定的应用本地 CRT；Windows 执行与安装包验收是独立检查。`resources/bin/` 中生成的可执行文件由 Git 忽略。
 
@@ -201,7 +207,7 @@ PAPERMACHINE_HOME=/private/tmp/papermachine-desktop-acceptance DSH_TELEMETRY_DIS
 
 首跑验收请选择新的无空格主目录。启动器打开首次设置页；安装科学环境需要访问所选 Conda 包源。关闭后以同一主目录重开会保留浏览器存储。若要明确准备其他打包目标的可执行文件，可向资源准备脚本传入 `darwin-arm64`、`darwin-x64` 或 `win32-x64`。
 
-开发启动器使用工作区依赖链接生成项目，并跳过 `DesktopProjectManager.applyRelease()`。它可以验证首次设置、环境准备、Host 启动和 UI 行为，但不能证明 seed 解包、离线安装、暂存激活或已安装 profile 升级。macOS seed 准备入口要求 Developer ID 签名身份与 Team ID，使用 `--prepare-only` 打包时也不例外；目前没有受支持的免签名 macOS seed 准备模式。
+开发启动器使用工作区依赖链接生成项目，并跳过 `DesktopProjectManager.applyRelease()`。它可以验证首次设置、环境准备、Host 启动和 UI 行为，但不能证明 seed 解包、离线安装、暂存激活或已安装 profile 升级。正式发布的 seed 准备要求 Developer ID 签名身份与 Team ID，使用 `--prepare-only` 打包时也不例外；本地验收使用上文明确启用的 ad-hoc 临时签名模式。
 
 ## 底层开发覆盖项
 

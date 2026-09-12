@@ -13,6 +13,7 @@ import {
   resolveDesktopUploadConfig,
 } from './desktop-auto-update-environment.mjs'
 import { desktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { isLocalAcceptance } from './local-acceptance.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
@@ -179,9 +180,12 @@ export async function createDesktopUploadPlan(
     throw new Error(`desktop upload: unsupported target ${String(targetName)}`)
   }
   const environment = options.environment ?? process.env
+  if (isLocalAcceptance(environment, target.platform)) {
+    throw new Error('desktop upload: local acceptance artifacts cannot be uploaded')
+  }
   const repositoryRoot = options.repositoryRoot ?? REPOSITORY_ROOT
   const appRoot = options.appRoot ?? APP_ROOT
-  const artifactsRoot = options.artifactsRoot ?? desktopTargetBuildPaths(targetName).artifacts
+  const artifactsRoot = options.artifactsRoot ?? desktopTargetBuildPaths(targetName, environment).artifacts
   const dshVersion = await manifestVersion(join(repositoryRoot, 'package.json'), 'dsh package')
   const desktopVersion = await manifestVersion(join(appRoot, 'package.json'), 'desktop package')
   if (dshVersion !== desktopVersion) {

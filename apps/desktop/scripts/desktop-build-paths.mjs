@@ -1,6 +1,7 @@
 /** Resolve build-owned Desktop paths without sharing mutable state across release targets. */
 
 import { join, resolve } from 'node:path'
+import { isLocalAcceptance } from './local-acceptance.mjs'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_ROOT = join(APP_ROOT, '.desktop-build')
@@ -31,13 +32,14 @@ export function resolveDesktopBuildTarget(
 /**
  * Return the mutable preparation and artifact directories owned by one release target.
  * @param {'mac-arm64' | 'mac-x64' | 'win-x64'} target - Supported Desktop target name.
+ * @param {NodeJS.ProcessEnv} env - Packaging mode used to isolate local acceptance resources.
  * @returns {{ root: string, artifacts: string, runtime: string, packageSet: string, seed: string, seedPnpm: string, nodeExtract: string, packedDsh: string, packedVendor: string, packedLandlock: string, downloads: string }} Target paths plus the shared immutable download cache.
  */
-export function desktopTargetBuildPaths(target) {
+export function desktopTargetBuildPaths(target, env = process.env) {
   if (!SUPPORTED_TARGETS.has(target)) {
     throw new Error(`desktop build paths: unsupported target ${String(target)}`)
   }
-  const root = join(BUILD_ROOT, 'targets', target)
+  const root = join(BUILD_ROOT, isLocalAcceptance(env, target.startsWith('mac-') ? 'darwin' : 'win32') ? 'local-acceptance' : 'targets', target)
   const packed = join(root, 'packed')
   return {
     root,
@@ -66,5 +68,5 @@ export function resolveDesktopTargetBuildPaths(
   hostPlatform = process.platform,
   hostArch = process.arch,
 ) {
-  return desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
+  return desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch), env)
 }

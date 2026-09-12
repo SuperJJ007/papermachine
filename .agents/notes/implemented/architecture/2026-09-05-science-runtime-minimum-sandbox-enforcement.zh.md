@@ -12,6 +12,8 @@ Science 部署不能只因 Host provider 能启动解释器，就静默接受更
 
 经过验证的 `minimumEnforcement` 默认 full。所有隔离路径，包括观察、执行、安装和恢复，都请求配置的最低级别。绑定记录实际 `sandboxEnforcement`；full 与 partial 是显式观察，不是平台猜测。选择 partial 是部署决策，不能隐藏在 provider 回退中。
 
+PaperMachine 在 Windows 上配置 partial，在 macOS 上配置 full，无需用户选择强制执行级别。这项桌面部署策略支持 Windows ACL 后端，不降低 Runtime 的准入要求。启动时的环境变量可覆盖为任一级别；Shell 在准备 Host 前拒绝无效覆盖，并将解析后的策略写入暂存和活动 profile。定向 overlay 测试覆盖两个平台的默认值、覆盖值和无效选择；Windows 安装包验收验证实际记录的 enforcement。这项配置接线没有新增会话事件或转录渲染，因此预期配置由桌面所属测试检查，不新增 recorded-session snapshot。
+
 ## 考虑过的替代方案
 
 **接受 provider 返回的任意级别。** 不同机器会静默改变部署安全性。

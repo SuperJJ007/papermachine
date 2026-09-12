@@ -24,6 +24,6 @@ Status: implemented
 
 ## Consequences
 
-PaperMachine 0.1.0 Science 会话在移栽版本中不可读。其文件保持完整，新会话使用 V3。[发布说明](../../../../docs/user/papermachine-0.1.3-release-notes.zh.md)明确这一限制。只读取 header 的列表展示不能证明会话正文可打开。不含 Science 事件的普通上游 V0 会话保留上游迁移支持；该决定不增加全面禁止 V0 的规则。
+PaperMachine 0.1.0 Science 会话在移栽版本中不可读。其文件保持完整，新会话使用 V3。[发布说明](../../../../docs/user/papermachine-0.1.2-release-notes.zh.md)明确这一限制。只读取 header 的列表展示不能证明会话正文可打开。不含 Science 事件的普通上游 V0 会话保留上游迁移支持；该决定不增加全面禁止 V0 的规则。
 
 [存储回归测试](../../../../packages/science/science-session/tests/persistence.spec.ts)对全部九种类型进行普通与 Zstandard V3 读写往返，并在读写时拒绝各旧类型，同时保留字节与文件身份。Note Remote 测试验证必读 envelope 且不产生 agent follow-up。[P3 验收](../../../migrations/0.1.5/P3.md)记录真实 V0 证据和两个 SDK 投影的刷新。P3 不修改上游运行时包；持久化目录输出来自自有 Science JSDoc。

@@ -76,7 +76,7 @@ Science Session 领域：持久化的 required-on-read Session 事件、严格�
 - **run input 严格高于该 session 自身本地已记录最高版本的引用会被原样信任;artifact 来源根本不再是本包的关切。** 当 run input 所指名的版本严格高于该 session 自身对某个 artifactId 已记录的本地最高版本时，会在没有本地匹配的情况下被接受——实时的 `dsh-science-runtime` 已经在该引用事件提交之前对照所属 project 的 artifact store 校验过它，纯 replay 会信任这个已经校验过的事实,而不是重新推导它。这既覆盖该 session 的 fold 从未记录过这个 artifactId 的情形(同一 project 中第二个 session 读取第一个 session 的 artifact),也覆盖它只记录到某个更低版本的情形(两个 session 交错写入同一个 artifact,并发 session 自己的追加可能占用了该 session 本地从未观测到的中间 ordinal)。一个等于或低于该本地最高版本、又与某个本地记录不完全匹配的版本仍会被拒绝——这一同 session 内的不一致，仅凭 log 本身就能识破。基线版本的血缘(edit baseline、直接编辑祖先)在任何范围内都不再是 fold 的关切:`baseVersionId`/`baseExplicit` 是所属 project artifact store 的写事务一次性定死并校验的声明事实,不再从这个 session 自身的 log 里重新推导或交叉校验。
 - **不投影浏览器状态。** 此投影不包含视图选择、布局和待提交的设置编辑；`@deepseek-ai/dsh-client-ui-science` 负责右侧 Sidebar 产物库与 Process 视图。
 
-已发布的相邻迁移不支持 PaperMachine 0.1.0 Science 日志。打开时会失败且不改变源文件；新 V3 会话保留全部九种必读事件。参见[发布说明](../../../docs/user/papermachine-0.1.3-release-notes.zh.md)与[决定](../../../.agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md)。
+已发布的相邻迁移不支持 PaperMachine 0.1.0 Science 日志。打开时会失败且不改变源文件；新 V3 会话保留全部九种必读事件。参见[发布说明](../../../docs/user/papermachine-0.1.2-release-notes.zh.md)与[决定](../../../.agents/notes/implemented/architecture/2026-09-10-science-required-session-events.zh.md)。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -63,7 +63,7 @@ describe('desktop seed store cleanup', () => {
 })
 
 describe('desktop seed store merge', () => {
-  it('preserves installed package records while the verified seed replaces matching records and files', { timeout: 30_000 }, () => {
+  it('preserves installed package records while the verified seed replaces matching records and files', { timeout: 30_000 }, async () => {
     const root = temporaryRoot()
     const source = join(root, 'source')
     const destination = join(root, 'destination')
@@ -85,7 +85,14 @@ describe('desktop seed store merge', () => {
     writeFileSync(join(destination, 'v11', 'files', 'shared'), 'old')
     writeFileSync(join(destination, 'v11', 'files', 'plugin'), 'plugin')
 
-    mergePnpmStore(source, destination)
+    let eventLoopAdvanced = false
+    const heartbeat = setImmediate(() => { eventLoopAdvanced = true })
+    try {
+      await mergePnpmStore(source, destination)
+      expect(eventLoopAdvanced).toBe(true)
+    } finally {
+      clearImmediate(heartbeat)
+    }
 
     const database = new DatabaseSync(join(destination, 'v11', 'index.db'), { readOnly: true })
     const records = database.prepare('SELECT key, data FROM package_index ORDER BY key').all() as {
@@ -104,7 +111,7 @@ describe('desktop seed store merge', () => {
 })
 
 describe('desktop seed store archives', () => {
-  it('extracts package bytes and executable modes without retaining loose seed files', () => {
+  it('extracts package bytes and executable modes without retaining loose seed files', async () => {
     const root = temporaryRoot()
     const seed = join(root, 'seed')
     const store = join(seed, 'store')
@@ -116,7 +123,14 @@ describe('desktop seed store archives', () => {
 
     archivePnpmStore(seed, store)
     const destination = join(root, 'extracted')
-    extractPnpmStoreArchives(seed, destination)
+    let eventLoopAdvanced = false
+    const heartbeat = setImmediate(() => { eventLoopAdvanced = true })
+    try {
+      await extractPnpmStoreArchives(seed, destination)
+      expect(eventLoopAdvanced).toBe(true)
+    } finally {
+      clearImmediate(heartbeat)
+    }
 
     expect(existsSync(store)).toBe(false)
     expect(readFileSync(join(destination, 'v10', 'files', 'package-data'), 'utf8')).toBe('package')
@@ -146,7 +160,7 @@ describe('desktop seed store archives', () => {
     expect(second.map(entry => entry.body)).toEqual(first.map(entry => entry.body))
   })
 
-  it('rejects an archive whose entry count differs from the manifest', () => {
+  it('rejects an archive whose entry count differs from the manifest', async () => {
     const root = temporaryRoot()
     const seed = join(root, 'seed')
     const store = join(seed, 'store')
@@ -162,6 +176,6 @@ describe('desktop seed store archives', () => {
     archive.entries += 1
     writeFileSync(manifestPath, JSON.stringify(manifest))
 
-    expect(() => { extractPnpmStoreArchives(seed, join(root, 'extracted')) }).toThrow(/unexpected entry count/u)
+    await expect(extractPnpmStoreArchives(seed, join(root, 'extracted'))).rejects.toThrow(/unexpected entry count/u)
   })
 })

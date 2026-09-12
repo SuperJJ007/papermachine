@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto'
 import {
   chmodSync,
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -12,6 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { cp } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { create, extract, list } from 'tar'
@@ -147,15 +147,16 @@ function mergeStoreIndex(source: string, destination: string): void {
  * Merge a completely extracted seed store into Desktop's persistent pnpm store.
  * @param source - Verified temporary store extraction.
  * @param destination - Desktop-owned persistent pnpm store.
+ * @returns Completion after file copying and index merging finish.
  */
-export function mergePnpmStore(source: string, destination: string): void {
+export async function mergePnpmStore(source: string, destination: string): Promise<void> {
   mkdirSync(destination, { recursive: true, mode: 0o700 })
   const indexPaths = readdirSync(source, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && STORE_VERSION_PATTERN.test(entry.name)
       && existsSync(join(source, entry.name, 'index.db')))
     .map(entry => `${entry.name}/index.db`)
   const indexes = new Set(indexPaths)
-  cpSync(source, destination, {
+  await cp(source, destination, {
     recursive: true,
     force: true,
     filter: path => !indexes.has(relative(source, path).split(sep).join('/')),
@@ -210,8 +211,9 @@ export function archivePnpmStore(
  * Validate and extract a packaged pnpm store archive set into an empty directory.
  * @param seedRoot - verified packaged seed directory.
  * @param destination - empty Desktop-owned temporary extraction directory.
+ * @returns Completion after every validated archive has been extracted.
  */
-export function extractPnpmStoreArchives(seedRoot: string, destination: string): void {
+export async function extractPnpmStoreArchives(seedRoot: string, destination: string): Promise<void> {
   const manifest = readArchiveManifest(seedRoot)
   const archiveRoot = join(seedRoot, SEED_STORE_ARCHIVE_DIR)
   const actualFiles = readdirSync(archiveRoot, { withFileTypes: true }).map((entry) => {
@@ -257,7 +259,7 @@ export function extractPnpmStoreArchives(seedRoot: string, destination: string):
     }
   }
   for (const archive of manifest.archives) {
-    extract({
+    await extract({
       chmod: true,
       cwd: destination,
       file: join(archiveRoot, archive.file),
@@ -265,7 +267,6 @@ export function extractPnpmStoreArchives(seedRoot: string, destination: string):
       preservePaths: false,
       processUmask: 0,
       strict: true,
-      sync: true,
     })
   }
 }

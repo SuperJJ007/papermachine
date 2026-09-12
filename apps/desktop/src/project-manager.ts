@@ -21,6 +21,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   DESKTOP_PACKAGES_DIR,
@@ -416,7 +417,7 @@ export class DesktopProjectManager {
           })
         if (matches) return false
       }
-      this.mergeSeedPnpmState(seedDir)
+      await this.mergeSeedPnpmState(seedDir)
       const stagingProfile = this.newStagingProfile()
       try {
         if (existsSync(this.paths.profile)) {
@@ -515,14 +516,14 @@ export class DesktopProjectManager {
     }
   }
 
-  private mergeSeedPnpmState(seedDir: string): void {
+  private async mergeSeedPnpmState(seedDir: string): Promise<void> {
     const transactionRoot = join(this.paths.staging, randomUUID())
     const extractedStore = join(transactionRoot, 'store')
     try {
-      extractPnpmStoreArchives(seedDir, extractedStore)
-      mergePnpmStore(extractedStore, this.paths.pnpm.store)
+      await extractPnpmStoreArchives(seedDir, extractedStore)
+      await mergePnpmStore(extractedStore, this.paths.pnpm.store)
     } finally {
-      removeOwnedDirectory(transactionRoot)
+      await rm(transactionRoot, { recursive: true, force: true })
     }
   }
 

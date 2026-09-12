@@ -36,6 +36,10 @@ describe('native directory picker', () => {
   it('uses the macOS folder chooser and maps user cancellation to null', async () => {
     const run = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/Users/test/project/\n', stderr: '' }))
     await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).resolves.toBe('/Users/test/project/')
+    expect(run.mock.calls[0]?.[1].slice(0, 4)).toEqual([
+      '-e', 'activate',
+      '-e', 'set selectedFolder to choose folder with prompt "Select Workspace Directory"',
+    ])
     expect(run).toHaveBeenCalledWith('osascript', expect.arrayContaining(['POSIX path of selectedFolder']), expect.any(AbortSignal))
 
     run.mockRejectedValueOnce(failure(1, 'execution error: User canceled. (-128)'))

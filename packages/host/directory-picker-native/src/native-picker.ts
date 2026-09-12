@@ -41,6 +41,7 @@ function rethrowIfAborted(signal: AbortSignal, error: unknown): void {
 
 /**
  * Open the platform directory picker.
+ * macOS activates the chooser process before entering its modal folder dialog.
  * @param signal - caller/connection lifetime; abort terminates the native command.
  * @param internals - Platform and runner hooks for deterministic tests.
  * @returns the selected path, or null when the user cancels.
@@ -55,6 +56,7 @@ export async function pickNativeDirectory(
   if (platform === 'darwin') {
     try {
       const result = await run('osascript', [
+        '-e', 'activate',
         '-e', 'set selectedFolder to choose folder with prompt "Select Workspace Directory"',
         '-e', 'POSIX path of selectedFolder',
       ], signal)

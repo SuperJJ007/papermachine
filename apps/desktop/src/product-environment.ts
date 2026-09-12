@@ -64,6 +64,11 @@ export class ProductEnvironment {
    * @param project - Active or staged desktop profile directory.
    */
   async writeOverlay(project: string, allowUnbound = false): Promise<void> {
+    const minimumEnforcement = process.env['PAPERMACHINE_SCIENCE_MINIMUM_ENFORCEMENT']
+      ?? (process.platform === 'win32' ? 'partial' : 'full')
+    if (minimumEnforcement !== 'full' && minimumEnforcement !== 'partial') {
+      throw new Error('desktop: PAPERMACHINE_SCIENCE_MINIMUM_ENFORCEMENT must be full or partial')
+    }
     const status = await this.status()
     if (status.kind !== 'bound') {
       if (allowUnbound) return
@@ -71,6 +76,7 @@ export class ProductEnvironment {
     }
     const declaration = await this.declaration()
     const config = {
+      minimumEnforcement,
       profiles: { science: { pythonPrefix: status.binding.pythonPrefix, rPrefix: status.binding.rPrefix } },
       micromambaPath: this.provisioner().options.micromambaPath,
       installChannels: orderSourcesFrom(declaration.sources, status.binding.sourceId).flatMap(source => source.channels),

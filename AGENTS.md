@@ -85,6 +85,8 @@ pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
 
 ### Host sandbox failures
 
+PaperMachine local acceptance defaults to ad-hoc signed installed packages; preserve user data and never publish. Do not request release credentials for local acceptance ([packaging](apps/desktop/README.md#package)).
+
 If a required `gh`, `pnpm`, build, test, or generator command fails because the sandbox blocks credentials, network, IPC, watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation. Require sandbox evidence; never bypass test failures or the product sandbox.
 
 ### Run relevant checks locally

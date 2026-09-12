@@ -11,6 +11,9 @@ import {
   assertMacOSSeedSignatureDetails,
   assertMacOSSignatureDetails,
 } from '../scripts/verify-macos-signature.mjs'
+import { isLocalAcceptance } from '../scripts/local-acceptance.mjs'
+import { desktopTargetBuildPaths } from '../scripts/desktop-build-paths.mjs'
+import { createDesktopUploadPlan } from '../scripts/desktop-upload-plan.ts'
 
 const RELEASE_ENVIRONMENT = {
   PAPERMACHINE_DESKTOP_APP_ID: 'com.example.desktop',
@@ -29,6 +32,45 @@ function portablePath(value: string): string {
 }
 
 describe('desktop macOS release signature', () => {
+  it('builds isolated local installers without release credentials or an update publisher', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const environment = { DSH_DESKTOP_LOCAL_ACCEPTANCE: '1' }
+    const config = createElectronBuilderConfig(environment, 'darwin', 'arm64')
+    expect(config.mac).toMatchObject({ identity: '-', notarize: false })
+    expect(config.dmg.sign).toBe(false)
+    expect(config.publish).toBeNull()
+    expect(config.artifactName).toContain('-local-')
+    expect(config.directories.output).toContain('local-acceptance')
+    expect(config.directories.output).not.toBe(desktopTargetBuildPaths('mac-arm64', {}).artifacts)
+    expect(config.artifactBuildCompleted({ file: '/tmp/local.dmg' })).toBeUndefined()
+    await expect(createDesktopUploadPlan('mac-arm64', { environment })).rejects.toThrow(/cannot be uploaded/u)
+  })
+
+  it('rejects ambiguous local modes, production updates, and unsupported local targets', () => {
+    expect(isLocalAcceptance({}, 'darwin')).toBe(false)
+    expect(isLocalAcceptance({ DSH_DESKTOP_LOCAL_ACCEPTANCE: '0' }, 'darwin')).toBe(false)
+    expect(() => isLocalAcceptance({ DSH_DESKTOP_LOCAL_ACCEPTANCE: 'yes' }, 'darwin')).toThrow(/0 or 1/u)
+    expect(isLocalAcceptance({ DSH_DESKTOP_LOCAL_ACCEPTANCE: '1' }, 'win32')).toBe(true)
+    expect(() => isLocalAcceptance({ DSH_DESKTOP_LOCAL_ACCEPTANCE: '1' }, 'linux')).toThrow(/only macOS and Windows/u)
+    expect(() => isLocalAcceptance({
+      DSH_DESKTOP_LOCAL_ACCEPTANCE: '1', DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+    }, 'darwin')).toThrow(/production updates/u)
+  })
+
+  it('isolates Windows test-signed installers and refuses their upload', async () => {
+    const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
+    const environment = {
+      DSH_DESKTOP_LOCAL_ACCEPTANCE: '1',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_LOCAL_WINDOWS_CERT_THUMBPRINT: 'A'.repeat(40),
+    }
+    const config = createElectronBuilderConfig(environment, 'win32', 'x64')
+    expect(portablePath(config.directories.output)).toContain('/local-acceptance/win-x64/artifacts')
+    expect(config.artifactName).toContain('-local-')
+    expect(config.publish).toBeNull()
+    await expect(createDesktopUploadPlan('win-x64', { environment })).rejects.toThrow(/cannot be uploaded/u)
+  })
+
   beforeAll(() => {
     for (const [name, value] of Object.entries(RELEASE_ENVIRONMENT)) vi.stubEnv(name, value)
   })
@@ -41,7 +83,7 @@ describe('desktop macOS release signature', () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
     const config = createElectronBuilderConfig(RELEASE_ENVIRONMENT, 'darwin', 'arm64')
     expect(portablePath(config.directories.output)).toContain('/.desktop-build/targets/mac-arm64/artifacts')
-    expect(PAPER_MACHINE_VERSION).toBe('0.1.3')
+    expect(PAPER_MACHINE_VERSION).toBe('0.1.2')
     expect(config.extraResources.map(resource => resource.to)).toEqual(['runtime', 'seed', 'product'])
     expect(config.extraResources[2]).toEqual({ from: 'resources', to: 'product' })
     expect(portablePath(config.extraResources[0]?.from ?? '')).toContain('/.desktop-build/targets/mac-arm64/runtime')

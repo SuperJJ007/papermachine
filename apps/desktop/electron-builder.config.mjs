@@ -11,7 +11,10 @@ import {
   installWindowsNsisBootstrapSigner,
 } from './scripts/windows-sign.mjs'
 import { resolveDesktopAutoUpdateConfig } from './scripts/desktop-auto-update-environment.mjs'
-import { desktopTargetBuildPaths } from './scripts/desktop-build-paths.mjs'
+import { desktopTargetBuildPaths, resolveDesktopBuildTarget } from './scripts/desktop-build-paths.mjs'
+import { resolve } from 'node:path'
+import { isLocalAcceptance, verifyLocalCode } from './scripts/local-acceptance.mjs'
+import { createLocalWindowsSigner } from './scripts/local-windows-sign.mjs'
 
 /**
  * Create electron-builder configuration from one release environment.
@@ -29,12 +32,13 @@ export function createElectronBuilderConfig(
   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
   const resolvedPlatform = targetPlatform ?? hostPlatform
   const resolvedArch = env.DSH_DESKTOP_TARGET_ARCH ?? hostArch
+  const localAcceptance = isLocalAcceptance(env, resolvedPlatform)
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = targetPlatform === 'win32'
-  const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
-  if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
+  const macOSSigning = packagesMacOS && !localAcceptance ? resolveMacOSSigningEnvironment(env) : undefined
+  if (packagesMacOS && !localAcceptance) resolveMacOSNotarizationEnvironment(env)
   const windowsSigner = packagesWindows
-    ? createWindowsTokenSigner({
+    ? localAcceptance ? createLocalWindowsSigner(env) : createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
         tokenPin: env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
@@ -44,12 +48,13 @@ export function createElectronBuilderConfig(
   if (windowsSigner !== undefined) {
     installWindowsNsisBootstrapSigner({ sign: windowsSigner })
   }
-  const update = resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
-  const buildPaths = desktopTargetBuildPaths(update.target)
+  const update = localAcceptance ? undefined : resolveDesktopAutoUpdateConfig(env, resolvedPlatform, resolvedArch)
+  const target = update?.target ?? resolveDesktopBuildTarget(env, hostPlatform, hostArch)
+  const buildPaths = desktopTargetBuildPaths(target, env)
   return {
     appId,
     productName: 'PaperMachine',
-    artifactName: `papermachine-${product.version}-\${os}-\${arch}.\${ext}`,
+    artifactName: `papermachine-${product.version}${localAcceptance ? '-local' : ''}-\${os}-\${arch}.\${ext}`,
     directories: { output: buildPaths.artifacts },
     asar: true,
     files: [
@@ -65,22 +70,26 @@ export function createElectronBuilderConfig(
     ],
     mac: {
       category: 'public.app-category.developer-tools',
-      identity: macOSSigning?.signingIdentity,
-      forceCodeSigning: true,
+      identity: localAcceptance ? '-' : macOSSigning?.signingIdentity,
+      forceCodeSigning: !localAcceptance,
       hardenedRuntime: true,
-      notarize: true,
+      notarize: !localAcceptance,
       target: ['dmg', 'zip'],
     },
     dmg: {
-      sign: true,
+      sign: !localAcceptance,
       writeUpdateInfo: false,
     },
     afterSign: context => {
       if (context.electronPlatformName !== 'darwin') return
+      if (localAcceptance) {
+        verifyLocalCode(resolve(context.appOutDir, `${context.packager.appInfo.productFilename}.app`))
+        return
+      }
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {
-      if (!artifact.file.endsWith('.dmg')) return
+      if (localAcceptance || !artifact.file.endsWith('.dmg')) return
       return notarizeMacOSDiskImageArtifact(
         artifact,
         env,
@@ -104,7 +113,7 @@ export function createElectronBuilderConfig(
       allowToChangeInstallationDirectory: true,
       differentialPackage: true,
     },
-    publish: [{ provider: 'generic', url: update.publicUrl }],
+    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],
   }
 }
 

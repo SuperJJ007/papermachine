@@ -31,9 +31,10 @@ export function resolveDesktopBuildTarget(
 /**
  * Return the mutable preparation and artifact directories owned by one release target.
  * @param target - Supported Desktop target name.
+ * @param env - Packaging mode used to isolate local acceptance resources.
  * @returns Target paths plus the shared immutable download cache.
  */
-export function desktopTargetBuildPaths(target: DesktopAutoUpdateTarget): DesktopTargetBuildPaths
+export function desktopTargetBuildPaths(target: DesktopAutoUpdateTarget, env?: NodeJS.ProcessEnv): DesktopTargetBuildPaths
 
 /**
  * Resolve the paths owned by the target selected in a packaging environment.

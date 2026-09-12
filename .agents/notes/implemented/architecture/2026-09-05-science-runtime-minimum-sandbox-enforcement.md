@@ -12,6 +12,8 @@ A Science deployment must not silently accept weaker sandbox enforcement just be
 
 Validated `minimumEnforcement` defaults to full. Every confinement path, including observation, execution, installation, and recovery, requests the configured floor. A binding records actual `sandboxEnforcement`; full and partial remain explicit observations rather than platform guesses. Choosing partial is a deployment decision and must not be hidden in a provider fallback.
 
+PaperMachine configures partial on Windows and full on macOS without asking users to select an enforcement level. This desktop deployment policy supports the Windows ACL backend without weakening Runtime admission. A launch-time environment override can select either level; the shell rejects invalid overrides before preparing a Host and writes the resolved policy into both staged and active profiles. Focused overlay tests cover both platform defaults, overrides, and invalid selections; installed Windows acceptance verifies the actual recorded enforcement. This configuration wiring has no new session event or transcript rendering, so its expected configuration is checked by the desktop owner rather than a recorded-session snapshot.
+
 ## Alternatives considered
 
 **Accept whichever level the provider returns.** Deployment security changes silently across machines.
